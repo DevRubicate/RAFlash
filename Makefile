@@ -1,0 +1,98 @@
+# Compilers
+MTASC=mtasc
+HAXE=haxe
+DENO=deno
+
+# Shared settings
+MTASC_HEADER=800:575:60
+
+# Dummy target to force rebuild
+.PHONY: all check clean run assets test test-avm1 test-engine test-display test-avm2 avm1-build avm2-build compile stage FORCE
+
+# Default target - full build including standalone executable
+all: compile
+
+# Quick compile check (no executable)
+check: avm1-build avm2-build assets
+
+# Run from .build (simulates distribution environment)
+run: avm1-build avm2-build assets stage
+	@cd .build && bash -c 'trap "exit 0" INT; $(DENO) run --allow-ffi --allow-net --allow-run --allow-read --allow-write --allow-env ../RAEngine/src/Main.ts 2>&1 | cat'
+
+# Build UI assets using npm
+assets:
+	@cd RADisplay && npm run build --silent
+
+# Copy vendor and assets into .build for self-contained distribution
+stage:
+	@rm -rf .build/vendor .build/assets
+	@cp -r vendor .build/vendor
+	@cp -r assets .build/assets
+
+# Clean up generated files (preserves RACache)
+clean:
+	rm -rf .build/firmware .build/internals .build/vendor .build/assets .build/RAFlash .build/RAFlash.exe .tests
+
+# === AVM1 Firmware ===
+
+AVM1_SWF=.build/firmware/AVM1.swf
+AVM1_MAIN=AVM1Firmware/AVM1Entry.as
+
+avm1-build: $(AVM1_SWF)
+
+$(AVM1_SWF): FORCE
+	@mkdir -p $(dir $@)
+	@$(MTASC) -cp AVM1Firmware -swf $@ -main $(AVM1_MAIN) -header $(MTASC_HEADER)
+
+# === AVM2 Firmware ===
+
+AVM2_SWF=.build/firmware/AVM2.swf
+AVM2_MAIN=AVM2Firmware/Main.hx
+
+avm2-build: $(AVM2_SWF)
+
+$(AVM2_SWF): FORCE
+	@mkdir -p $(dir $@)
+	@$(HAXE) -cp AVM2Firmware -swf $@ -swf-version 11 -D swf-header=800:575:60:0 -main Main
+
+# === Compile to standalone executable ===
+
+DENO_PERMISSIONS=--allow-ffi --allow-net --allow-run --allow-read --allow-write --allow-env
+DENO_INCLUDES=--include=$(AVM1_SWF) --include=$(AVM2_SWF) --include=.build/internals/assets --include=assets/icon.png --include=assets/icon.ico
+
+compile: avm1-build avm2-build assets stage
+	@$(DENO) compile -q $(DENO_PERMISSIONS) --no-terminal --icon=assets/icon.ico $(DENO_INCLUDES) --output=.build/RAFlash RAEngine/src/Main.ts
+
+# === Testing ===
+
+# Run all tests (fail fast)
+test: test-avm1 test-engine test-display test-avm2
+
+# AS2/AVM1 tests (Flash Player + XMLSocket)
+TEST_AVM1_SWF=.tests/AVM1Tests.swf
+TEST_AVM1_MAIN=AVM1Firmware/tests/TestRunner.as
+
+test-avm1: $(TEST_AVM1_SWF)
+	@$(DENO) run --allow-net --allow-run --allow-read AVM1Firmware/tests/test-server.ts $(TEST_AVM1_SWF)
+
+$(TEST_AVM1_SWF): FORCE
+	@mkdir -p $(dir $@)
+	@$(MTASC) -cp AVM1Firmware -cp AVM1Firmware/tests -swf $@ -main $(TEST_AVM1_MAIN) -header $(MTASC_HEADER)
+
+# RAEngine tests (Deno)
+test-engine:
+	@$(DENO) test RAEngine/tests/
+
+# RADisplay tests (Vitest)
+test-display:
+	@cd RADisplay && npx vitest run
+
+# AVM2Firmware tests (Haxe/Neko)
+TEST_AVM2_NEKO=.tests/AVM2Tests.n
+
+test-avm2: $(TEST_AVM2_NEKO)
+	@neko $(TEST_AVM2_NEKO)
+
+$(TEST_AVM2_NEKO): FORCE
+	@mkdir -p $(dir $@)
+	@$(HAXE) -cp AVM2Firmware -cp AVM2Firmware/tests -main TestRunner -neko $@

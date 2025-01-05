@@ -1,0 +1,68 @@
+/**
+ * Shared type definitions for RAFlash data structures.
+ *
+ * These interfaces describe the shape of data flowing between RAEngine,
+ * the firmwares, and the devtools UI. All interfaces include an index
+ * signature to allow additional dynamic/computed properties.
+ */
+
+export interface Requirement {
+    id: number;
+    flag: string;
+    typeA: string;
+    addressA: string;
+    cmp: string;
+    typeB: string;
+    addressB: string;
+    maxHits: number;
+    // Computed fields (added by watchers at runtime)
+    compiledA?: unknown[];
+    compiledB?: unknown[];
+    // Runtime state (managed by achievement engine)
+    hits?: number;
+    _triggered?: boolean;
+    [key: string]: unknown;
+}
+
+export interface Group {
+    id: number;
+    type: string;
+    requirements: Requirement[];
+    [key: string]: unknown;
+}
+
+export interface Asset {
+    id: number;
+    type: string;
+    name: string;
+    progressionType?: string;
+    points?: number;
+    description?: string;
+    formula?: string;
+    category?: string;
+    modified?: boolean;
+    published?: boolean;
+    badgeImage?: string;
+    groups: Group[];
+    // Runtime state
+    state?: string;
+    _saved?: boolean;
+    _modified?: boolean;
+    _originalSnapshot?: Record<string, unknown>;
+    compiledFormula?: unknown[];
+    _richPresenceResult?: unknown;
+    [key: string]: unknown;
+}
+
+export interface CodeNote {
+    id: number;
+    note: string;
+    path: string;
+    [key: string]: unknown;
+}
+
+export interface AppDataStructure {
+    assets: Asset[];
+    codeNotes: CodeNote[];
+    [key: string]: unknown;
+}

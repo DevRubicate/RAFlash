@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+    // This is the magic key: It tells the language server to
+    // analyze and report errors in your JavaScript files.
+    "checkJs": true
+  },
+  "include": [
+    // Tells the server which files to include in the project
+    "src/**/*.js",
+    "src/**/*.vue"
+  ],
+  "exclude": [
+    // Tells the server which files to ignore
+    "node_modules",
+    ".build"
+  ]
+}
