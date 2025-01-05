@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <title>RAFlash Assets List</title>
+    </head>
+    <body class="asset-list">
+        <div class="container" v-scope v-if="ready">
+        <header class="top-bar">
+            <div class="left-filters">
+            <select>
+                <option>All</option>
+                <option>Active</option>
+                <option>Inactive</option>
+                <option>Modified</option>
+                <option>Unpublished</option>
+                <option>Authored</option>
+            </select>
+            <select>
+                <option>All</option>
+                <option>Core</option>
+                <option>Unofficial</option>
+                <option>Local</option>
+            </select>
+            <select>
+                <option>All</option>
+                <option>Achievements</option>
+                <option>Leaderboards</option>
+                <option>Rich Presence</option>
+            </select>
+            </div>
+            <div class="right-info">
+            <span id="game-id">Game ID: {{gameId}}</span>
+            <span>Achievements: {{data.assets.length}}</span>
+            <span>Points: {{ data.assets.reduce((c, v) => c + v.points, 0) }}</span>
+            <label>
+                <input type="checkbox" checked />
+                Processing Active
+            </label>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <div class="table-container">
+            <table>
+                <thead>
+                <tr>
+                    <th></th>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Points</th>
+                    <th>State</th>
+                    <th>Category</th>
+                    <th>Changes</th>
+                </tr>
+                </thead>
+                <tbody>
+                    <tr
+                        v-for="asset in data.assets"
+                        @click="selectedAssetId = asset.id"
+                        @dblclick="openAsset(asset.id)"
+                        :class="selectedAssetId == asset.id ? 'selected' : ''"
+                    >
+                    <td><span class="icon">♔</span></td>
+                    <td>{{asset.id}}</td>
+                    <td>{{asset.name}}</td>
+                    <td>{{asset.points}}</td>
+                    <td>{{asset.state}}</td>
+                    <td>{{asset.category}}</td>
+                    <td>{{asset.changes}}</td>
+                </tr>
+                </tbody>
+            </table>
+            </div>
+
+            <!-- Right side - actions -->
+            <aside class="action-panel">
+            <button>Deactivate</button>
+            <label><input type="checkbox" /> Keep Active</label>
+            <button>Demote</button>
+            <button>Reset</button>
+            <button>Revert</button>
+            <div class="spacer"></div>
+            <button @click="newAsset()">New</button>
+            <button @click="cloneAsset()">Clone</button>
+            </aside>
+        </div>
+        </div>
+    </body>
+</html>

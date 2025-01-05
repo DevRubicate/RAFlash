@@ -1,0 +1,240 @@
+.asset-editor .container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: #fafafa;
+}
+
+.asset-editor .header {
+    padding: 8px;
+    border-bottom: 1px solid #ccc;
+}
+
+.asset-editor .row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.asset-editor .row label {
+    margin-right: 4px;
+}
+
+.asset-editor .row input[type="text"] {
+    padding: 4px;
+    margin-right: 8px;
+    flex: 1;
+    min-width: 0; /* helps input shrink properly */
+}
+
+.asset-editor .row select {
+    padding: 4px;
+    margin-right: 8px;
+}
+
+.asset-editor .check-label {
+    display: flex;
+    align-items: center;
+    margin-left: 8px;
+}
+
+.asset-editor .spacer {
+    flex: 1;
+}
+
+/* Main Content */
+.asset-editor .main-content {
+    display: flex;
+    flex-direction: column;
+    height: 500px;
+}
+
+.asset-editor .top-panel {
+    display: flex;
+    flex: 1;
+}
+
+.asset-editor .left-panel {
+    display: flex;
+    flex-direction: column;
+    width: 90px;
+    padding: 0px 10px;
+}
+
+.asset-editor .left-panel-title {
+    height: 40px;
+    line-height: 40px;
+}
+
+.asset-editor .group-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    border-bottom: 1px solid #ccc;
+    width: 80px;
+    flex: 1;
+    border: 1px solid black;
+    background-color: white;
+}
+
+.asset-editor .group-list li {
+    padding: 8px;
+    cursor: pointer;
+}
+
+.asset-editor .group-list li.active {
+    background-color: blue;
+    color: white;
+}
+
+.asset-editor .group-controls {
+    padding: 8px;
+    display: flex;
+    gap: 4px;
+}
+
+/* Right Panel */
+.asset-editor .right-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+}
+
+.asset-editor .right-panel-header {
+    padding: 8px;
+    border-bottom: 1px solid #ccc;
+    background: #f7f7f7;
+}
+
+.asset-editor .right-panel-header .line {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.asset-editor .right-panel-header label {
+    display: flex;
+    align-items: center;
+}
+
+.asset-editor .bottom-panel {
+    height: 30px;
+    display: flex;
+}
+
+.asset-editor .bottom-panel-button-row {
+    flex: 1;
+    display: flex;
+    justify-content: space-evenly;
+}
+
+.asset-editor .bottom-panel-button-row div {
+    width: 210px;
+    display: flex;
+    justify-content: space-between;
+}
+
+.asset-editor .bottom-panel button {
+    width: 100px;
+    height: 30px;
+    overflow: hidden;
+}
+
+.asset-editor .bottom-panel-button-row div button {
+    width: 100px;
+    height: 30px;
+    overflow: hidden;
+}
+
+
+.asset-editor .table-container {
+    flex: 1;
+    border: 1px solid black;
+    height: 100%;
+    overflow-y: scroll;
+    overflow-x: hidden;
+}
+
+
+.asset-editor .requirements-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+
+
+.asset-editor .requirements-table input {
+    border: 1px solid transparent;
+    box-sizing: border-box;
+    background-color: transparent;
+    width: 100%;
+}
+
+.asset-editor .requirements-table select {
+    border: 1px solid transparent;
+    box-sizing: border-box;
+    background-color: transparent;
+    appearance: none; 
+    width: 100%;
+}
+
+.asset-editor .requirements-table select option {
+    background-color: #FFFFFF;
+    color: #000000;
+}
+
+.asset-editor .requirements-table th {
+    border-right: 1px dotted #444444;
+    background-color: #EEEEEE;
+}
+
+.asset-editor .requirements-table tbody td {
+    cursor: pointer;
+}
+
+
+.asset-editor .requirements-table tbody tr {
+    cursor: pointer;
+}
+
+
+.asset-editor .requirements-table tbody tr:hover {
+    background-color: #EEEEEE;
+}
+.asset-editor .requirements-table tbody tr.active {
+    background-color: #0078D7;
+    color: #FFFFFF;
+}
+
+.asset-editor .requirements-table tbody tr.active input, .requirements-table tbody tr.active select {
+    pointer-events: auto;
+    user-select: auto;
+    color: #FFFFFF;
+}
+
+.asset-editor .requirements-table tbody tr.active select {
+    pointer-events: auto;
+    color: #FFFFFF;
+}
+
+.asset-editor .requirements-table tbody tr.not-active input, .requirements-table tbody tr.not-active select {
+    pointer-events: none;
+    user-select: none;
+    cursor: pointer;
+}
+
+.asset-editor button {
+    background: #e0e0e0;
+    border: 1px solid #ccc;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 14px;
+    border-radius: 4px;
+}
+
+.asset-editor button:hover {
+    background: #d0d0d0;
+}

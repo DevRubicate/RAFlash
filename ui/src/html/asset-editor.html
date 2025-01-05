@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>RAFlash Assets Editor</title>
+    </head>
+    <body class="asset-editor">
+        <div class="container" v-scope v-if="ready">
+            <header class="header">
+                <div class="row">
+                    <label for="title">Title:</label>
+                    <input type="text" id="title" v-model="selectedAsset.name" @change="save()">
+                    <div class="spacer"></div>
+                    <label for="id">ID:</label>
+                    <input type="text" id="id" :value="selectedAsset.id" readonly>
+                    <label class="check-label">
+                        <input type="checkbox" checked> Active
+                    </label>
+                </div>
+                <div class="row">
+                    <label for="description">Description:</label>
+                    <input type="text" id="description" v-model="selectedAsset.description" @change="save()">
+                    <div class="spacer"></div>
+
+                    <label for="points">Points:</label>
+                    <select id="points" v-model="selectedPoints">
+                        <option v-for="option in pointsOptions" :key="option.value" :value="option.value">{{option.text}}</option>
+                    </select>
+                    <label for="badge">Badge:</label>
+                    <input type="text" id="badge" value="64056" style="width:60px;">
+                    <button>Upload</button>
+                </div>
+
+                <div class="row">
+                    <label for="type">Type:</label>
+                    <select id="type" v-model="selectedProgressionType">
+                        <option v-for="option in progressionOptions" :key="option.value" :value="option.value">{{option.text}}</option>
+                    </select>
+                </div>
+            </header>
+
+
+            <div class="main-content">
+                <div class="top-panel">
+                    <div class="left-panel">
+                        <div class="left-panel-title"><strong>Groups:</strong></div>
+                        <ul class="group-list">
+                            <li
+                                v-for="(group, index) in selectedAsset.groups"
+                                :key="group.id"
+                                @click="selectedGroupId = group.id"
+                                :class="group.id === selectedGroupId ? 'active' : ''"
+                            >{{group.type === 'CORE' ? 'Core' : `Alt ${index}`}}</li>
+                        </ul>
+                        <div class="group-controls">
+                            <button @click="addAltGroup()">+</button>
+                            <button @click="removeAltGroup(selectedGroupId)">-</button>
+                        </div>
+                    </div>
+
+                    <!-- Right Panel (Requirements Table) -->
+                    <div class="right-panel">
+                        <div class="right-panel-header">
+                            <div class="line">
+                                <span><strong>Requirements:</strong></span>
+                                <label><input type="checkbox">Highlights</label>
+                                <label><input type="checkbox">Pause on Reset</label>
+                                <label><input type="checkbox">Pause on Trigger</label>
+                            </div>
+                        </div>
+
+                        <div class="table-container">
+                            <table class="requirements-table">
+                                <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Flag</th>
+                                    <th>Type</th>
+                                    <th>Memory</th>
+                                    <th>Cmp</th>
+                                    <th>Type</th>
+                                    <th>Mem/Val</th>
+                                    <th>Hits</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                <tr
+                                    v-for="(req, index) in selectedGroup.requirements"
+                                    :key="req.id"
+                                    @click="selectedRequirementId = req.id"
+                                    :class="req.id === selectedRequirementId ? 'active' : 'not-active'"
+                                >
+                                    <td>{{index+1}}</td>
+                                    <td>
+                                        <select id="type" v-model="req.flag">
+                                            <option v-for="option in flagOptions" :key="option.value" :value="option.value">{{option.text}}</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <select id="type" v-model="req.typeA">
+                                            <option v-for="option in typeOptions" :key="option.value" :value="option.value">{{option.text}}</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <input v-model="req.addressA" />
+                                    </td>
+                                    <td>
+                                        <select id="type" v-model="req.cmp">
+                                            <option v-for="option in cmpOptions" :key="option.value" :value="option.value">{{option.text}}</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <select id="type" v-model="req.typeB">
+                                            <option v-for="option in typeOptions" :key="option.value" :value="option.value">{{option.text}}</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <input v-model="req.addressA"/>
+                                    </td>
+                                    <td>{{req.hits}} ({{req.maxHits}})</td>
+                                </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="bottom-panel">
+                    <button>Copy Def</button>
+                    <div class="bottom-panel-button-row">
+                        <div>
+                            <button @click="newRequirement()">New</button>
+                            <button @click="removeRequirement()">Remove</button>
+                        </div>
+                        <div>
+                            <button>Copy</button>
+                            <button>Paste</button>
+                        </div>
+                        <div>
+                            <button>Move Up</button>
+                            <button>Move Down</button>
+                        </div>
+                    </div>
+                    <label><input type="checkbox">Show Decimal</label>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>

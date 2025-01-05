@@ -1,0 +1,22 @@
+{
+    "imports": {
+        "#src/": "./src/"
+    },
+    "fmt": {
+      "useTabs": false,
+      "lineWidth": 80,
+      "indentWidth": 4,
+      "semiColons": true,
+      "singleQuote": true,
+      "proseWrap": "preserve"
+    },
+    "lint": {
+        "rules": {
+            "exclude": [
+                "no-explicit-any",
+                "no-extra-boolean-cast"
+            ]
+        }
+    }
+}
+  

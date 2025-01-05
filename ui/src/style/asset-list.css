@@ -1,0 +1,100 @@
+.asset-list .container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.asset-list .top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px;
+    background: #f0f0f0;
+    border-bottom: 1px solid #ccc;
+}
+
+.asset-list .top-bar .left-filters select {
+    margin-right: 8px;
+}
+
+.asset-list .top-bar .right-info > span {
+    margin-right: 16px;
+}
+
+.asset-list .main-content {
+    flex: 1;
+    display: flex;
+    overflow: hidden; /* in case table is large */
+}
+
+.asset-list .table-container {
+    flex: 1;
+    overflow: auto; /* scroll if needed */
+    border-right: 1px solid #ccc;
+    background: #fff;
+}
+
+.asset-list table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.asset-list thead {
+    background: #f7f7f7;
+    border-bottom: 1px solid #ccc;
+}
+
+.asset-list th, td {
+    padding: 8px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
+
+.asset-list th {
+    font-weight: bold;
+}
+
+.asset-list .icon {
+    display: inline-block;
+    width: 20px;
+    text-align: center;
+}
+
+.asset-list .action-panel {
+    width: 200px;
+    display: flex;
+    flex-direction: column;
+    padding: 8px;
+    background: #f8f8f8;
+}
+
+.asset-list .action-panel button {
+    margin-bottom: 8px;
+    padding: 6px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.asset-list .action-panel label {
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+}
+
+.asset-list .action-panel label input {
+    margin-right: 5px;
+}
+
+.asset-list .spacer {
+    flex: 1;
+}
+
+.asset-list .table-container table tbody tr {
+    cursor: pointer;
+}
+
+.asset-list .selected {
+    background-color: blue;
+    color: white;
+}
