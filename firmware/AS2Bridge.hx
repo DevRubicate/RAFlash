@@ -27,6 +27,9 @@ class AS2Bridge {
                 flushQueue = [];
                 ready = true;
             },
+            trace: function(message:String):Void {
+                trace('[AS2Firmware] ' + message);
+            },
             message: function(id:String, message:String):Void {
                 if(messageQueue.exists(id)) {
                     messageQueue.get(id)(haxe.Json.parse(message));
@@ -37,11 +40,11 @@ class AS2Bridge {
         receiver.connect('_AS2ToAS3');
     }
 
-    public static function setupSender(path:String) {
+    public static function setupSender(path:String, data:Any) {
         // Initialize LocalConnection for communication with AS2
         sender = new LocalConnection();
         sender.addEventListener(StatusEvent.STATUS, onStatus);
-        sender.send('_AS3ToAS2', 'setup', path);
+        sender.send('_AS3ToAS2', 'setup', path, data);
     }
 
     private static function getQueueId() {
@@ -52,6 +55,25 @@ class AS2Bridge {
         return id;
     }
 
+    public static function evaluate(formula:Array<String>, callback:(Dynamic)->Void) {
+        final id = getQueueId();
+        messageQueue.set(id, callback);
+        if(ready) {
+            sender.send('_AS3ToAS2', 'evaluate', id, formula);
+        } else {
+            flushQueue.push({command: 'evaluate', id: id, param: formula});
+        }
+    }
+
+    public static function editData(data:Dynamic, callback:(Dynamic)->Void) {
+        final id = getQueueId();
+        messageQueue.set(id, callback);
+        if(ready) {
+            sender.send('_AS3ToAS2', 'editData', id, data);
+        } else {
+            flushQueue.push({command: 'editData', id: id, param: data});
+        }
+    }
 
     public static function read(path:String, callback:(Dynamic)->Void) {
         final id = getQueueId();

@@ -13,14 +13,14 @@ HAXE_OPTS=-debug \
           --resource $(AS2_SWF)@AS2Firmware \
           -swf .build/internals/assets/firmware.swf \
           -swf-version 11 \
-          -D swf-header=1300:800:30:68712 \
+          -D swf-header=1300:800:30:0 \
           -cp firmware \
           -main Main
 
 # Deno variables
 DENO_SOURCE=player/src/Main.ts
 DENO_OUTPUT=.build/RAFlash.exe
-DENO_FLAGS=--allow-read --allow-write --allow-run --allow-net --allow-env --allow-ffi --allow-import
+DENO_FLAGS=--allow-read --allow-write --allow-run --allow-net --allow-env --allow-ffi --allow-import# --no-terminal
 
 # Flash Player binary
 BIN_FLASHPLAYER=bin/fp
@@ -33,15 +33,18 @@ UI_FLAGS=--allow-read --allow-write --allow-run --allow-env --allow-net
 TARGET_ASSET_FOLDER=.build/internals/assets
 
 # Dummy target to force rebuild
-.PHONY: all clean FORCE
+.PHONY: all clean run FORCE
 
 # Default target
 all: .build/internals/firmware $(DENO_OUTPUT) $(BUILD_FLASHPLAYER) assets
 
+run: all
+	@cd .build && ./RAFlash.exe
+
 # Compile AS2
 $(AS2_SWF): FORCE
 	@mkdir -p $(dir $@)
-	$(MTASC) -swf $@ -main $(AS2_MAIN) -header $(AS2_HEADER)
+	$(MTASC) -cp firmware/as2 -swf $@ -main $(AS2_MAIN) -header $(AS2_HEADER)
 
 # Compile Haxe
 .build/internals/firmware: $(AS2_SWF) FORCE

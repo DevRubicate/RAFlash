@@ -1,163 +1,159 @@
-class AppData {
-    static data:any = {
+import { join } from "https://deno.land/std/path/mod.ts";
+import { Formula } from './formula/Formula.ts';
+
+export class AppData {
+    static data: any = {
         assets: [
-            {
-                id: 21368,
-                points: 10,
-                name: 'Ice Rock Island Complete!',
-                description: 'Ice Rock Island is so cool and this achivo is all about clearing it.',
-                state: 'Paused',
-                category: 'Core',
-                changes: false,
-                groups: [
-                    {
-                        id: 1,
-                        type: 'CORE',
-                        requirements: [
-                            {id: 1, flag: '', typeA: 'Mem', addressA: 'root.health', cmp: '=', typeB: 'Value', addressB: 'root.mana', hits: 5, maxHits: 10},
-                            {id: 2, flag: '', typeA: 'Mem', addressA: 'root.arrows', cmp: '=', typeB: 'Value', addressB: 'root.armor', hits: 5, maxHits: 10},
-                            {id: 3, flag: '', typeA: 'Mem', addressA: 'root.enemies', cmp: '=', typeB: 'Value', addressB: 'root.age', hits: 5, maxHits: 10},
-                        ]
-                    },
-                    {
-                        id: 2,
-                        type: 'ALT',
-                        requirements: [
-                            {id: 1, flag: '', typeA: 'Mem', addressA: 'root.stuff', cmp: '=', typeB: 'Value', addressB: 'root.stuff', hits: 5, maxHits: 10},
-                        ]
-                    },
-                    {
-                        id: 3,
-                        type: 'ALT',
-                        requirements: [
-                            {id: 1, flag: '', typeA: 'Mem', addressA: 'root.enemies', cmp: '=', typeB: 'Value', addressB: 'root.boss.life', hits: 5, maxHits: 10},
-                            {id: 2, flag: '', typeA: 'Mem', addressA: 'root.enemies', cmp: '=', typeB: 'Value', addressB: 'root.boss.life', hits: 5, maxHits: 10},
-                            {id: 3, flag: '', typeA: 'Mem', addressA: 'root.enemies', cmp: '=', typeB: 'Value', addressB: 'root.boss.life', hits: 5, maxHits: 10},
-                        ]
-                    },
-                ]
-            },
-            {
-                id: 22369,
-                points: 10,
-                name: 'Cobalt Mine Complete!',
-                description: 'Cobalt Mine is so cool and this achivo is all about clearing it.',
-                state: 'Paused',
-                category: 'Core',
-                changes: false,
-                groups: [
-                    {
-                        id: 1,
-                        type: 'CORE',
-                        requirements: [
-                            {id: 1, flag: '', typeA: 'Mem', addressA: 'root.health', cmp: '=', typeB: 'Value', addressB: 'root.mana', hits: 5, maxHits: 10},
-                            {id: 2, flag: '', typeA: 'Mem', addressA: 'root.arrows', cmp: '=', typeB: 'Value', addressB: 'root.armor', hits: 5, maxHits: 10},
-                            {id: 3, flag: '', typeA: 'Mem', addressA: 'root.enemies', cmp: '=', typeB: 'Value', addressB: 'root.age', hits: 5, maxHits: 10},
-                        ]
-                    },
-                    {
-                        id: 2,
-                        type: 'ALT',
-                        requirements: [
-                            {id: 1, flag: '', typeA: 'Mem', addressA: 'root.stuff', cmp: '=', typeB: 'Value', addressB: 'root.stuff', hits: 5, maxHits: 10},
-                        ]
-                    },
-                    {
-                        id: 3,
-                        type: 'ALT',
-                        requirements: [
-                            {id: 1, flag: '', typeA: 'Mem', addressA: 'root.enemies', cmp: '=', typeB: 'Value', addressB: 'root.boss.life', hits: 5, maxHits: 10},
-                            {id: 2, flag: '', typeA: 'Mem', addressA: 'root.enemies', cmp: '=', typeB: 'Value', addressB: 'root.boss.life', hits: 5, maxHits: 10},
-                            {id: 3, flag: '', typeA: 'Mem', addressA: 'root.enemies', cmp: '=', typeB: 'Value', addressB: 'root.boss.life', hits: 5, maxHits: 10},
-                        ]
-                    },
-                ]
-            },
-            {
-                id: 23370,
-                points: 10,
-                name: 'Golden Castle Complete!',
-                description: 'Golden Castle is so cool and this achivo is all about clearing it.',
-                state: 'Active',
-                category: 'Core',
-                changes: false,
-                groups: [
-                    {
-                        id: 1,
-                        type: 'CORE',
-                        requirements: [
-                            {id: 1, flag: '', typeA: 'Mem', addressA: 'root.health', cmp: '=', typeB: 'Value', addressB: 'root.mana', hits: 5, maxHits: 10},
-                            {id: 2, flag: '', typeA: 'Mem', addressA: 'root.arrows', cmp: '=', typeB: 'Value', addressB: 'root.armor', hits: 5, maxHits: 10},
-                            {id: 3, flag: '', typeA: 'Mem', addressA: 'root.enemies', cmp: '=', typeB: 'Value', addressB: 'root.age', hits: 5, maxHits: 10},
-                        ]
-                    },
-                    {
-                        id: 2,
-                        type: 'ALT',
-                        requirements: [
-                            {id: 1, flag: '', typeA: 'Mem', addressA: 'root.stuff', cmp: '=', typeB: 'Value', addressB: 'root.stuff', hits: 5, maxHits: 10},
-                        ]
-                    },
-                    {
-                        id: 3,
-                        type: 'ALT',
-                        requirements: [
-                            {id: 1, flag: '', typeA: 'Mem', addressA: 'root.enemies', cmp: '=', typeB: 'Value', addressB: 'root.boss.life', hits: 5, maxHits: 10},
-                            {id: 2, flag: '', typeA: 'Mem', addressA: 'root.enemies', cmp: '=', typeB: 'Value', addressB: 'root.boss.life', hits: 5, maxHits: 10},
-                            {id: 3, flag: '', typeA: 'Mem', addressA: 'root.enemies', cmp: '=', typeB: 'Value', addressB: 'root.boss.life', hits: 5, maxHits: 10},
-                        ]
-                    },
-                ]
-            },
+
         ],
     };
-    static applyDataDiff(diff:{added:Array<any>, removed:Array<any>, edited:Array<any>}) {
-        // Helper function to set a value in the object by path
-        function setValue(obj:any, path:string, value:any) {
-            const keys = path.split('/');
-            let current = obj;
-            for (let i = 0; i < keys.length - 1; i++) {
-              const key = keys[i].replace(/\[\]$/, ''); // Remove array brackets if present
-              current = current[key] = current[key] || (keys[i + 1].match(/\[\]$/) ? [] : {});
-            }
-            const finalKey = keys[keys.length - 1].replace(/\[\]$/, '');
-            current[finalKey] = value;
-        }
-  
-        // Helper function to remove a value from the object by path
-        function removeValue(obj:any, path:string) {
-            const keys = path.split('/');
-            let current = obj;
-            for (let i = 0; i < keys.length - 1; i++) {
-              const key = keys[i].replace(/\[\]$/, '');
-              if (!(key in current)) return; // Path does not exist
-              current = current[key];
-            }
-            const finalKey = keys[keys.length - 1].replace(/\[\]$/, '');
-            delete current[finalKey];
-        }
-  
-        // Apply added changes
-        if (diff.added) {
-            for (const [path, value] of diff.added) {
-              setValue(AppData.data, path, value);
+
+    static compileAsset(asset:any) {
+        for(const group of asset.groups) {
+            for(const req of group.requirements) {
+                req.compiledAddressA = Formula.compile(req.addressA);
+                req.compiledAddressB = Formula.compile(req.addressB);
             }
         }
-  
-        // Apply removed changes
-        if (diff.removed) {
-            for (const [path] of diff.removed) {
-              removeValue(AppData.data, path);
+        return asset;
+    }
+
+    /**
+     * Loads all asset data from .json files in the 'assets' directory.
+     * It replaces the existing AppData.data.assets array with the loaded data.
+     */
+    static async loadData() {
+        const assetsDir = './assets';
+        const loadedAssets: any[] = [];
+
+        try {
+            // Asynchronously read all entries in the directory
+            for await (const file of Deno.readDir(assetsDir)) {
+                if (file.isFile && file.name.endsWith('.json')) {
+                    const filePath = join(assetsDir, file.name);
+                    const fileContent = await Deno.readTextFile(filePath);
+                    const asset = JSON.parse(fileContent);
+                    const compiledAsset = AppData.compileAsset(asset);
+                    loadedAssets.push(compiledAsset);
+                }
             }
-        }
-  
-        // Apply edited changes
-        if (diff.edited) {
-            for (const [path, , newValue] of diff.edited) {
-              setValue(AppData.data, path, newValue);
+            this.data.assets = loadedAssets;
+        } catch (error) {
+            if (error instanceof Deno.errors.NotFound) {
+                // If the directory doesn't exist, we assume no data has been saved yet.
+                this.data.assets = [];
+            } else {
+                throw error; // Re-throw other errors
             }
         }
     }
-}
 
-export {AppData}
+    /**
+     * Saves all assets from AppData.data.assets to individual .json files.
+     * Each file is named after the asset's id and placed in the 'assets' directory.
+     * It will create the directory if it does not exist and overwrite existing files.
+     */
+    static async saveData() {
+        const assetsDir = "./assets";
+
+        try {
+            // Ensure the 'assets' directory exists, creating it if necessary.
+            await Deno.mkdir(assetsDir, { recursive: true });
+
+            const savePromises = this.data.assets.map((asset: any) => {
+                const strippedAsset = AppData.stripAssetData(asset, AppData.assetSchema);
+                const filePath = join(assetsDir, `${strippedAsset.id}.json`);
+                // Use JSON.stringify with formatting for human-readable files
+                const jsonString = JSON.stringify(strippedAsset, null, 2);
+                return Deno.writeTextFile(filePath, jsonString);
+            });
+
+            await Promise.all(savePromises);
+        } catch (error) {
+            throw error; // Re-throw other errors
+        }
+    }
+
+    static assetSchema: any = {
+        type: 'object',
+        properties: {
+            id: { type: 'number' },
+            points: { type: 'number' },
+            name: { type: 'string' },
+            description: { type: 'string' },
+            state: { type: 'string' },
+            category: { type: 'string' },
+            groups: {
+                type: 'array',
+                items: {
+                    type: 'object',
+                    properties: {
+                        id: { type: 'number' },
+                        type: { type: 'string' },
+                        requirements: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    id: { type: 'number' },
+                                    flag: { type: 'string' },
+                                    typeA: { type: 'string' },
+                                    addressA: { type: 'string' },
+                                    cmp: { type: 'string' },
+                                    typeB: { type: 'string' },
+                                    addressB: { type: 'string' },
+                                    hits: { type: 'number' },
+                                    maxHits: { type: 'number' },
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    /**
+     * Recursively strips an object of any properties not defined in the schema.
+     * @param data The data object or array to strip.
+     * @param schema The schema to validate against.
+     * @returns A new, cleaned object or array.
+     */
+    static stripAssetData(data: any, schema: any): any {
+        // If the data isn't an object, we can't strip it, so return it as is.
+        if (typeof data !== 'object' || data === null) {
+            return data;
+        }
+
+        // Handle arrays: strip each item in the array according to the schema.
+        if (Array.isArray(data)) {
+            // If the schema doesn't define array items, return an empty array.
+            if (!schema.items) return []; 
+            return data.map(item => AppData.stripAssetData(item, schema.items));
+        }
+
+        // Handle objects: build a new object with only the allowed properties.
+        const strippedAsset: any = {};
+        const schemaProperties = schema.properties;
+
+        if (!schemaProperties) return {}; // Return empty if no properties defined in schema.
+
+        // Iterate over the keys DEFINED IN THE SCHEMA, not the data.
+        for (const key in schemaProperties) {
+            // Check if the data object actually has this key.
+            if (Object.prototype.hasOwnProperty.call(data, key)) {
+                const propSchema = schemaProperties[key];
+                const propValue = data[key];
+                
+                // Recursively call this function for nested objects or arrays.
+                if ((propSchema.type === 'object' || propSchema.type === 'array') && propValue) {
+                    strippedAsset[key] = AppData.stripAssetData(propValue, propSchema);
+                } else {
+                    // Otherwise, just copy the primitive value.
+                    strippedAsset[key] = propValue;
+                }
+            }
+        }
+
+        return strippedAsset;
+    }
+}

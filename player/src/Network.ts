@@ -1,9 +1,9 @@
-import API                              from '#src/API.ts';
+import { API }                          from '#src/API.ts';
 import { createServer, Socket, Server } from 'node:net';
 import { Buffer }                       from 'node:buffer';
 import { join }                         from 'https://deno.land/std@0.224.0/path/mod.ts';
 
-class Network {
+export class Network {
     static http:Deno.HttpServer;
     static socket:Server;
     static clients:Map<number, {type: 'BROWSER' | 'FLASH', name:string | null, ws: WebSocket | Socket, currentMessageId:number, pending: Array<[number, any]>}> = new Map();
@@ -11,7 +11,10 @@ class Network {
     static initialize() {
         // The HTTP server has a dual purpose, it's used to serve static files, but also to handle websockets from browser windows.
         Network.http = Deno.serve(
-            {port: 8080,},
+            {
+                port: 8080,
+                onListen() {},
+            },
             async (req: Request): Promise<Response> => {
                 const url = new URL(req.url);
                 if(url.pathname === '/ws') {
@@ -71,7 +74,15 @@ class Network {
                     return response;
                 } else {
                     try {
-                        const file = await Deno.readFile(join(Deno.cwd(), url.pathname));
+                        let path = '';
+                        if(req.url.startsWith('http://localhost:8080/./')) {
+                            // The path was relative
+                            path = join(Deno.cwd(), url.pathname);
+                        } else {
+                            // The path was absolute
+                            path = url.pathname.substring(1);
+                        }
+                        const file = await Deno.readFile(path);
                         const extension = url.pathname.split('.').pop();
                         const mimeTypes: Record<string, string> = {
                             html: 'text/html',
@@ -141,12 +152,36 @@ class Network {
                     } catch {
                         throw new Error(`Network.onmessage: Invalid message.\n${received}`);
                     }
-                    try {
-                        const response = await API.handle('flash', data[2]);
-                        socket.write(encoder.encode(JSON.stringify(['RESPONSE', data[1], response])));
-                    } catch (error) {
-                        console.error(error);
-                        socket.write(encoder.encode(JSON.stringify(['RESPONSE', data[1], { success: false, error: 'Internal server error' }])));
+
+                    if(data[0] === 'REQUEST') {
+                        try {
+                            const response = await API.handle('flash', data[2]);
+                            socket.write(encoder.encode(JSON.stringify(['RESPONSE', data[1], response])));
+                        } catch (error) {
+                            console.error(error);
+                            socket.write(encoder.encode(JSON.stringify(['RESPONSE', data[1], { success: false, error: 'Internal server error' }])));
+                        }
+                    } else if(data[0] === 'RESPONSE') {
+                        try {
+                            if(!Network.clients.has(clientId)) {
+                                throw new Error('Network.onmessage: Missing socket client');
+                            }
+                            if(typeof data[1] !== 'number') {
+                                throw new Error('Network.onmessage: Invalid message Id');
+                            }
+                            const pending = Network.clients.get(clientId)!.pending.find(entry => entry[0] === data[1]);
+                            if(!pending) {
+                                throw new Error('Network.onmessage: Could not find pending message');
+                            }
+
+                            // Call the pending callback with the response
+                            pending[1](data[2]);
+
+                            // Remove the pending callback
+                            Network.clients.get(clientId)!.pending.splice(Network.clients.get(clientId)!.pending.indexOf(pending), 1);
+                        } catch (error) {
+                            console.error('Error while handling response', data, error);
+                        }
                     }
                 }
             });
@@ -169,7 +204,7 @@ class Network {
         });
     }
 
-    static send(target: 'BROWSER' | 'FLASH' | 'ALL' | string, message:any) {
+    static send(target: 'BROWSER' | 'FLASH' | 'ALL' | string, message:any):Promise<Array<any>> {
         const clients = Array.from(Network.clients);
         const jobs = [];
         for(let i=0; i<clients.length; ++i) {
@@ -197,4 +232,3 @@ class Network {
         Network.socket.close();
     }
 }
-export default Network;

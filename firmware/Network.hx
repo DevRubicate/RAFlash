@@ -2,8 +2,10 @@ package;
 
 import flash.events.*;
 import flash.net.Socket;
-import haxe.Timer; // Import Haxe Timer
+import haxe.Timer;
 using Lambda;
+
+import AS2Bridge;
 
 class Network {
     private static var instance:Network; // Singleton instance
@@ -33,6 +35,15 @@ class Network {
             instance.pending.push({command: command, params: params, callback: callback});
         }
     }
+    public static function reply(messageId:Int, params:Dynamic):Void {
+        if (instance.socket != null && instance.socket.connected) {
+            instance.socket.writeUTFBytes(haxe.Json.stringify(['RESPONSE', messageId, params]));
+            instance.socket.flush();
+        } else {
+            trace('Cannoy reply, connection is dead');
+        }
+    }
+
 
     private function connectToServer():Void {
         socket = new Socket();
@@ -80,9 +91,12 @@ class Network {
             }
             case 'REQUEST': {
                 final id = data[1];
-                final message = data[2];
-                trace('Received REQUEST server: ' + data);
-                trace('REQUEST NOT IMPLEMENTED YET');
+                final params:{command:String, params:Any} = data[2];
+                if(params.command != null) {
+                    this.onRequest(params.command, id, params.params);
+                } else {
+                    this.onRequest('', id, null);
+                }
             }
             default: {
                 trace('Invalid message type');
@@ -90,6 +104,28 @@ class Network {
         }
 
 
+    }
+
+    public function onRequest(command:String, messageId:Int, params:Dynamic):Void {
+        switch(command) {
+            case 'ping': {
+                Network.reply(messageId, {success: true});
+            }
+            case 'evaluate': {
+                AS2Bridge.evaluate(params, (params:Dynamic) -> {
+                    Network.reply(messageId, {success: true, result: params});
+                });
+            }
+            case 'editData': {
+                AS2Bridge.editData(params, (params:Dynamic) -> {
+                    Network.reply(messageId, {success: true});
+                });
+            }
+            default: {
+                trace('Invalid command type "'+command+'"');
+                Network.reply(messageId, {success: false});
+            }
+        }
     }
 
     private function onError(e:Event):Void {

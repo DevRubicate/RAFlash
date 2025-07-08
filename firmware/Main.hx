@@ -43,6 +43,7 @@ import flash.events.ContextMenuEvent;
 import AS2Bridge;
 import Network;
 import FilePicker;
+import AppData;
 
 class Main extends MovieClip {
     private static var instance:Main;
@@ -64,6 +65,16 @@ class Main extends MovieClip {
         if(ready) {
 
         }
+    }
+    static public function loadFile(path:String):Void {
+        Network.command('loadFile', {path: path}, (message:Dynamic) -> {
+            if(message.success) {
+                AppData.data = message.params.data;
+                Main.loadEmbeddedSWF(path);
+            } else {
+                trace('Unable to load file');
+            }
+        });
     }
     static public function loadEmbeddedSWF(path:String):Void {
         var resourceBytes = haxe.Resource.getBytes('AS2Firmware');
@@ -95,7 +106,7 @@ class Main extends MovieClip {
     
             // Delay the send operation by 1 second (1000 ms)
             Timer.delay(() -> {
-                AS2Bridge.setupSender(path);
+                AS2Bridge.setupSender(path, {appData: AppData.data});
                 instance.ready = true;
             }, 1000);
         });
@@ -115,11 +126,13 @@ class Main extends MovieClip {
         flash.Lib.current.addChild(main);
         main.setup();
     }
-    static private function onKeyDown(event:Event) {
-        Network.command('showPopup', {url: 'internals/assets/asset-list.html', width: 800, height: 600, params: {}}, (message:Dynamic) -> {
-            if(!message.success) {
-                trace('Unable to open asset list');
-            }
-        });
+    static private function onKeyDown(event:KeyboardEvent) {
+        if(event.keyCode == 123) {
+            Network.command('showPopup', {url: 'internals/assets/menu.html', width: 300, height: 600, params: {}}, (message:Dynamic) -> {
+                if(!message.success) {
+                    trace('Unable to open asset list');
+                }
+            });
+        }
     }
 }
