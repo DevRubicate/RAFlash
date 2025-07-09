@@ -1,5 +1,6 @@
 import { join } from "https://deno.land/std/path/mod.ts";
 import { Formula } from './formula/Formula.ts';
+import { JSONDiff } from './JSONDiff.ts';
 
 export class AppData {
     static data: any = {
@@ -24,7 +25,9 @@ export class AppData {
      */
     static async loadData() {
         const assetsDir = './assets';
-        const loadedAssets: any[] = [];
+        const loadedData:{assets:Array<any>} = {
+            assets: [],
+        }
 
         try {
             // Asynchronously read all entries in the directory
@@ -34,10 +37,11 @@ export class AppData {
                     const fileContent = await Deno.readTextFile(filePath);
                     const asset = JSON.parse(fileContent);
                     const compiledAsset = AppData.compileAsset(asset);
-                    loadedAssets.push(compiledAsset);
+                    loadedData.assets.push(compiledAsset);
                 }
             }
-            this.data.assets = loadedAssets;
+            const diff = JSONDiff.getDataDiff(this.data, loadedData);
+            JSONDiff.processIncomingDiff(diff);
         } catch (error) {
             if (error instanceof Deno.errors.NotFound) {
                 // If the directory doesn't exist, we assume no data has been saved yet.

@@ -3,12 +3,35 @@ import { ErrorLogger }                  from '#src/ErrorLogger.ts';
 import { HTMLWindow }                   from '#src/HTMLWindow.ts';
 import { Network }                      from '#src/Network.ts';
 import { AppData }                      from './AppData.ts';
+import { JSONDiff }                     from './JSONDiff.ts';
+import { Formula }                      from './formula/Formula.ts';
 
 // Initialize the error logger
 ErrorLogger.initialize();
 
 // Initialize the network
 Network.initialize();
+
+// Watch for changes to the data that requires compilation
+//JSONDiff.watch(
+//    'assets/*/groups/*/requirements/*/addressA',
+//    (refPath: any[]) => {
+//        const obj = refPath[refPath.length - 2];
+//        const value = refPath[refPath.length - 1];
+//        obj.compiledA = Formula.compile(value);
+//    }
+//);
+//
+//// Watch for changes to the data that requires compilation
+//JSONDiff.watch(
+//    'assets/*/groups/*/requirements/*/addressB',
+//    (refPath: any[]) => {
+//        const obj = refPath[refPath.length - 2];
+//        const value = refPath[refPath.length - 1];
+//        obj.compiledB = Formula.compile(value);
+//    }
+//);
+
 
 AppData.loadData();
 

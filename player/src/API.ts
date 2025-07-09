@@ -47,8 +47,8 @@ export class API {
                 return {success: true, params: {hash: 'abc123', data: AppData.data}};
             }
             case 'editData': {
-                JSONDiff.applyDataDiff(input.params);
-                Network.send('ALL', {command: 'editData', params: input.params});
+                const finalDiff = JSONDiff.processIncomingDiff(input.params);
+                Network.send('ALL', {command: 'editData', params: finalDiff});
                 AppData.saveData();
                 return {success: true};
             }

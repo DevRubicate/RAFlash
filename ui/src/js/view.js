@@ -5,7 +5,6 @@ import { Network }                      from './network.js';
 
 export function view(config) {
     const appData = {
-        ...config,
         ready: false,
         gameId: 1686,
     
@@ -85,6 +84,8 @@ export function view(config) {
             appData.originalData = JSON.parse(JSON.stringify(appData.data));
         },
     };
+    const descriptors = Object.getOwnPropertyDescriptors(config);
+    Object.defineProperties(appData, descriptors);
 
     const app = createApp(appData);
     app.mount();
