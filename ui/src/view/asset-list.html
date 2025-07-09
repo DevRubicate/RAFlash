@@ -5,6 +5,28 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
         <title>RAFlash Assets List</title>
         <link rel="stylesheet" href="styles.css">
+        <style>
+            body {
+                -webkit-user-select: none; /* Safari */
+                -ms-user-select: none; /* IE 10 and IE 11 */
+                user-select: none; /* Standard syntax */
+            }
+
+            input, textarea, select {
+                -webkit-user-select: auto;
+                -ms-user-select: auto;
+                user-select: auto;
+            }
+
+            tr.selected {
+                background-color: #D6EAF8 !important;
+            }
+
+            .btn-new {
+                background-color: #28a745;
+                color: white;
+            }
+        </style>
     </head>
     <body>
         <div class="container" v-scope v-if="ready">
@@ -85,7 +107,7 @@
                 <button class="btn btn-secondary">Reset</button>
                 <button class="btn btn-secondary">Revert</button>
                 <div class="spacer"></div>
-                <button class="btn btn-primary" @click="newAsset()">New</button>
+                <button class="btn btn-new" @click="newAsset()">New</button>
                 <button class="btn btn-secondary" @click="cloneAsset()">Clone</button>
             </aside>
         </div>

@@ -5,6 +5,29 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
         <title>RAFlash Assets Editor</title>
         <link rel="stylesheet" href="styles.css">
+        <style>
+            body {
+                -webkit-user-select: none; /* Safari */
+                -ms-user-select: none; /* IE 10 and IE 11 */
+                user-select: none; /* Standard syntax */
+            }
+
+            input, textarea, select {
+                -webkit-user-select: auto;
+                -ms-user-select: auto;
+                user-select: auto;
+            }
+
+            .btn-new {
+                background-color: #28a745;
+                color: white;
+            }
+
+            .btn-remove {
+                background-color: #dc3545;
+                color: white;
+            }
+        </style>
     </head>
     <body>
         <div class="container" v-scope v-if="ready">
@@ -112,8 +135,8 @@
                 <button class="btn btn-secondary">Copy Definition</button>
                 <div class="spacer"></div>
                  <div class="button-group">
-                    <button class="btn btn-primary" @click="newRequirement()">New</button>
-                    <button class="btn btn-secondary" @click="removeRequirement()">Remove</button>
+                    <button class="btn btn-new" @click="newRequirement()">New</button>
+                    <button class="btn btn-remove" @click="removeRequirement()">Remove</button>
                  </div>
                  <div class="button-group">
                     <button class="btn btn-secondary">Copy</button>
