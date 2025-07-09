@@ -57,7 +57,7 @@
             <div class="right-info">
                 <span id="game-id">Game ID: {{gameId}}</span>
                 <span>Achievements: {{data.assets.length}}</span>
-                <span>Points: {{ data.assets.reduce((c, v) => c + Number(v.points || 0), 0) }}</span>
+                <span>Points: {{ data.assets.reduce((c, v) => c + (Number(v.points) || 0), 0) }}</span>
                 <div class="form-group-checkbox">
                     <input type="checkbox" id="proc-active" checked />
                     <label for="proc-active">Processing Active</label>
