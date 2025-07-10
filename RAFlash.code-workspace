@@ -1,0 +1,23 @@
+{
+  "folders": [
+    {
+      "name": "UI",
+      "path": "ui"
+    },
+    {
+      "name": "Player",
+      "path": "player"
+    },
+    {
+      "name": "Firmware",
+      "path": "firmware"
+    }
+  ],
+  "settings": {
+    // You can add any global workspace settings here
+  },
+  "extensions": {
+    // This will hide folder-specific recommendations from the other folders
+    "ignoreRecommendations": true
+  }
+}

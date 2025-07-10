@@ -1,3 +1,5 @@
+import { App } from './app.js';
+
 export class Network {
     static ready = false;
     static socket = null;
@@ -6,50 +8,51 @@ export class Network {
     static messageQueue = [];
     static onMessageCallback = null;
 
-    static initialize(appData) {
-        function handleMessage(data) {
-            try {
-                switch(data.command) {
-                    case 'setup': {
-                        appData.setData('data', data.params.data);
-                        appData.originalData = JSON.parse(JSON.stringify(data.params.data));
+    static initialize() {
+        return new Promise((resolve) => {
+            function handleMessage(data) {
+                try {
+                    switch(data.command) {
+                        case 'setup': {
+                            App.data = data.params.data;
+                            App.originalData = JSON.parse(JSON.stringify(data.params.data));
 
-                        const keys = Object.keys(data.params.params);
-                        for(let i=0; i<keys.length; ++i) {
-                            const key = keys[i];
-                            console.log(key, data.params.params[key]);
-                            appData.setData(key, data.params.params[key]);
+                            const keys = Object.keys(data.params.params);
+                            for(let i=0; i<keys.length; ++i) {
+                                const key = keys[i];
+                                App[key] = data.params.params[key];
+                            }
+
+                            resolve();
+                            break;
                         }
-
-                        appData.setData('ready', true);
-                        break;
+                        case 'editData':
+                            App.applyDataDiff(data.params);
+                            break;
+                        default:
+                            console.error(`Unrecognized command ${data.command}`);
+                            break;
                     }
-                    case 'editData':
-                        appData.applyDataDiff(data.params);
-                        break;
-                    default:
-                        console.error(`Unrecognized command ${data.command}`);
-                        break;
+                    return {success: true};
+                } catch(err) {
+                    console.error(err);
+                    return {success: false}
                 }
-                return {success: true};
-            } catch(err) {
-                console.error(err);
-                return {success: false}
             }
-        }
-        Network.onMessage(handleMessage);
+            Network.onMessage(handleMessage);
 
-        // Get the windowId from the URL
-        const url = new URL(window.location.href);
-        const windowId = Number(url.searchParams.get('windowId'));
-        Network.sendMessage({command: 'setup', params: {windowId}})
-        .then((response) => {
-            if(!response.success) {
-                throw new Error('Unable to get data');
-            }
-            handleMessage({command: 'setup', params: response.params});
+            // Get the windowId from the URL
+            const url = new URL(window.location.href);
+            const windowId = Number(url.searchParams.get('windowId'));
+            Network.sendMessage({command: 'setup', params: {windowId}})
+            .then((response) => {
+                if(!response.success) {
+                    throw new Error('Unable to get data');
+                }
+                handleMessage({command: 'setup', params: response.params});
+            });
+            Network.connect();
         });
-        Network.connect();
     }
 
     static connect() {

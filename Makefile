@@ -26,17 +26,11 @@ DENO_FLAGS=--allow-read --allow-write --allow-run --allow-net --allow-env --allo
 BIN_FLASHPLAYER=bin/fp
 BUILD_FLASHPLAYER=.build/internals/fp.exe
 
-# UI variables
-UI_SCRIPT=ui/vite.build.ts
-UI_OUTPUT=ui/.build
-UI_FLAGS=--allow-read --allow-write --allow-run --allow-env --allow-net
-TARGET_ASSET_FOLDER=.build/internals/assets
-
 # Dummy target to force rebuild
-.PHONY: all clean run FORCE
+.PHONY: all clean run assets FORCE
 
 # Default target
-all: .build/internals/firmware $(DENO_OUTPUT) $(BUILD_FLASHPLAYER) assets
+all: assets .build/internals/firmware $(DENO_OUTPUT) $(BUILD_FLASHPLAYER)
 
 run: all
 	@if [ -d .run ]; then cp -r .run/* .build/; fi
@@ -62,14 +56,10 @@ $(BUILD_FLASHPLAYER): $(BIN_FLASHPLAYER) FORCE
 	@mkdir -p $(dir $@)
 	cp $< $@
 
-# Build and copy HTML assets
-assets: $(UI_OUTPUT)
-	@mkdir -p $(TARGET_ASSET_FOLDER)
-	find $(UI_OUTPUT) -name '*.html' -exec cp {} $(TARGET_ASSET_FOLDER) \;
-
-# Run the ui script
-$(UI_OUTPUT):
-	$(DENO) run $(UI_FLAGS) $(UI_SCRIPT)
+# Build UI assets using npm
+assets:
+	@echo "Building UI assets..."
+	@cd ui && npm run build
 
 # Clean up generated files
 clean:

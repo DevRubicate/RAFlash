@@ -1,5 +1,5 @@
 <template>
-    <div class="container" v-if="ready">
+    <div class="container" v-if="App.ready">
     <header class="top-bar">
         <div class="left-filters">
             <select class="form-control" v-model="filterState">
@@ -23,7 +23,7 @@
             </select>
         </div>
         <div class="right-info">
-            <span id="game-id">Game Id: {{gameId}}</span>
+            <span id="game-id">Game Id: {{App.gameId}}</span>
             <span>Achievements: {{ filteredAssets.length }}</span>
             <span>Points: {{ filteredAssets.reduce((c, v) => c + (Number(v.points) || 0), 0) }}</span>
             <div class="form-group-checkbox">
@@ -51,9 +51,9 @@
                     <tr
                         v-for="asset in filteredAssets"
                         :key="asset.id"
-                        @click="selectedAssetId = asset.id"
+                        @click="App.selectedAssetId = asset.id"
                         @dblclick="openAsset(asset.id)"
-                        :class="selectedAssetId == asset.id ? 'selected' : ''"
+                        :class="App.selectedAssetId == asset.id ? 'selected' : ''"
                     >
                         <td><span class="icon">♔</span></td>
                         <td>{{asset.id}}</td>
@@ -128,105 +128,64 @@
     .action-panel { flex: 0 0 220px; display: flex; flex-direction: column; gap: 0.75rem; padding: 1rem; background: var(--bg-white); border-left: 1px solid var(--border-color-light); }
 </style>
 
-<script>
+<script setup>
+    import { ref, reactive, computed } from 'vue';
     import { Network } from '../js/network.js';
+    import { App }          from '../js/app.js';
 
-    export default {
-        // FIX: All component data, including filters and the asset list,
-        // must be defined here to be reactive.
-        data() {
-            return {
-                // Filter state
-                filterState: 'All',
-                filterCategory: 'All',
-                filterType: 'All',
-                
-                // Existing state from your app
-                ready: false,
-                gameId: null,
-                selectedAssetId: null,
-                data: {
-                    assets: [] // The master list of assets, initially empty
-                },
-            };
-        },
-        
-        // NEW: The mounted() hook is the ideal place to load initial data.
-        mounted() {
-            // In a real app, you would make your Network call here to get the asset list.
-            // For this example, I'll populate with sample data.
-            this.loadInitialData(); 
-        },
+    const filterState = ref('All');
+    const filterCategory = ref('All');
+    const filterType = ref('All');
 
-        computed: {
-            filteredAssets() {
-                console.log('filteredAssets');
+    const filteredAssets = computed(() => {
+        if (!App.data.assets) return [];
 
-                // This computed property will now correctly re-evaluate
-                // when any of the filters in `data()` change.
-                if (!this.data || !this.data.assets) return [];
+        let filtered = App.data.assets;
 
-                let filtered = this.data.assets;
-
-                switch (this.filterState) {
-                    case 'Active':
-                        filtered = filtered.filter(asset => asset.state === 'ACTIVE');
-                        break;
-                    case 'Inactive':
-                        filtered = filtered.filter(asset => asset.state !== 'ACTIVE');
-                        break;
-                    case 'Modified':
-                        filtered = filtered.filter(asset => asset.changes === true);
-                        break;
-                    case 'Unpublished':
-                        filtered = filtered.filter(asset => asset.published === false);
-                        break;
-                }
-
-                if (this.filterCategory !== 'All') {
-                    filtered = filtered.filter(asset => asset.category === this.filterCategory);
-                }
-
-                if (this.filterType !== 'All') {
-                    filtered = filtered.filter(asset => asset.type === this.filterType);
-                }
-                
-                console.log('filtered', filtered);
-                return filtered;
-            }
-        },
-
-        methods: {
-            // Example method to load data
-            loadInitialData() {
-                // Replace this with your actual data fetching logic
-                this.gameId = 12345;
-                this.data.assets = [
-                    { id: 1, name: 'Master Swordsman', points: 50, state: 'ACTIVE', category: 'CORE', type: 'ACHIEVEMENT', changes: false, published: true },
-                    { id: 2, name: 'High Score', points: 0, state: 'ACTIVE', category: 'CORE', type: 'LEADERBOARD', changes: false, published: true },
-                    { id: 3, name: 'Treasure Hunter', points: 10, state: 'INACTIVE', category: 'CORE', type: 'ACHIEVEMENT', changes: true, published: false },
-                    { id: 4, name: 'Now Playing', points: 0, state: 'ACTIVE', category: 'CORE', type: 'RICH_PRESENCE', changes: false, published: true },
-                    { id: 5, name: 'Speed Runner', points: 25, state: 'ACTIVE', category: 'UNOFFICIAL', type: 'ACHIEVEMENT', changes: false, published: true }
-                ];
-                // Once data is loaded, set ready to true to show the component
-                this.ready = true;
-            },
-            async newAsset() {
-                const id = this.getFakeId();
-                this.data.assets.push({
-                    id, type: 'ACHIEVEMENT', points: 0, name: 'New Achievement', description: '', state: 'Paused', category: 'LOCAL', changes: true, published: false, groups: [ { id: this.getFakeId(), type: 'CORE', requirements: [] } ],
-                });
-                await this.save();
-                await this.openAsset(id);
-            },
-            async cloneAsset() {
-                await Network.sendMessage({ command: 'showPopup', params: { url: 'internals/assets/asset-editor.html', width: 800, height: 700, params: {} } });
-            },
-            async openAsset(id) {
-                await Network.sendMessage({ command: 'showPopup', params: { url: 'internals/assets/asset-editor.html', width: 800, height: 700, params: { selectedAssetId: id } } });
-            },
-            getFakeId() { return Date.now(); },
-            async save() { /* Your save logic */ }
+        switch (filterState.value) {
+            case 'Active':
+                filtered = filtered.filter(asset => asset.state === 'ACTIVE');
+                break;
+            case 'Inactive':
+                filtered = filtered.filter(asset => asset.state !== 'ACTIVE');
+                break;
+            case 'Modified':
+                filtered = filtered.filter(asset => asset.changes === true);
+                break;
+            case 'Unpublished':
+                filtered = filtered.filter(asset => asset.published === false);
+                break;
         }
-    }
+
+        if (filterCategory.value !== 'All') {
+            filtered = filtered.filter(asset => asset.category === filterCategory.value);
+        }
+
+        if (filterType.value !== 'All') {
+            filtered = filtered.filter(asset => asset.type === filterType.value);
+        }
+        
+        return filtered;
+    });
+
+    const getFakeId = () => Date.now();
+
+
+    const newAsset = async () => {
+        const id = getFakeId();
+        App.data.assets.push({
+            id, type: 'ACHIEVEMENT', points: 0, name: 'New Achievement', description: '', state: 'Paused', category: 'LOCAL', changes: true, published: false, groups: [ { id: getFakeId(), type: 'CORE', requirements: [] } ],
+        });
+        await openAsset(id);
+    };
+
+    const cloneAsset = async () => {
+        await Network.sendMessage({ command: 'showPopup', params: { url: 'internals/assets/asset-editor.html', width: 800, height: 700, params: {} } });
+    };
+
+    const openAsset = async (id) => {
+        await Network.sendMessage({ command: 'showPopup', params: { url: 'internals/assets/asset-editor.html', width: 800, height: 700, params: { selectedAssetId: id } } });
+    };
+
+    App.initialize().then(() => App.ready = true);
 </script>

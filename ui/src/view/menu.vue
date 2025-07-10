@@ -1,5 +1,5 @@
 <template>
-    <nav class="sidebar" v-if="ready">
+    <nav class="sidebar" v-if="App.ready">
         <div class="sidebar-header">
             RAFlash Devtools
         </div>
@@ -30,94 +30,96 @@
     </nav>
 </template>
 
-<script>
-import { Network } from '../js/network.js';
-
-export default {
-    methods: {
-        async openAssetList() {
-            await Network.sendMessage({ command: 'showPopup', params: { url: 'internals/assets/asset-list.html', width: 800, height: 700, params: {} } });
-        },
-        async openMemoryInspector() {
-            await Network.sendMessage({ command: 'showPopup', params: { url: 'internals/assets/memory-inspector.html', width: 800, height: 700, params: {} } });
-        },
+<style>
+    /* === Sidebar Layout === */
+    .sidebar {
+        width: 280px; /* A fixed width often works well for sidebars */
+        height: 100%;
+        background-color: #ffffff; /* A clean white for the menu itself */
+        border-right: 1px solid #e5e7eb; /* A subtle border to separate it from content */
+        display: flex;
+        flex-direction: column;
     }
-}
+
+    .sidebar-header {
+        padding: 1.5rem;
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #111827; /* Dark text for the header */
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    /* === Menu Buttons === */
+    .menu-buttons {
+        padding: 1rem;
+    }
+
+    .menu-button {
+        /* Reset button defaults */
+        background: none;
+        border: none;
+        font-family: inherit;
+        font-size: 1rem;
+        text-align: left;
+        cursor: pointer;
+        width: 100%;
+        
+        /* Custom styles */
+        display: flex;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        margin-bottom: 0.5rem;
+        border-radius: 0.5rem;
+        color: #374151; /* Standard dark gray for text */
+        font-weight: 500;
+        transition: background-color 200ms, color 200ms;
+    }
+
+    .menu-button svg {
+        width: 1.5rem;
+        height: 1.5rem;
+        margin-right: 0.75rem;
+        stroke: currentColor; /* Icon color inherits from text color */
+    }
+
+    /* --- Button States --- */
+
+    .menu-button:hover {
+        background-color: #f3f4f6; /* Subtle gray on hover */
+        color: #111827; /* Darken text slightly on hover */
+    }
+
+    /* ✨ New 'active' state for the currently selected button */
+    .menu-button.active {
+        background-color: #eef2ff; /* Light indigo background */
+        color: #4f46e5; /* Primary blue text and icon */
+        font-weight: 600; /* Make it bolder */
+    }
+
+    /* === Footer === */
+    .spacer {
+        flex-grow: 1; /* Pushes the footer to the bottom */
+    }
+
+    .sidebar-footer {
+        padding: 1rem;
+        border-top: 1px solid #e5e7eb;
+    }
+</style>
+
+<script setup>
+    import { Network }      from '../js/network.js';
+    import { App }          from '../js/app.js';
+
+    const openAssetList = async () => {
+        await Network.sendMessage({ command: 'showPopup', params: { url: 'internals/assets/asset-list.html', width: 800, height: 700, params: {} } });
+    };
+
+    const openMemoryInspector = async () => {
+        await Network.sendMessage({ command: 'showPopup', params: { url: 'internals/assets/memory-inspector.html', width: 800, height: 700, params: {} } });
+    };
+
+    App.initialize().then(() => App.ready = true);
 </script>
 
-<style>
-/* === Sidebar Layout === */
-.sidebar {
-    width: 280px; /* A fixed width often works well for sidebars */
-    height: 100%;
-    background-color: #ffffff; /* A clean white for the menu itself */
-    border-right: 1px solid #e5e7eb; /* A subtle border to separate it from content */
-    display: flex;
-    flex-direction: column;
-}
 
-.sidebar-header {
-    padding: 1.5rem;
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: #111827; /* Dark text for the header */
-    border-bottom: 1px solid #e5e7eb;
-}
-
-/* === Menu Buttons === */
-.menu-buttons {
-    padding: 1rem;
-}
-
-.menu-button {
-    /* Reset button defaults */
-    background: none;
-    border: none;
-    font-family: inherit;
-    font-size: 1rem;
-    text-align: left;
-    cursor: pointer;
-    width: 100%;
-    
-    /* Custom styles */
-    display: flex;
-    align-items: center;
-    padding: 0.75rem 1rem;
-    margin-bottom: 0.5rem;
-    border-radius: 0.5rem;
-    color: #374151; /* Standard dark gray for text */
-    font-weight: 500;
-    transition: background-color 200ms, color 200ms;
-}
-
-.menu-button svg {
-    width: 1.5rem;
-    height: 1.5rem;
-    margin-right: 0.75rem;
-    stroke: currentColor; /* Icon color inherits from text color */
-}
-
-/* --- Button States --- */
-
-.menu-button:hover {
-    background-color: #f3f4f6; /* Subtle gray on hover */
-    color: #111827; /* Darken text slightly on hover */
-}
-
-/* ✨ New 'active' state for the currently selected button */
-.menu-button.active {
-    background-color: #eef2ff; /* Light indigo background */
-    color: #4f46e5; /* Primary blue text and icon */
-    font-weight: 600; /* Make it bolder */
-}
-
-/* === Footer === */
-.spacer {
-    flex-grow: 1; /* Pushes the footer to the bottom */
-}
-
-.sidebar-footer {
-    padding: 1rem;
-    border-top: 1px solid #e5e7eb;
-}
-</style>
