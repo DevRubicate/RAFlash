@@ -48,6 +48,7 @@ export class API {
             }
             case 'editData': {
                 const finalDiff = JSONDiff.processIncomingDiff(input.params);
+                JSONDiff.applyDataDiff(finalDiff);
                 Network.send('ALL', {command: 'editData', params: finalDiff});
                 AppData.saveData();
                 return {success: true};

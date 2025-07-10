@@ -645,7 +645,19 @@ class AS2Firmware {
     static function checkAchievements():Void {
         for(var i=0; i<AppData.data.assets.length; ++i) {
             var achievement:Object = AppData.data.assets[i];
+            for(var j=0; j<achievement.groups.length; ++j) {
+                var group:Object = achievement.groups[j];
 
+                var allPassed = true;
+
+                for(var k=0; k<group.requirements.length; ++k) {
+                    var requirement:Object = group.requirements[k];
+                    var resultA = AS2Firmware.evaluate(requirement.compiledAddressA, 1, requirement.compiledAddressA.length, [_root.gameContainer.gameLoader._root], ['stage']);
+                    var resultB = AS2Firmware.evaluate(requirement.compiledAddressB, 1, requirement.compiledAddressB.length, [_root.gameContainer.gameLoader._root], ['stage']);
+
+                    //AS2Firmware.trace('achivo '+JSON.stringify(resultA)+' '+JSON.stringify(resultB));
+                }
+            }
         }
     }
 }

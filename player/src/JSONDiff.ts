@@ -171,24 +171,23 @@ export class JSONDiff {
         const keys = path.split('/');
         let current = obj;
         for (let i = 0; i < keys.length - 1; i++) {
-            const key = keys[i];
+            // FIX: The key must be cleaned at every step of the loop.
+            const key = keys[i].replace(/\[\]$/, ''); 
             
-            // If the path segment doesn't exist, we must create it.
             if (current[key] === undefined || typeof current[key] !== 'object' || current[key] === null) {
-                const nextKey = keys[i + 1];
-                
-                // --- FIX: Check if the next key is a valid array index ---
+                const nextKey = keys[i + 1].replace(/\[\]$/, '');
                 if (String(Number(nextKey)) === nextKey && !isNaN(Number(nextKey))) {
-                    // If the next part of the path is a number, create an Array.
                     current[key] = [];
                 } else {
-                    // Otherwise, create an Object.
                     current[key] = {};
                 }
             }
             current = current[key];
         }
-        current[keys[keys.length - 1]] = value;
+
+        // Clean the final key as well.
+        const finalKey = keys[keys.length - 1].replace(/\[\]$/, '');
+        current[finalKey] = value;
     }
 
     /**

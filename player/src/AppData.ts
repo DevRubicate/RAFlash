@@ -82,11 +82,14 @@ export class AppData {
         type: 'object',
         properties: {
             id: { type: 'number' },
+            type: { type: 'string' },
             points: { type: 'number' },
             name: { type: 'string' },
             description: { type: 'string' },
             state: { type: 'string' },
             category: { type: 'string' },
+            modified: { type: 'boolean' },
+            published: { type: 'boolean' },
             groups: {
                 type: 'array',
                 items: {

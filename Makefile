@@ -27,7 +27,7 @@ BIN_FLASHPLAYER=bin/fp
 BUILD_FLASHPLAYER=.build/internals/fp.exe
 
 # UI variables
-UI_SCRIPT=ui/UIBundler.ts
+UI_SCRIPT=ui/vite.build.ts
 UI_OUTPUT=ui/.build
 UI_FLAGS=--allow-read --allow-write --allow-run --allow-env --allow-net
 TARGET_ASSET_FOLDER=.build/internals/assets
@@ -39,6 +39,7 @@ TARGET_ASSET_FOLDER=.build/internals/assets
 all: .build/internals/firmware $(DENO_OUTPUT) $(BUILD_FLASHPLAYER) assets
 
 run: all
+	@if [ -d .run ]; then cp -r .run/* .build/; fi
 	@cd .build && ./RAFlash.exe
 
 # Compile AS2
@@ -65,12 +66,11 @@ $(BUILD_FLASHPLAYER): $(BIN_FLASHPLAYER) FORCE
 assets: $(UI_OUTPUT)
 	@mkdir -p $(TARGET_ASSET_FOLDER)
 	find $(UI_OUTPUT) -name '*.html' -exec cp {} $(TARGET_ASSET_FOLDER) \;
-	rm -rf $(UI_OUTPUT)
 
 # Run the ui script
-$(UI_OUTPUT): $(UI_SCRIPT)
+$(UI_OUTPUT):
 	$(DENO) run $(UI_FLAGS) $(UI_SCRIPT)
 
 # Clean up generated files
 clean:
-	rm -rf .build
+	rm -rf .build .run
