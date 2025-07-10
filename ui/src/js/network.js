@@ -16,12 +16,7 @@ export class Network {
                         case 'setup': {
                             App.data = data.params.data;
                             App.originalData = JSON.parse(JSON.stringify(data.params.data));
-
-                            const keys = Object.keys(data.params.params);
-                            for(let i=0; i<keys.length; ++i) {
-                                const key = keys[i];
-                                App[key] = data.params.params[key];
-                            }
+                            App.windowParams = data.params.params;
 
                             resolve();
                             break;

@@ -83,6 +83,7 @@ export class AppData {
         properties: {
             id: { type: 'number' },
             type: { type: 'string' },
+            progressionType: { type: 'string' },
             points: { type: 'number' },
             name: { type: 'string' },
             description: { type: 'string' },
@@ -109,8 +110,6 @@ export class AppData {
                                     cmp: { type: 'string' },
                                     typeB: { type: 'string' },
                                     addressB: { type: 'string' },
-                                    hits: { type: 'number' },
-                                    maxHits: { type: 'number' },
                                 }
                             }
                         }

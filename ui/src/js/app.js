@@ -8,6 +8,7 @@ export const App = reactive({
 
     data: {assets: []},
     originalData: {assets: []},
+    windowParams: {},
 
     selectedAsset: null,
     set selectedAssetId(value) {
@@ -81,7 +82,7 @@ export const App = reactive({
         }
     },
     async save() {
-        await Network.sendMessage({command: 'editData', params: getDiff(appData.originalData, appData.data)});
-        appData.originalData = JSON.parse(JSON.stringify(appData.data));
+        await Network.sendMessage({command: 'editData', params: getDiff(App.originalData, App.data)});
+        App.originalData = JSON.parse(JSON.stringify(App.data));
     },
 })

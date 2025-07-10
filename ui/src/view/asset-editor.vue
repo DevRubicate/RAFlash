@@ -5,18 +5,18 @@
                 <div class="header-row">
                     <div class="form-group">
                         <label for="title">Title</label>
-                        <input type="text" id="title" v-model="App.selectedAsset.name" @change="App.save()">
+                        <input type="text" id="title" v-model="selectedAsset.name" @change="App.save()">
                     </div>
                     <div class="form-group form-group-small">
                         <label for="id">ID</label>
-                        <input type="text" id="id" :value="App.selectedAsset.id" readonly>
+                        <input type="text" id="id" :value="selectedAsset.id" readonly>
                     </div>
                 </div>
 
                 <div class="header-row">
                     <div class="form-group">
                         <label for="description">Description</label>
-                        <input type="text" id="description" v-model="App.selectedAsset.description" @change="App.save()">
+                        <input type="text" id="description" v-model="selectedAsset.description" @change="App.save()">
                     </div>
                     <div class="form-group form-group-small">
                         <label for="type">Type</label>
@@ -84,15 +84,15 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="(req, index) in selectedGroup.requirements" :key="req.id" @click="selectedRequirementId = req.id" :class="req.id === selectedRequirementId ? 'active' : 'not-active'">
+                            <tr v-for="(req, index) in selectedGroup?.requirements" :key="req.id" @click="selectedRequirementId = req.id" :class="req.id === selectedRequirementId ? 'active' : 'not-active'">
                                 <td>{{index+1}}</td>
-                                <td><select v-model="req.flag"><option v-for="option in flagOptions" :value="option.value">{{option.text}}</option></select></td>
-                                <td><select v-model="req.typeA"><option v-for="option in typeOptions" :value="option.value">{{option.text}}</option></select></td>
-                                <td><input v-model="req.addressA"></td>
-                                <td><select v-model="req.cmp"><option v-for="option in cmpOptions" :value="option.value">{{option.text}}</option></select></td>
-                                <td><select v-model="req.typeB"><option v-for="option in typeOptions" :value="option.value">{{option.text}}</option></select></td>
-                                <td><input v-model="req.addressB"></td>
-                                <td>{{req.hits}} ({{req.maxHits}})</td>
+                                <td><select v-model="req.flag" @change="App.save()"><option v-for="option in flagOptions" :value="option.value">{{option.text}}</option></select></td>
+                                <td><select v-model="req.typeA" @change="App.save()"><option v-for="option in typeOptions" :value="option.value">{{option.text}}</option></select></td>
+                                <td><input v-model="req.addressA" @change="App.save()"></td>
+                                <td><select v-model="req.cmp" @change="App.save()"><option v-for="option in cmpOptions" :value="option.value">{{option.text}}</option></select></td>
+                                <td><select v-model="req.typeB" @change="App.save()"><option v-for="option in typeOptions" :value="option.value">{{option.text}}</option></select></td>
+                                <td><input v-model="req.addressB" @change="App.save()"></td>
+                                <td>{{req.hits ?? 0}} ({{req.maxHits ?? 0}})</td>
                             </tr>
                         </tbody>
                     </table>
@@ -448,44 +448,45 @@
         { value: 100,   text: '100' },
     ];
     const progressionOptions = [
-        { value: 0,     text: ''            },
-        { value: 1,     text: 'Missable'    },
-        { value: 2,     text: 'Progression' },
-        { value: 3,     text: 'Win'         },
+        { value: null,          text: ''            },
+        { value: 'MISSABLE',    text: 'Missable'    },
+        { value: 'PROGRESSION', text: 'Progression' },
+        { value: 'WIN',         text: 'Win'         },
     ];
     const flagOptions = [
-        { value: 0,     text: 'Pause If'        },
-        { value: 1,     text: 'Reset If'        },
-        { value: 2,     text: 'Reset Next If'   },
-        { value: 3,     text: 'Add Source'      },
-        { value: 4,     text: 'Sub Source'      },
-        { value: 5,     text: 'Add Hits'        },
-        { value: 6,     text: 'Sub Hits'        },
-        { value: 7,     text: 'Add Address'     },
-        { value: 8,     text: 'And Next'        },
-        { value: 9,     text: 'Or Next'         },
-        { value: 10,    text: 'Measured'        },
-        { value: 11,    text: 'Measured If'     },
-        { value: 12,    text: 'Trigger'         },
-        { value: 13,    text: 'Remember'        },
+        { value: null,              text: ''                },
+        { value: 'PAUSE_IF',        text: 'Pause If'        },
+        { value: 'RESET_IF',        text: 'Reset If'        },
+        { value: 'RESET_NEXT_IF',   text: 'Reset Next If'   },
+        { value: 'ADD_SOURCE',      text: 'Add Source'      },
+        { value: 'SUB_SOURCE',      text: 'Sub Source'      },
+        { value: 'ADD_HITS',        text: 'Add Hits'        },
+        { value: 'SUB_HITS',        text: 'Sub Hits'        },
+        { value: 'ADD_ADDRESS',     text: 'Add Address'     },
+        { value: 'AND_NEXT',        text: 'And Next'        },
+        { value: 'OR_NEXT',         text: 'Or Next'         },
+        { value: 'MEASURED',        text: 'Measured'        },
+        { value: 'MEASURED_IF',     text: 'Measured If'     },
+        { value: 'TRIGGER',         text: 'Trigger'         },
+        { value: 'REMEMBER',        text: 'Remember'        },
     ];
     const typeOptions = [
-        { value: 0,     text: 'Mem'         },
-        { value: 1,     text: 'Value'       },
-        { value: 2,     text: 'Delta'       },
-        { value: 3,     text: 'Prior'       },
-        { value: 4,     text: 'BCD'         },
-        { value: 5,     text: 'Float'       },
-        { value: 6,     text: 'Invert'      },
-        { value: 7,     text: 'Recall'      },
+        { value: 'MEM',         text: 'Mem'         },
+        { value: 'VALUE',       text: 'Value'       },
+        { value: 'DELTA',       text: 'Delta'       },
+        { value: 'PRIOR',       text: 'Prior'       },
+        { value: 'BCD',         text: 'BCD'         },
+        { value: 'FLOAT',       text: 'Float'       },
+        { value: 'INVERT',      text: 'Invert'      },
+        { value: 'RECALL',      text: 'Recall'      },
     ];
     const cmpOptions = [
-        { value: 0,     text: '='       },
-        { value: 1,     text: '<'       },
-        { value: 2,     text: '<='      },
-        { value: 3,     text: '>'       },
-        { value: 4,     text: '>='      },
-        { value: 5,     text: '!='      },
+        { value: '=',     text: '='       },
+        { value: '<',     text: '<'       },
+        { value: '<=',     text: '<='      },
+        { value: '>',     text: '>'       },
+        { value: '>=',     text: '>='      },
+        { value: '!=',     text: '!='      },
     ];
 
     const selectedPoints = ref(null);
@@ -545,5 +546,11 @@
     const newRequirement = async () => { };
     const removeRequirement = async () => {  };
 
-    App.initialize().then(() => App.ready = true);
+    App.initialize().then(() => {
+        selectedAsset.value = App.data.assets.find((a) => a.id === App.windowParams.selectedAssetId);
+        selectedGroup.value = selectedAsset.value.groups.find((g) => g.type === 'CORE');
+        selectedPoints.value = selectedAsset.value.points;
+        selectedProgressionType.value = selectedAsset.value.progressionType;
+        App.ready = true;
+    });
 </script>
