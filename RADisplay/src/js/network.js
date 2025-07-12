@@ -1,6 +1,7 @@
 import { App } from './app.js';
 
 export class Network {
+    static id = Math.floor(Math.random() * 0xFFFFFF);
     static ready = false;
     static socket = null;
     static messageHandlers = new Map();
@@ -52,9 +53,9 @@ export class Network {
 
     static connect() {
         return new Promise((resolve) => {
-            Network.socket = new WebSocket('http://localhost:8080/ws');
+            Network.socket = new WebSocket('http://localhost:8080/ws?id='+Network.id);
             Network.socket.onopen = () => {
-                Network.socket.send(JSON.stringify(['SETUP', {name: 'browser'}]));
+                Network.socket.send(JSON.stringify(['SETUP', {name: 'browser'}])+'\n');
                 resolve();
             };
             Network.socket.onerror = (err) => {
@@ -64,33 +65,39 @@ export class Network {
                 console.log('Disconnected from server');
             };
             Network.socket.onmessage = (event) => {
-                const arr = JSON.parse(event.data);
-                if(Array.isArray(arr)) {
-                    const [type, id, message] = arr;
-                    if(type === 'SETUP') {
-                        Network.ready = true;
-                        Network.messageQueue.forEach(([message, callback]) => {
-                            Network.sendMessage(message).then(callback).catch(console.error);
-                        });
-                        Network.messageQueue.length = 0;
-                    } else if(type === 'REQUEST') {
-                        if(Network.onMessageCallback === null) {
-                            throw new Error('Network.onmessage: No callback registered');
-                        }
-                        const answer = Network.onMessageCallback(message);
-                        Network.socket.send(JSON.stringify(['RESPONSE', id, answer]));
-                    } else if(type === 'RESPONSE') {
-                        if (Network.messageHandlers.has(id)) {
-                            Network.messageHandlers.get(id)(message);
-                            Network.messageHandlers.delete(id);
+                const segments = event.data.split('\n');
+                for(let i=0; i<segments.length; ++i) {
+                    if(segments[i] === '') {
+                        continue;
+                    }
+                    const arr = JSON.parse(segments[i]);
+                    if(Array.isArray(arr)) {
+                        const [type, id, message] = arr;
+                        if(type === 'SETUP') {
+                            Network.ready = true;
+                            Network.messageQueue.forEach(([message, callback]) => {
+                                Network.sendMessage(message).then(callback).catch(console.error);
+                            });
+                            Network.messageQueue.length = 0;
+                        } else if(type === 'REQUEST') {
+                            if(Network.onMessageCallback === null) {
+                                throw new Error('Network.onmessage: No callback registered');
+                            }
+                            const answer = Network.onMessageCallback(message);
+                            Network.socket.send(JSON.stringify(['RESPONSE', id, answer])+'\n');
+                        } else if(type === 'RESPONSE') {
+                            if (Network.messageHandlers.has(id)) {
+                                Network.messageHandlers.get(id)(message);
+                                Network.messageHandlers.delete(id);
+                            } else {
+                                throw new Error(`Network.onmessage: No handler for message ${id}`);
+                            }
                         } else {
-                            throw new Error(`Network.onmessage: No handler for message ${id}`);
+                            throw new Error(`Network.onmessage: Invalid message type: ${type}`);
                         }
                     } else {
-                        throw new Error(`Network.onmessage: Invalid message type: ${type}`);
+                        throw new Error('Network.onmessage: Invalid message');
                     }
-                } else {
-                    throw new Error('Network.onmessage: Invalid message');
                 }
             };
         });
@@ -101,7 +108,7 @@ export class Network {
             if(Network.ready) {
                 const id = Network.currentMessageId++;
                 Network.messageHandlers.set(id, resolve);
-                Network.socket.send(JSON.stringify(['REQUEST', id, message]));
+                Network.socket.send(JSON.stringify(['REQUEST', id, message])+'\n');
             } else {
                 Network.messageQueue.push([message, resolve]);
             }

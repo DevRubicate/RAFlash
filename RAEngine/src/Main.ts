@@ -13,31 +13,31 @@ ErrorLogger.initialize();
 Network.initialize();
 
 // Watch for changes to the data that requires compilation
-//JSONDiff.watch(
-//    'assets/*/groups/*/requirements/*/addressA',
-//    (refPath: any[]) => {
-//        const obj = refPath[refPath.length - 2];
-//        const value = refPath[refPath.length - 1];
-//        obj.compiledA = Formula.compile(value);
-//    }
-//);
-//
-//// Watch for changes to the data that requires compilation
-//JSONDiff.watch(
-//    'assets/*/groups/*/requirements/*/addressB',
-//    (refPath: any[]) => {
-//        const obj = refPath[refPath.length - 2];
-//        const value = refPath[refPath.length - 1];
-//        obj.compiledB = Formula.compile(value);
-//    }
-//);
+JSONDiff.watch(
+    'assets/*/groups/*/requirements/*/addressA',
+    (refPath: any[]) => {
+        const obj = refPath[refPath.length - 2];
+        const value = refPath[refPath.length - 1];
+        obj.compiledA = Formula.compile(value);
+    }
+);
+
+// Watch for changes to the data that requires compilation
+JSONDiff.watch(
+    'assets/*/groups/*/requirements/*/addressB',
+    (refPath: any[]) => {
+        const obj = refPath[refPath.length - 2];
+        const value = refPath[refPath.length - 1];
+        obj.compiledB = Formula.compile(value);
+    }
+);
 
 
 AppData.loadData();
 
 // Open the flash player
 const command = new Deno.Command(join('internals', 'fp.exe'), {
-    args: ['http://localhost:8080/./internals/assets/firmware.swf'],
+    args: ['http://localhost:8080/./internals/assets/AVM2Firmware.swf'],
     stdin: 'null',              // Disable input
     stdout: 'null',             // Disable output
     stderr: 'null',             // Disable error messages

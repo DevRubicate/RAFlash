@@ -7,7 +7,7 @@ import { JSONDiff }         from './JSONDiff.ts';
 
 export class API {
     static setupWindow = new Map<number, any>();
-    static async handle(_origin:string, input: { command: string, params: any }): Promise<any> {
+    static async handle(sourceId:number, input: { command: string, params: any }): Promise<any> {
         switch (input.command) {
             case 'ping': {
                 return {success: true};
@@ -47,9 +47,17 @@ export class API {
                 return {success: true, params: {hash: 'abc123', data: AppData.data}};
             }
             case 'editData': {
-                const finalDiff = JSONDiff.processIncomingDiff(input.params);
-                JSONDiff.applyDataDiff(finalDiff);
-                Network.send('ALL', {command: 'editData', params: finalDiff});
+                const { finalDiff, extraDiff } = JSONDiff.processIncomingDiff(AppData.data, input.params);
+                
+                JSONDiff.applyDataDiff(AppData.data, finalDiff);
+
+                if(!JSONDiff.isPointlessDiff(extraDiff)) {
+                    await Network.send(sourceId, 'SELF', {command: 'editData', params: extraDiff});
+                }
+                if(!JSONDiff.isPointlessDiff(finalDiff)) {
+                    await Network.send(sourceId, 'ALL', {command: 'editData', params: finalDiff});
+                }
+
                 AppData.saveData();
                 return {success: true};
             }
@@ -65,7 +73,7 @@ export class API {
                     valid = false;
                 }
 
-                const output = await Network.send('FLASH', {command: 'evaluate', params: compiledFormula});
+                const output = await Network.send(sourceId, 'FLASH', {command: 'evaluate', params: compiledFormula});
                 return {
                     success: true,
                     params: {result: output[0].result, valid: valid},

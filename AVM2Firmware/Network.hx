@@ -29,7 +29,7 @@ class Network {
         if (instance.socket != null && instance.socket.connected) {
             final messageId = instance.currentMessageId++;
             instance.callbacks.set(messageId, callback);
-            instance.socket.writeUTFBytes(haxe.Json.stringify(['REQUEST', messageId, {command: command, params: params}]));
+            instance.socket.writeUTFBytes(haxe.Json.stringify(['REQUEST', messageId, {command: command, params: params}])+'\n');
             instance.socket.flush();
         } else {
             instance.pending.push({command: command, params: params, callback: callback});
@@ -37,10 +37,10 @@ class Network {
     }
     public static function reply(messageId:Int, params:Dynamic):Void {
         if (instance.socket != null && instance.socket.connected) {
-            instance.socket.writeUTFBytes(haxe.Json.stringify(['RESPONSE', messageId, params]));
+            instance.socket.writeUTFBytes(haxe.Json.stringify(['RESPONSE', messageId, params])+'\n');
             instance.socket.flush();
         } else {
-            trace('Cannoy reply, connection is dead');
+            trace('Cannot reply, connection is dead');
         }
     }
 
@@ -71,38 +71,48 @@ class Network {
     }
 
     private function onDataReceived(e:ProgressEvent):Void {
-        final data:Array<Any> = haxe.Json.parse(socket.readUTFBytes(socket.bytesAvailable));
-        if(!Std.isOfType(data, Array)) {
-            trace('Invalid message');
-            return;
-        }
-
-        switch(data[0]) {
-            case 'RESPONSE': {
-                final id:Int = data[1];
-                final message:Any = data[2];
-                final callbacks = Network.instance.callbacks.get(id);
-                if(callbacks == null) {
-                    trace('Could not find callbacks message');
-                    return;
+        final segments:Array<String> = socket.readUTFBytes(socket.bytesAvailable).split('\n');
+        for(segment in segments) {
+            if(segment == '') {
+                continue;
+            }
+            var data:Array<Any>;
+            try {
+                data = haxe.Json.parse(segment);
+            } catch(e) {
+                trace('Invalid JSON: '+segment);
+                continue;
+            }
+            if(!Std.isOfType(data, Array)) {
+                trace('Invalid JSON (Array): '+segment);
+                continue;
+            }
+            switch(data[0]) {
+                case 'RESPONSE': {
+                    final id:Int = data[1];
+                    final message:Any = data[2];
+                    final callbacks = Network.instance.callbacks.get(id);
+                    if(callbacks == null) {
+                        trace('Could not find callbacks message');
+                        continue;
+                    }
+                    callbacks(message);
+                    Network.instance.callbacks.remove(id);
                 }
-                callbacks(message);
-                Network.instance.callbacks.remove(id);
-            }
-            case 'REQUEST': {
-                final id = data[1];
-                final params:{command:String, params:Any} = data[2];
-                if(params.command != null) {
-                    this.onRequest(params.command, id, params.params);
-                } else {
-                    this.onRequest('', id, null);
+                case 'REQUEST': {
+                    final id = data[1];
+                    final params:{command:String, params:Any} = data[2];
+                    if(params.command != null) {
+                        this.onRequest(params.command, id, params.params);
+                    } else {
+                        this.onRequest('', id, null);
+                    }
+                }
+                default: {
+                    trace('Invalid message type');
                 }
             }
-            default: {
-                trace('Invalid message type');
-            }
         }
-
 
     }
 

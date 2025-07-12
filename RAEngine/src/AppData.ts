@@ -1,5 +1,4 @@
 import { join } from "https://deno.land/std/path/mod.ts";
-import { Formula } from './formula/Formula.ts';
 import { JSONDiff } from './JSONDiff.ts';
 
 export class AppData {
@@ -8,16 +7,6 @@ export class AppData {
 
         ],
     };
-
-    static compileAsset(asset:any) {
-        for(const group of asset.groups) {
-            for(const req of group.requirements) {
-                req.compiledAddressA = Formula.compile(req.addressA);
-                req.compiledAddressB = Formula.compile(req.addressB);
-            }
-        }
-        return asset;
-    }
 
     /**
      * Loads all asset data from .json files in the 'assets' directory.
@@ -36,12 +25,11 @@ export class AppData {
                     const filePath = join(assetsDir, file.name);
                     const fileContent = await Deno.readTextFile(filePath);
                     const asset = JSON.parse(fileContent);
-                    const compiledAsset = AppData.compileAsset(asset);
-                    loadedData.assets.push(compiledAsset);
+                    loadedData.assets.push(asset);
                 }
             }
-            const diff = JSONDiff.getDataDiff(this.data, loadedData);
-            JSONDiff.processIncomingDiff(diff);
+            const diff = JSONDiff.getDataDiff(AppData.data, loadedData);
+            JSONDiff.processIncomingDiff(AppData.data, diff);
         } catch (error) {
             if (error instanceof Deno.errors.NotFound) {
                 // If the directory doesn't exist, we assume no data has been saved yet.

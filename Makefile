@@ -3,22 +3,22 @@ MTASC=mtasc
 HAXE=haxe
 DENO=deno
 
-# AS2 firmware variables
-AS2_SWF=.build/AS2Firmware
-AS2_MAIN=firmware/as2/AS2Firmware.as
-AS2_HEADER=800:575:60
+# AVM1 firmware variables
+MTASC_SWF=.build/AVM1Firmware
+MTASC_MAIN=AVM1Firmware/Main.as
+MTASC_HEADER=800:575:60
 
 # Haxe firmware variables
 HAXE_OPTS=-debug \
-          --resource $(AS2_SWF)@AS2Firmware \
-          -swf .build/internals/assets/firmware.swf \
+          --resource $(MTASC_SWF)@AVM1Firmware \
+          -swf .build/internals/assets/AVM2Firmware.swf \
           -swf-version 11 \
           -D swf-header=1300:800:30:0 \
-          -cp firmware \
+          -cp AVM2Firmware \
           -main Main
 
 # Deno variables
-DENO_SOURCE=player/src/Main.ts
+DENO_SOURCE=RAEngine/src/Main.ts
 DENO_OUTPUT=.build/RAFlash.exe
 DENO_FLAGS=--allow-read --allow-write --allow-run --allow-net --allow-env --allow-ffi --allow-import --quiet# --no-terminal
 
@@ -30,21 +30,22 @@ BUILD_FLASHPLAYER=.build/internals/fp.exe
 .PHONY: all clean run assets FORCE
 
 # Default target
-all: assets .build/internals/firmware $(DENO_OUTPUT) $(BUILD_FLASHPLAYER)
+all: assets .build/internals/AVM2Firmware $(DENO_OUTPUT) $(BUILD_FLASHPLAYER)
 
 run: all
 	@if [ -d .run ]; then cp -r .run/* .build/; fi
 	@cd .build && ./RAFlash.exe
 
 # Compile AS2
-$(AS2_SWF): FORCE
+# Compile AS2
+$(MTASC_SWF): FORCE
 	@mkdir -p $(dir $@)
-	@$(MTASC) -cp firmware/as2 -swf $@ -main $(AS2_MAIN) -header $(AS2_HEADER)
+	@$(MTASC) -cp AVM1Firmware -swf $@ -main $(MTASC_MAIN) -header $(MTASC_HEADER)
 
 # Compile Haxe
-.build/internals/firmware: $(AS2_SWF) FORCE
+.build/internals/AVM2Firmware: $(MTASC_SWF) FORCE
 	@$(HAXE) $(HAXE_OPTS) > /dev/null
-	@rm -f $(AS2_SWF)  # Remove the AS2 SWF file after it is used
+	@rm -f $(MTASC_SWF)  # Remove the AS2 SWF file after it is used
 
 # Compile Deno to RAFlash.exe
 $(DENO_OUTPUT): FORCE
@@ -58,7 +59,7 @@ $(BUILD_FLASHPLAYER): $(BIN_FLASHPLAYER) FORCE
 
 # Build UI assets using npm
 assets:
-	@cd ui && npm run build --silent
+	@cd RADisplay && npm run build --silent
 
 # Clean up generated files
 clean:

@@ -82,6 +82,79 @@ class JSONDiff {
         return newObj;
     }
 
+    /**
+     * Directly modifies an object by setting a new value at a given path
+     * AND returns the diff object representing that change.
+     * This function has a side effect: it mutates the sourceObject.
+     * @param   path          The path to the property to change.
+     * @param   newValue      The new value for the property.
+     * @param   sourceObject  The state object to read from AND modify.
+     * @return  A valid DiffObject representing the change.
+     */
+    public static function updateAndGetDiff(sourceObject:Object, path:String, newValue:Object):Object {
+        // 1. Read the old value before making any changes.
+        var oldValue:Object = JSONDiff._getValueByPath(sourceObject, path);
+
+        // 2. Enact the change by directly modifying the source object.
+        JSONDiff._setPropertyByPath(sourceObject, path, newValue);
+
+        // 3. Create the diff based on the old and new values.
+        var diff:Object = { added: [], removed: [], edited: [] };
+
+        if (oldValue == undefined) {
+            // If the old value didn't exist, this is an "add".
+            diff.added.push([path, newValue]);
+        } else if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+            // If the old value existed and is different, this is an "edit".
+            diff.edited.push([path, oldValue, newValue]);
+        }
+        
+        return diff;
+    }
+
+    /**
+     * Merges two diff objects into a single diff. If both diffs edit the
+     * same path, the change from the second diff ('diff2') is kept.
+     *
+     * @param   diff1   The base diff object.
+     * @param   diff2   The diff object to merge, which takes precedence.
+     * @return  A new, single diff object containing the merged changes.
+     */
+    public static function mergeDataDiff(diff1:Object, diff2:Object):Object {
+        // Use a standard Object as a map to handle edited paths.
+        var editedMap:Object = new Object();
+        var i:Number;
+
+        // Process the first diff's edits.
+        for (i = 0; i < diff1.edited.length; i++) {
+            var item1:Array = diff1.edited[i];
+            var path1:String = item1[0];
+            editedMap[path1] = item1;
+        }
+
+        // Process the second diff's edits, which will overwrite any duplicates.
+        for (i = 0; i < diff2.edited.length; i++) {
+            var item2:Array = diff2.edited[i];
+            var path2:String = item2[0];
+            editedMap[path2] = item2;
+        }
+
+        // Convert the map object back into an array.
+        var finalEdited:Array = new Array();
+        for (var key:String in editedMap) {
+            finalEdited.push(editedMap[key]);
+        }
+        
+        // Combine all changes into the final diff object.
+        var finalDiff:Object = {
+            added: diff1.added.concat(diff2.added),
+            removed: diff1.removed.concat(diff2.removed),
+            edited: finalEdited
+        };
+
+        return finalDiff;
+    }
+
     // =================================================================================
     //  Internal Helper Methods
     // =================================================================================
@@ -91,6 +164,7 @@ class JSONDiff {
      * Creates nested objects/arrays as needed.
      */
     private static function _setPropertyByPath(obj:Object, path:String, value:Object):Void {
+        Main.trace('_setPropertyByPath: ' + path + ' = ' + JSON.stringify(value));
         // -- CORRECTION: Replaced regex with AS2-compatible split/join. --
         var tempPath:String = path.split('[').join('/'); // a[0] -> a/0]
         tempPath = tempPath.split(']').join('');         // a/0] -> a/0
@@ -112,14 +186,17 @@ class JSONDiff {
             current = current[key];
         }
 
+        Main.trace(path + ': ' + JSON.stringify(current[segments[segments.length - 1]]) + ' -> ' + JSON.stringify(value));
         current[segments[segments.length - 1]] = value;
+
+        Main.trace(JSON.stringify(obj.assets[0].groups[0].requirements[0]));
     }
 
     /**
      * [INTERNAL] Deletes a property from an object using a path string.
+     * UPDATED: Uses splice() for arrays to correctly handle element removal.
      */
     private static function _deletePropertyByPath(obj:Object, path:String):Void {
-        // -- CORRECTION: Replaced regex with AS2-compatible split/join. --
         var tempPath:String = path.split('[').join('/');
         tempPath = tempPath.split(']').join('');
         var segments:Array = tempPath.split('/');
@@ -134,7 +211,15 @@ class JSONDiff {
             current = current[key];
         }
 
-        delete current[segments[segments.length - 1]];
+        var finalKey:String = segments[segments.length - 1];
+
+        if (current instanceof Array) {
+            // Use splice() to correctly remove the element and shorten the array.
+            current.splice(Number(finalKey), 1);
+        } else {
+            // Use delete for regular object properties.
+            delete current[finalKey];
+        }
     }
 
     /**
@@ -236,5 +321,28 @@ class JSONDiff {
         } else {
             return parentPath + (isLodashLike && !isArray ? separator : "") + prefix + key + suffix;
         }
+    }
+
+    /**
+     * [INTERNAL HELPER] Traverses an object using a path string and returns the value.
+     * Returns undefined if the path does not exist.
+     */
+    private static function _getValueByPath(obj:Object, path:String):Object {
+        // Use the same path parsing as _setPropertyByPath to handle formats like 'a[0]/b'
+        var tempPath:String = path.split('[').join('/');
+        tempPath = tempPath.split(']').join('');
+        var keys:Array = tempPath.split('/');
+
+        var current:Object = obj;
+        
+        for (var i:Number = 0; i < keys.length; i++) {
+            if (current == undefined || current == null) {
+                return undefined;
+            }
+            var key:String = keys[i];
+            current = current[key];
+        }
+        
+        return current;
     }
 }

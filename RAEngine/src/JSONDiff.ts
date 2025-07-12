@@ -1,7 +1,3 @@
-import { AppData } from './AppData.ts'; // Assuming your state is exported from here
-
-// --- Type Definitions ---
-
 type DiffObject = {
     added: Array<[string, any]>;
     removed: Array<[string, any]>;
@@ -15,14 +11,14 @@ type Watcher = {
     callback: WatcherCallback;
 };
 
-// --- Class Implementation ---
+type ProcessedDiffResult = {
+    finalDiff: DiffObject; // The combined total change
+    extraDiff: DiffObject; // Just the changes made by watchers
+};
+
 
 export class JSONDiff {
     private static watchers: Watcher[] = [];
-
-    // ========================================================================
-    // Public API Methods
-    // ========================================================================
 
     /**
      * Registers a callback to be triggered when any of the provided path patterns are matched.
@@ -35,48 +31,51 @@ export class JSONDiff {
     }
 
     /**
-     * Main entry point for processing a diff from a client. It applies the diff,
-     * triggers any relevant watchers, and returns a final, authoritative diff
-     * representing the total change.
+     * Processes an incoming diff, applies it, triggers watchers, and returns
+     * both the final combined diff and the isolated watcher-only diff.
      * @param clientDiff The diff object received from a client.
-     * @returns A final diff object to be broadcast to all clients.
+     * @returns An object containing the finalDiff and the watcherDiff.
      */
-    public static processIncomingDiff(clientDiff: DiffObject): DiffObject {
-        // 1. Create a snapshot of the state BEFORE any changes.
-        const stateBefore = JSON.parse(JSON.stringify(AppData.data));
+    public static processIncomingDiff(target:any, clientDiff: DiffObject): ProcessedDiffResult {
+        // 1. Capture state BEFORE any changes.
+        const stateBefore = JSON.parse(JSON.stringify(target));
 
-        // 2. Apply the client's changes directly to the live data.
-        this.applyDataDiff(clientDiff);
+        // 2. Apply the client's diff.
+        JSONDiff.applyDataDiff(target, clientDiff);
 
-        // 3. Trigger watchers based on the client's diff. Watchers may make
-        //    further mutations to the live AppData.data object.
-        this._findAndTriggerWatchers(clientDiff);
+        // 3. Capture state AFTER client diff but BEFORE watchers.
+        const stateAfterClientChanges = JSON.parse(JSON.stringify(target));
+
+        // 4. Trigger watchers, which may make further changes.
+        JSONDiff._findAndTriggerWatchers(target, clientDiff);
         
-        // 4. Calculate a single, clean diff between the initial state and the
-        //    final state after all mutations are complete.
-        const finalDiff = this.getDataDiff(stateBefore, AppData.data);
+        // 5. Calculate the diff of just the watcher changes.
+        const extraDiff = JSONDiff.getDataDiff(stateAfterClientChanges, target);
+
+        // 6. Calculate the total combined diff.
+        const finalDiff = JSONDiff.getDataDiff(stateBefore, target);
         
-        // 5. This final diff is what you broadcast to all clients.
-        return finalDiff;
+        // 7. Return both diffs.
+        return { finalDiff, extraDiff };
     }
     
     /**
-     * Applies a diff directly to the AppData.data object.
+     * Applies a diff directly to the object.
      */
-    public static applyDataDiff(diff: DiffObject): void {
+    public static applyDataDiff(target:any, diff: DiffObject): void {
         if (diff.removed) {
             for (const [path] of diff.removed) {
-                this._removeValue(AppData.data, path);
+                this._removeValue(target, path);
             }
         }
         if (diff.added) {
             for (const [path, value] of diff.added) {
-                this._setValue(AppData.data, path, value);
+                this._setValue(target, path, value);
             }
         }
         if (diff.edited) {
             for (const [path, , newValue] of diff.edited) {
-                this._setValue(AppData.data, path, newValue);
+                this._setValue(target, path, newValue);
             }
         }
     }
@@ -95,6 +94,46 @@ export class JSONDiff {
         };
     }
 
+    /**
+     * Directly modifies an object by setting a new value at a given path
+     * AND returns the diff object representing that change.
+     * This function has a side effect: it mutates the sourceObject.
+     * @param path The path to the property to change.
+     * @param newValue The new value for the property.
+     * @param sourceObject The state object to read from AND modify.
+     * @returns A valid DiffObject representing the change.
+     */
+    public static updateAndGetDiff(sourceObject: any, path: string, newValue: any): DiffObject {
+        // 1. Read the old value before making any changes.
+        const oldValue = this._getValueByPath(sourceObject, path);
+
+        // 2. Enact the change by directly modifying the source object.
+        this._setValue(sourceObject, path, newValue);
+
+        // 3. Create the diff based on the old and new values.
+        const diff: DiffObject = { added: [], removed: [], edited: [] };
+
+        if (oldValue === undefined) {
+            diff.added.push([path, newValue]);
+        } else if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+            diff.edited.push([path, oldValue, newValue]);
+        }
+        
+        return diff;
+    }
+
+    /**
+     * Checks if a diff object is "pointless" meaning it contains no changes.
+     * @param diff The diff object to check.
+     * @returns True if the diff has no added, removed, or edited entries.
+     */
+    public static isPointlessDiff(diff: DiffObject): boolean {
+        // Return true only if all three arrays are empty.
+        return diff.added.length === 0 &&
+               diff.removed.length === 0 &&
+               diff.edited.length === 0;
+    }
+
     // ========================================================================
     // Private Helper Methods
     // ========================================================================
@@ -103,7 +142,7 @@ export class JSONDiff {
      * Iterates through changed paths from the diff and triggers any matching watchers.
      * UPDATED: Now inspects both 'added' and 'edited' arrays.
      */
-    private static _findAndTriggerWatchers(clientDiff: DiffObject): void {
+    private static _findAndTriggerWatchers(target:any,clientDiff: DiffObject): void {
         if (!clientDiff.edited) return;
 
         const changedPaths = [
@@ -116,7 +155,7 @@ export class JSONDiff {
         for (const path of uniquePaths) {
             for (const watcher of this.watchers) {
                 this._traverse(
-                    AppData.data,
+                    target,
                     watcher.pattern.split('/'),
                     path.split('/'),
                     (refPath) => {
@@ -128,8 +167,8 @@ export class JSONDiff {
     }
 
     /**
-     * Recursively traverses an object to match a pattern against a path,
-     * collecting live references along the way.
+     * Recursively traverses an object to match a pattern against a path.
+     * UPDATED: Now correctly handles "[]" array markers in paths during traversal.
      */
     private static _traverse(
         currentNode: any,
@@ -138,26 +177,21 @@ export class JSONDiff {
         onMatch: (refPath: any[]) => void,
         refPath: any[] = []
     ): void {
-        // If the pattern and path don't have the same length, they can't match.
-        if (patternParts.length !== pathParts.length) {
-            return;
-        }
-
-        // If we've successfully traversed all parts, the traversal is complete.
+        if (patternParts.length !== pathParts.length) return;
         if (patternParts.length === 0) {
-            // FIX: Add the final currentNode (the actual value) to the refPath.
             onMatch([...refPath, currentNode]);
             return;
         }
 
         const currentPattern = patternParts[0];
         const currentPathPart = pathParts[0];
-        
-        // The reference path includes the current parent node.
         const newRefPath = [...refPath, currentNode];
 
-        if (currentPattern === '*' || currentPattern === currentPathPart) {
-            const nextNode = currentNode[currentPathPart];
+        if (currentPattern === '*' || currentPattern === currentPathPart.replace(/\[\]$/, '')) {
+            // FIX: Clean the '[]' marker from the key before accessing the object.
+            const accessKey = currentPathPart.replace(/\[\]$/, '');
+            const nextNode = currentNode[accessKey];
+            
             if (nextNode !== undefined) {
                 this._traverse(nextNode, patternParts.slice(1), pathParts.slice(1), onMatch, newRefPath);
             }
@@ -250,5 +284,24 @@ export class JSONDiff {
             }
         }
         return diff;
+    }
+
+    /**
+     * [INTERNAL HELPER] Traverses an object using a path string and returns the value.
+     * Returns undefined if the path does not exist.
+     */
+    private static _getValueByPath(obj: any, path: string): any {
+        const keys = path.split('/');
+        let current = obj;
+        
+        for (let i = 0; i < keys.length; i++) {
+            if (current === undefined || current === null) {
+                return undefined;
+            }
+            const key = keys[i].replace(/\[\]$/, '');
+            current = current[key];
+        }
+        
+        return current;
     }
 }

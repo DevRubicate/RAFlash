@@ -1,22 +1,26 @@
 {
   "folders": [
     {
-      "name": "Root",
-      "path": "."
+        "name": "RADisplay",
+        "path": "RADisplay"
     },
     {
-      "name": "UI",
-      "path": "ui"
+        "name": "RAEngine",
+        "path": "RAEngine"
     },
     {
-      "name": "Player",
-      "path": "player"
+        "name": "AVM1Firmware",
+        "path": "AVM1Firmware"
     },
     {
-      "name": "Firmware",
-      "path": "firmware"
+        "name": "AVM2Firmware",
+        "path": "AVM2Firmware"
+    },
+    {
+        "name": "Root",
+        "path": "."
     }
-  ],
+],
   "settings": {
     // You can add any global workspace settings here
   },

@@ -2,39 +2,36 @@ import haxe.extern.EitherType;
 
 import flash.net.LocalConnection;
 import flash.events.StatusEvent;
+import Network;
 
 class AS2Bridge {
     public static var ready:Bool = false;
     private static var sender:LocalConnection;
     private static var receiver:LocalConnection;
     private static var messageQueue:Map<String, Dynamic> = new Map();
-    private static var flushQueue:Array<Dynamic> = [];
 
     public static function setupListener() {
         receiver = new LocalConnection();
         receiver.addEventListener(StatusEvent.STATUS, onStatus);
         receiver.client = {
             setup: function():Void {
-                for(f in flushQueue) {
-                    if(f.command == 'read') {
-                        sender.send('_AS3ToAS2', f.command, f.id, f.param);
-                    } else if(f.command == 'list') {
-                        sender.send('_AS3ToAS2', f.command, f.id, f.path, f.limit, f.offset);
-                    } else {
-                        throw 'Not supported yet';
-                    }
-                }
-                flushQueue = [];
                 ready = true;
-            },
-            trace: function(message:String):Void {
-                trace('[AS2Firmware] ' + message);
             },
             message: function(id:String, message:String):Void {
                 if(messageQueue.exists(id)) {
                     messageQueue.get(id)(haxe.Json.parse(message));
                     messageQueue.remove(id);
                 }
+            },
+            trace: function(message:String):Void {
+                trace('[AVM1Firmware] ' + message);
+            },
+            editData: function(data:String):Void {
+                Network.command('editData', haxe.Json.parse(data), (message:Dynamic) -> {
+                    if(!message.success) {
+                        trace('Unable to edit data');
+                    }
+                });
             },
         };
         receiver.connect('_AS2ToAS3');
@@ -58,41 +55,25 @@ class AS2Bridge {
     public static function evaluate(formula:Array<String>, callback:(Dynamic)->Void) {
         final id = getQueueId();
         messageQueue.set(id, callback);
-        if(ready) {
-            sender.send('_AS3ToAS2', 'evaluate', id, formula);
-        } else {
-            flushQueue.push({command: 'evaluate', id: id, param: formula});
-        }
+        sender.send('_AS3ToAS2', 'evaluate', id, formula);
     }
 
     public static function editData(data:Dynamic, callback:(Dynamic)->Void) {
         final id = getQueueId();
         messageQueue.set(id, callback);
-        if(ready) {
-            sender.send('_AS3ToAS2', 'editData', id, data);
-        } else {
-            flushQueue.push({command: 'editData', id: id, param: data});
-        }
+        sender.send('_AS3ToAS2', 'editData', id, data);
     }
 
     public static function read(path:String, callback:(Dynamic)->Void) {
         final id = getQueueId();
         messageQueue.set(id, callback);
-        if(ready) {
-            sender.send('_AS3ToAS2', 'read', id, path);
-        } else {
-            flushQueue.push({command: 'read', id: id, param: path});
-        }
+        sender.send('_AS3ToAS2', 'read', id, path);
     }
 
     public static function list(path:Array<EitherType<String, Float>>, limit:Int, offset:Int, callback:({value: Array<String>, total:Int, error:String})->Void) {
         final id = getQueueId();
         messageQueue.set(id, callback);
-        if(ready) {
-            sender.send('_AS3ToAS2', 'list', id, path, limit, offset);
-        } else {
-            flushQueue.push({command: 'list', id: id, path: path, limit: limit, offset: offset});
-        }
+        sender.send('_AS3ToAS2', 'list', id, path, limit, offset);
         return function() {
             messageQueue.remove(id);
         }

@@ -3,18 +3,17 @@ import JSON;
 import JSONDiff;
 import AppData;
 
-class AS2Firmware {
-    private var lc:LocalConnection;
-    private var gameLoader:MovieClip; // Declare gameLoader at the class level
-    private var data:Object;
+class Main {
+    private static var receiver:LocalConnection;
+    private static var sender:LocalConnection;
 
-    public function AS2Firmware() {}
+    public function Main() {}
 
     public static function main():Void {
         try {
             // Set up LocalConnection to communicate with AS3
-            _root.receiver = new LocalConnection();
-            _root.receiver.setup = function(path:String, data:Object):Void {
+            Main.receiver = new LocalConnection();
+            Main.receiver.setup = function(path:String, data:Object):Void {
                 // Note that trace does not work here in the setup callback because
                 // the two-way connection is not yet established
                 AppData.data = data.appData;
@@ -22,33 +21,36 @@ class AS2Firmware {
                 _root.gameContainer.gameLoader = _root.gameContainer.createEmptyMovieClip('gameLoader', 1);
                 _root.gameContainer.gameLoader._lockroot = true;
                 _root.gameContainer.gameLoader.loadMovie('http://localhost:8080/' + path);
-                _root.gameContainer.onEnterFrame = AS2Firmware.onFrame;
-                _root.sender = new LocalConnection();
-                _root.sender.send('_AS2ToAS3', 'setup');
+                _root.gameContainer.onEnterFrame = Main.onFrame;
+                Main.sender = new LocalConnection();
+                Main.sender.send('_AS2ToAS3', 'setup');
             };
-            _root.receiver.evaluate = function(id:String, formula:Array):Void {
-                var result = AS2Firmware.evaluate(formula, 1, formula.length, [_root.gameContainer.gameLoader._root], ['stage']);
-                var formatted = AS2Firmware.formatOutput(result, 0);
-                _root.sender.send(
+            Main.receiver.evaluate = function(id:String, formula:Array):Void {
+                var result = Main.evaluate(formula, 1, formula.length, [_root.gameContainer.gameLoader._root], ['stage']);
+                var formatted = Main.formatOutput(result, 0);
+                Main.sender.send(
                     '_AS2ToAS3',
                     'message',
                     id,
                     JSON.stringify(formatted)
                 );
             };
-            _root.receiver.editData = function(id:String, changes:Object):Void {
-                JSONDiff.applyDiff(_root.data, changes);
+            Main.receiver.editData = function(id:String, changes:Object):Void {
+                JSONDiff.applyDiff(AppData.data, changes);
             };
-            _root.receiver.connect('_AS3ToAS2');
+            Main.receiver.connect('_AS3ToAS2');
         } catch(e) {
-            AS2Firmware.trace(e);
+            Main.trace(e);
         }
     }
     static function trace(message:String):Void {
-        _root.sender.send('_AS2ToAS3', 'trace', message);
+        Main.sender.send('_AS2ToAS3', 'trace', message);
+    }
+    static function editData(data:Object) {
+        Main.sender.send('_AS2ToAS3', 'editData', JSON.stringify(data));
     }
     static function onFrame():Void {
-        AS2Firmware.checkAchievements();
+        Main.checkAchievements();
     }
     static function evaluate(formula:Array, start:Number, end:Number, context:Array, keys:Array):Array {
         var stack:Array = [];
@@ -127,7 +129,7 @@ class AS2Firmware {
                         }
                         stack.push(result);
                     } else {
-                        AS2Firmware.trace('Invalid number of entries for '+token);
+                        Main.trace('Invalid number of entries for '+token);
                         return null;
                     }
                     break;
@@ -154,7 +156,7 @@ class AS2Firmware {
                         }
                         stack.push(result);
                     } else {
-                        AS2Firmware.trace('Invalid number of entries for '+token);
+                        Main.trace('Invalid number of entries for '+token);
                         return null;
                     }
                     break;
@@ -181,7 +183,7 @@ class AS2Firmware {
                         }
                         stack.push(result);
                     } else {
-                        AS2Firmware.trace('Invalid number of entries for '+token);
+                        Main.trace('Invalid number of entries for '+token);
                         return null;
                     }
                     break;
@@ -208,7 +210,7 @@ class AS2Firmware {
                         }
                         stack.push(result);
                     } else {
-                        AS2Firmware.trace('Invalid number of entries for '+token);
+                        Main.trace('Invalid number of entries for '+token);
                         return null;
                     }
                     break;
@@ -235,7 +237,7 @@ class AS2Firmware {
                         }
                         stack.push(result);
                     } else {
-                        AS2Firmware.trace('Invalid number of entries for '+token);
+                        Main.trace('Invalid number of entries for '+token);
                         return null;
                     }
                     break;
@@ -262,7 +264,7 @@ class AS2Firmware {
                         }
                         stack.push(result);
                     } else {
-                        AS2Firmware.trace('Invalid number of entries for '+token);
+                        Main.trace('Invalid number of entries for '+token);
                         return null;
                     }
                     break;
@@ -289,7 +291,7 @@ class AS2Firmware {
                         }
                         stack.push(result);
                     } else {
-                        AS2Firmware.trace('Invalid number of entries for '+token);
+                        Main.trace('Invalid number of entries for '+token);
                         return null;
                     }
                     break;
@@ -316,7 +318,7 @@ class AS2Firmware {
                         }
                         stack.push(result);
                     } else {
-                        AS2Firmware.trace('Invalid number of entries for '+token);
+                        Main.trace('Invalid number of entries for '+token);
                         return null;
                     }
                     break;
@@ -343,7 +345,7 @@ class AS2Firmware {
                         }
                         stack.push(result);
                     } else {
-                        AS2Firmware.trace('Invalid number of entries for '+token);
+                        Main.trace('Invalid number of entries for '+token);
                         return null;
                     }
                     break;
@@ -370,7 +372,7 @@ class AS2Firmware {
                         }
                         stack.push(result);
                     } else {
-                        AS2Firmware.trace('Invalid number of entries for '+token);
+                        Main.trace('Invalid number of entries for '+token);
                         return null;
                     }
                     break;
@@ -397,7 +399,7 @@ class AS2Firmware {
                         }
                         stack.push(result);
                     } else {
-                        AS2Firmware.trace('Invalid number of entries for '+token);
+                        Main.trace('Invalid number of entries for '+token);
                         return null;
                     }
                     break;
@@ -424,7 +426,7 @@ class AS2Firmware {
                         }
                         stack.push(result);
                     } else {
-                        AS2Firmware.trace('Invalid number of entries for '+token);
+                        Main.trace('Invalid number of entries for '+token);
                         return null;
                     }
                     break;
@@ -451,7 +453,7 @@ class AS2Firmware {
                         }
                         stack.push(result);
                     } else {
-                        AS2Firmware.trace('Invalid number of entries for '+token);
+                        Main.trace('Invalid number of entries for '+token);
                         return null;
                     }
                     break;
@@ -478,7 +480,7 @@ class AS2Firmware {
                         }
                         stack.push(result);
                     } else {
-                        AS2Firmware.trace('Invalid number of entries for '+token);
+                        Main.trace('Invalid number of entries for '+token);
                         return null;
                     }
                     break;
@@ -506,12 +508,12 @@ class AS2Firmware {
                                 break;
                             }
                             default: {
-                                AS2Firmware.trace('Invalid global identifier ' + identifiers[0]);
+                                Main.trace('Invalid global identifier ' + identifiers[0]);
                                 return null;
                             }
                         }
                     } else {
-                        AS2Firmware.trace('Invalid global identifier ' + identifiers);
+                        Main.trace('Invalid global identifier ' + identifiers);
                     }
                     break;
                 }
@@ -536,7 +538,7 @@ class AS2Firmware {
 
                         // Start a new evaluate run with the amount opcodes that was specified, returning an array
                         // of booleans.
-                        var filteredResult = AS2Firmware.evaluate(formula, i+2, i+amount+2, childThis, childKeys);
+                        var filteredResult = Main.evaluate(formula, i+2, i+amount+2, childThis, childKeys);
 
                         // For each boolean, if it was true, this property makes the cut
                         for(var k=0; k<filteredResult.length; ++k) {
@@ -555,7 +557,7 @@ class AS2Firmware {
                     break;
                 }
                 default: {
-                    AS2Firmware.trace('Invalid token '+token);
+                    Main.trace('Invalid token '+token);
                     return null;
                 }
             }
@@ -564,7 +566,7 @@ class AS2Firmware {
         if(stack.length == 1) {
             return stack[0];
         } else {
-            AS2Firmware.trace('Unbalanced formula');
+            Main.trace('Unbalanced formula: '+JSON.stringify(stack));
             return null;
         }
     }
@@ -577,7 +579,7 @@ class AS2Firmware {
             if(typeof(value) == 'movieclip') {
                 if(level == 0 && singular) {
                     for (var key:String in value) {
-                        output.push(key + ': ' + AS2Firmware.formatOutput([value[key]], level+1).output.join(''));
+                        output.push(key + ': ' + Main.formatOutput([value[key]], level+1).output.join(''));
                     }
                 } else {
                     var count:Number = 0;
@@ -587,7 +589,7 @@ class AS2Firmware {
                     output.push('[MovieClip ...'+count+']');
                 }
             } else if(value instanceof TextField) {
-                output.push('[TextField "'+AS2Firmware.createLabelString(value.text)+'"]');
+                output.push('[TextField "'+Main.createLabelString(value.text)+'"]');
             } else if(typeof(value) == 'number') {
                 output.push(value);
             } else if(typeof(value) == 'string') {
@@ -605,7 +607,7 @@ class AS2Firmware {
             } else if(typeof(value) == 'object') {
                 if(level == 0 && singular) {
                     for (var key:String in value) {
-                        output.push(key + ': ' + AS2Firmware.formatOutput([value[key]], level+1).output.join(''));
+                        output.push(key + ': ' + Main.formatOutput([value[key]], level+1).output.join(''));
                     }
                 } else {
                     var count:Number = 0;
@@ -643,6 +645,7 @@ class AS2Firmware {
         return labelString;
     }
     static function checkAchievements():Void {
+        var globalDiff = {added: [], removed: [], edited: []};
         for(var i=0; i<AppData.data.assets.length; ++i) {
             var achievement:Object = AppData.data.assets[i];
             for(var j=0; j<achievement.groups.length; ++j) {
@@ -652,13 +655,46 @@ class AS2Firmware {
 
                 for(var k=0; k<group.requirements.length; ++k) {
                     var requirement:Object = group.requirements[k];
-                    var resultA = AS2Firmware.evaluate(requirement.compiledAddressA, 1, requirement.compiledAddressA.length, [_root.gameContainer.gameLoader._root], ['stage']);
-                    var resultB = AS2Firmware.evaluate(requirement.compiledAddressB, 1, requirement.compiledAddressB.length, [_root.gameContainer.gameLoader._root], ['stage']);
+                    var resultA = Main.evaluate(requirement.compiledA, 1, requirement.compiledA.length, [_root.gameContainer.gameLoader._root], ['stage']);
+                    var resultB = Main.evaluate(requirement.compiledB, 1, requirement.compiledB.length, [_root.gameContainer.gameLoader._root], ['stage']);
 
-                    //AS2Firmware.trace('achivo '+JSON.stringify(resultA)+' '+JSON.stringify(resultB));
+                    // The evaluate function can return multiple values. However, for the achievement system we only
+                    // allow for one value at a time, so if the length isn't 1, we fail all and any test.
+                    if(resultA.length != 1 || resultB.length != 1) {
+                        allPassed = false;
+                        continue;
+                    }
+
+                    switch(requirement.cmp) {
+                        case '=': {
+                            if(resultA[0] != resultB[0]) {
+                                allPassed = false;
+                                continue;
+                            }
+    /*
+                            // update hits
+                            globalDiff = JSONDiff.mergeDataDiff(
+                                JSONDiff.updateAndGetDiff(AppData.data, 'assets/'+i+'/groups/'+j+'/requirements/'+k+'/hits', (requirement.hits || 0) + 1),
+                                globalDiff
+                            );
+
+                            // update maxHits
+                            globalDiff = JSONDiff.mergeDataDiff(
+                                JSONDiff.updateAndGetDiff(AppData.data, 'assets/'+i+'/groups/'+j+'/requirements/'+k+'/maxHits', (requirement.maxHits || 0) + 1),
+                                globalDiff
+                            );
+*/
+                            break;
+                        }
+                        default: {
+                            throw 'Not supported yet';
+                        }
+                    }
+
                 }
             }
         }
+        //Main.editData(globalDiff);
     }
 }
 

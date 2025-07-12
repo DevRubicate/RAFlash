@@ -77,7 +77,7 @@ class Main extends MovieClip {
         });
     }
     static public function loadEmbeddedSWF(path:String):Void {
-        var resourceBytes = haxe.Resource.getBytes('AS2Firmware');
+        var resourceBytes = haxe.Resource.getBytes('AVM1Firmware');
         if (resourceBytes == null) {
             trace('Error: Resource embeddedSWF not found.');
             return;
