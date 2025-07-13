@@ -81,19 +81,66 @@ export class JSONDiff {
     }
 
     /**
-     * Generates a diff object between two states.
+     * Generates a diff object between two states, with intelligent handling for arrays.
      */
     public static getDataDiff(before: any, after: any): DiffObject {
         const structBefore = this._getStructPath(before);
         const structAfter = this._getStructPath(after);
 
-        return {
-            added: this._getPathsDiff(structAfter, structBefore),
-            removed: this._getPathsDiff(structBefore, structAfter),
-            edited: this._getEditedPaths(structBefore, structAfter)
-        };
-    }
+        const added = this._getPathsDiff(structAfter, structBefore);
+        const removed = this._getPathsDiff(structBefore, structAfter);
+        let edited = this._getEditedPaths(structBefore, structAfter);
 
+        // This set will keep track of array paths we've handled as full replacements.
+        const handledPaths = new Set<string>();
+
+        // Check for array length changes to determine the correct diff strategy.
+        for (const path in structBefore) {
+            if (path in structAfter) {
+                const beforeVal = structBefore[path];
+                const afterVal = structAfter[path];
+
+                // Check if a property is an array and its length has changed.
+                if (typeof beforeVal === 'string' && beforeVal.startsWith('__RA_ARRAY_LEN_') &&
+                    typeof afterVal === 'string' && afterVal.startsWith('__RA_ARRAY_LEN_') &&
+                    beforeVal !== afterVal) 
+                {
+                    const oldArray = this._getValueByPath(before, path);
+                    const newArray = this._getValueByPath(after, path);
+
+                    // --- NEW: Check for simple append operations ---
+                    let isSimpleAppend = false;
+                    if (newArray.length > oldArray.length) {
+                        const newArraySlice = newArray.slice(0, oldArray.length);
+                        // If the start of the new array is identical to the old array, it's an append.
+                        if (JSON.stringify(newArraySlice) === JSON.stringify(oldArray)) {
+                            isSimpleAppend = true;
+                        }
+                    }
+
+                    if (isSimpleAppend) {
+                        // This is a simple append (like a push). The default diff, which
+                        // found the new 'added' elements, is the most efficient.
+                        // We do nothing and let that diff stand.
+                        continue;
+                    } else {
+                        // This is a shrink or a complex change. Treat as a full replacement.
+                        handledPaths.add(path); // Mark this path as handled.
+                        // Add a single 'edited' entry for the entire array.
+                        edited.push([path, oldArray, newArray]);
+                    }
+                }
+            }
+        }
+        
+        // Final cleanup: Remove any granular diffs for arrays we handled as full replacements.
+        const finalAdded = added.filter(a => !Array.from(handledPaths).some(p => a[0].startsWith(p + '/')));
+        const finalRemoved = removed.filter(r => !Array.from(handledPaths).some(p => r[0].startsWith(p + '/')));
+        const finalEdited = edited.filter(e => !Array.from(handledPaths).some(p => e[0].startsWith(p + '/')) || handledPaths.has(e[0]));
+
+        return { added: finalAdded, removed: finalRemoved, edited: finalEdited };
+    }
+    
     /**
      * Directly modifies an object by setting a new value at a given path
      * AND returns the diff object representing that change.

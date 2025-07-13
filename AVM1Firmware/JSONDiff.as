@@ -164,8 +164,6 @@ class JSONDiff {
      * Creates nested objects/arrays as needed.
      */
     private static function _setPropertyByPath(obj:Object, path:String, value:Object):Void {
-        Main.trace('_setPropertyByPath: ' + path + ' = ' + JSON.stringify(value));
-        // -- CORRECTION: Replaced regex with AS2-compatible split/join. --
         var tempPath:String = path.split('[').join('/'); // a[0] -> a/0]
         tempPath = tempPath.split(']').join('');         // a/0] -> a/0
         var segments:Array = tempPath.split('/');
@@ -186,10 +184,7 @@ class JSONDiff {
             current = current[key];
         }
 
-        Main.trace(path + ': ' + JSON.stringify(current[segments[segments.length - 1]]) + ' -> ' + JSON.stringify(value));
         current[segments[segments.length - 1]] = value;
-
-        Main.trace(JSON.stringify(obj.assets[0].groups[0].requirements[0]));
     }
 
     /**

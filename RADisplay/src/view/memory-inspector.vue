@@ -153,8 +153,8 @@
 
 <script setup>
     import { ref, onMounted } from 'vue';
-    import { Network } from '../js/network.js';
-    import { App }          from '../js/app.js';
+    import { Network } from '../js/network.ts';
+    import { App }          from '../js/app.ts';
 
     const memoryInput = ref('');
     const memoryResult = ref([]);
@@ -162,7 +162,7 @@
 
     const evaluate = async () => {
         memoryResultValid.value = false;
-        const reply = await Network.sendMessage({ command: 'evaluate', params: { input: memoryInput.value } });
+        const reply = await Network.send({ command: 'evaluate', params: { input: memoryInput.value } });
         
         if (reply.success) {
             memoryResult.value = reply.params.result.output;

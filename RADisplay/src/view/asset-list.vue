@@ -130,8 +130,8 @@
 
 <script setup>
     import { ref, reactive, computed } from 'vue';
-    import { Network } from '../js/network.js';
-    import { App }          from '../js/app.js';
+    import { Network } from '../js/network.ts';
+    import { App }          from '../js/app.ts';
 
     const filterState = ref('All');
     const filterCategory = ref('All');
@@ -180,11 +180,11 @@
     };
 
     const cloneAsset = async () => {
-        await Network.sendMessage({ command: 'showPopup', params: { url: 'internals/assets/asset-editor.html', width: 800, height: 700, params: {} } });
+        await Network.send({ command: 'showPopup', params: { url: 'internals/assets/asset-editor.html', width: 800, height: 700, params: {} } });
     };
 
     const openAsset = async (id) => {
-        await Network.sendMessage({ command: 'showPopup', params: { url: 'internals/assets/asset-editor.html', width: 800, height: 700, params: { selectedAssetId: id } } });
+        await Network.send({ command: 'showPopup', params: { url: 'internals/assets/asset-editor.html', width: 800, height: 700, params: { selectedAssetId: id } } });
     };
 
     App.initialize().then(() => App.ready = true);

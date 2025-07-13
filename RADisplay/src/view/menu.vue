@@ -108,15 +108,15 @@
 </style>
 
 <script setup>
-    import { Network }      from '../js/network.js';
-    import { App }          from '../js/app.js';
+    import { Network }      from '../js/network.ts';
+    import { App }          from '../js/app.ts';
 
     const openAssetList = async () => {
-        await Network.sendMessage({ command: 'showPopup', params: { url: 'internals/assets/asset-list.html', width: 800, height: 700, params: {} } });
+        await Network.send({ command: 'showPopup', params: { url: 'internals/assets/asset-list.html', width: 800, height: 700, params: {} } });
     };
 
     const openMemoryInspector = async () => {
-        await Network.sendMessage({ command: 'showPopup', params: { url: 'internals/assets/memory-inspector.html', width: 800, height: 700, params: {} } });
+        await Network.send({ command: 'showPopup', params: { url: 'internals/assets/memory-inspector.html', width: 800, height: 700, params: {} } });
     };
 
     App.initialize().then(() => App.ready = true);

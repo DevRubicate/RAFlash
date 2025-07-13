@@ -433,7 +433,7 @@
 
 <script setup>
     import { ref, computed } from 'vue';
-    import { App }          from '../js/app.js';
+    import { App }          from '../js/app.ts';
 
     const pointsOptions = [
         { value: 0,     text: '0'   },

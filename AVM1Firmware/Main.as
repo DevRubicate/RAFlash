@@ -46,7 +46,7 @@ class Main {
     static function trace(message:String):Void {
         Main.sender.send('_AS2ToAS3', 'trace', message);
     }
-    static function editData(data:Object) {
+    static function sendEditData(data:Object) {
         Main.sender.send('_AS2ToAS3', 'editData', JSON.stringify(data));
     }
     static function onFrame():Void {
@@ -671,19 +671,19 @@ class Main {
                                 allPassed = false;
                                 continue;
                             }
-    /*
+
                             // update hits
                             globalDiff = JSONDiff.mergeDataDiff(
                                 JSONDiff.updateAndGetDiff(AppData.data, 'assets/'+i+'/groups/'+j+'/requirements/'+k+'/hits', (requirement.hits || 0) + 1),
                                 globalDiff
                             );
 
-                            // update maxHits
-                            globalDiff = JSONDiff.mergeDataDiff(
-                                JSONDiff.updateAndGetDiff(AppData.data, 'assets/'+i+'/groups/'+j+'/requirements/'+k+'/maxHits', (requirement.maxHits || 0) + 1),
-                                globalDiff
-                            );
-*/
+                            //// update maxHits
+                            //globalDiff = JSONDiff.mergeDataDiff(
+                            //    JSONDiff.updateAndGetDiff(AppData.data, 'assets/'+i+'/groups/'+j+'/requirements/'+k+'/maxHits', (requirement.maxHits || 0) + 1),
+                            //    globalDiff
+                            //);
+
                             break;
                         }
                         default: {
@@ -694,7 +694,7 @@ class Main {
                 }
             }
         }
-        //Main.editData(globalDiff);
+        Main.sendEditData(globalDiff);
     }
 }
 
