@@ -24,7 +24,9 @@ export class Network {
                         throw new Error('Network.connect: No client Id specified');
                     }
                     Network.clients.set(clientId, {type: 'BROWSER', id: clientId, ws: socket, currentMessageId: 0, pending: []});
-                    socket.onclose = () => Network.clients.delete(clientId);
+                    socket.onclose = () => {
+                        Network.clients.delete(clientId);
+                    }
                     socket.onmessage = async (event) => {
                         const segments = event.data.split('\n');
                         for(let i=0; i<segments.length; ++i) {
@@ -145,7 +147,6 @@ export class Network {
                     // After requesting the policy file flash player always kills the socket and opens a new one.
                     socket.end();
                     socket.destroy();
-                    Network.clients.delete(clientId);
                 } else {
                     const segments = received.split('\n');
                     for(let i=0; i<segments.length; ++i) {
@@ -226,7 +227,7 @@ export class Network {
             ) {
                 let resolve;
                 jobs.push(new Promise((r) => {resolve = r;}));
-                const id = client.currentMessageId++;
+                const id = ++client.currentMessageId;
                 client.pending.push([id, resolve]);
                 if(client.ws instanceof WebSocket) {
                     client.ws.send(JSON.stringify(['REQUEST', id, message])+'\n');

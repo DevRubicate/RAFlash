@@ -15,9 +15,9 @@ Network.initialize();
 // Watch for changes to the data that requires compilation
 JSONDiff.watch(
     'assets/*/groups/*/requirements/*/addressA',
-    (refPath: any[]) => {
-        const obj = refPath[refPath.length - 2];
-        const value = refPath[refPath.length - 1];
+    (segments: any[]) => {
+        const obj = segments[segments.length - 2];
+        const value = segments[segments.length - 1];
         obj.compiledA = Formula.compile(value);
     }
 );
@@ -25,13 +25,12 @@ JSONDiff.watch(
 // Watch for changes to the data that requires compilation
 JSONDiff.watch(
     'assets/*/groups/*/requirements/*/addressB',
-    (refPath: any[]) => {
-        const obj = refPath[refPath.length - 2];
-        const value = refPath[refPath.length - 1];
+    (segments: any[]) => {
+        const obj = segments[segments.length - 2];
+        const value = segments[segments.length - 1];
         obj.compiledB = Formula.compile(value);
     }
 );
-
 
 AppData.loadData();
 

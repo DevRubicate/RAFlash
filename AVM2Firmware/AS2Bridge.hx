@@ -47,7 +47,7 @@ class AS2Bridge {
     private static function getQueueId() {
         var id;
         do {
-            id = Std.string(Math.random() * 0xFFFFFF);
+            id = Std.string(Math.floor(Math.random() * 0xFFFFFF));
         } while(messageQueue.exists(id));
         return id;
     }

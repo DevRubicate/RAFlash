@@ -1,4 +1,4 @@
-import { reactive }                     from 'vue';
+import { reactive, toRaw }                     from 'vue';
 import { JSONDiff }                     from './JSONDiff.js';
 import { Network }                      from './network.js';
 
@@ -35,11 +35,14 @@ export const App = reactive({
         this[key] = value;
     },
     async save() {
-
         const diff = JSONDiff.getDataDiff(App.originalData, App.data);
-
-
+        console.log('BEFORE');
         await Network.send({command: 'editData', params: diff});
+        console.log('AFTER');
         App.originalData = JSON.parse(JSON.stringify(App.data));
+        console.log(diff);
+        console.log('data', toRaw(App));
     },
-})
+});
+
+console.log('start', toRaw(App));

@@ -106,6 +106,7 @@ export class AppData {
             }
         }
     };
+    
     /**
      * Recursively strips an object of any properties not defined in the schema.
      * @param data The data object or array to strip.

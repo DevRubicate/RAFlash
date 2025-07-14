@@ -36,7 +36,21 @@ class Main {
                 );
             };
             Main.receiver.editData = function(id:String, changes:Object):Void {
-                JSONDiff.applyDiff(AppData.data, changes);
+                var result = JSONDiff.processIncomingDiff(AppData.data, changes);
+                if(!JSONDiff.isPointlessDiff(result.extraDiff)) {
+                    Main.sender.send(
+                        '_AS2ToAS3',
+                        'editData',
+                        id,
+                        JSON.stringify(result.extraDiff)
+                    );
+                }
+                Main.sender.send(
+                    '_AS2ToAS3',
+                    'message',
+                    id,
+                    JSON.stringify({})
+                );
             };
             Main.receiver.connect('_AS3ToAS2');
         } catch(e) {
@@ -645,7 +659,6 @@ class Main {
         return labelString;
     }
     static function checkAchievements():Void {
-        var globalDiff = {added: [], removed: [], edited: []};
         for(var i=0; i<AppData.data.assets.length; ++i) {
             var achievement:Object = AppData.data.assets[i];
             for(var j=0; j<achievement.groups.length; ++j) {
@@ -672,17 +685,8 @@ class Main {
                                 continue;
                             }
 
-                            // update hits
-                            globalDiff = JSONDiff.mergeDataDiff(
-                                JSONDiff.updateAndGetDiff(AppData.data, 'assets/'+i+'/groups/'+j+'/requirements/'+k+'/hits', (requirement.hits || 0) + 1),
-                                globalDiff
-                            );
-
-                            //// update maxHits
-                            //globalDiff = JSONDiff.mergeDataDiff(
-                            //    JSONDiff.updateAndGetDiff(AppData.data, 'assets/'+i+'/groups/'+j+'/requirements/'+k+'/maxHits', (requirement.maxHits || 0) + 1),
-                            //    globalDiff
-                            //);
+                            requirement.hits = (requirement.hits || 0) + 1;
+                            requirement.maxHits = (requirement.maxHits || 0) + 1;
 
                             break;
                         }
@@ -694,7 +698,10 @@ class Main {
                 }
             }
         }
-        Main.sendEditData(globalDiff);
+        var diff = JSONDiff.getDataDiff(AppData.originalData, AppData.data);
+        AppData.originalData = JSON.parse(JSON.stringify(AppData.data));
+
+        Main.sendEditData(diff);
     }
 }
 

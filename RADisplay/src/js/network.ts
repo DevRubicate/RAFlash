@@ -25,9 +25,7 @@ export class Network {
                         }
                         case 'editData': {
                             const { finalDiff, extraDiff } = JSONDiff.processIncomingDiff(App.data, data.params);
-                            
-                            JSONDiff.applyDataDiff(App.data, finalDiff);
-
+                            JSONDiff.applyDataDiff(App.originalData, finalDiff);
                             if(!JSONDiff.isPointlessDiff(extraDiff)) {
                                 await Network.send({command: 'editData', params: extraDiff});
                             }
@@ -120,7 +118,7 @@ export class Network {
             } else {
                 Network.messageQueue.push([message, resolve]);
             }
-        }).catch(console.error);
+        });
     }
 
     static onMessage(callback) {

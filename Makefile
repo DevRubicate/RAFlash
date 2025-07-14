@@ -37,7 +37,6 @@ run: all
 	@cd .build && ./RAFlash.exe
 
 # Compile AS2
-# Compile AS2
 $(MTASC_SWF): FORCE
 	@mkdir -p $(dir $@)
 	@$(MTASC) -cp AVM1Firmware -swf $@ -main $(MTASC_MAIN) -header $(MTASC_HEADER)

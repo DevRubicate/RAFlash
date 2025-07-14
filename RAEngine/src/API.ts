@@ -48,16 +48,13 @@ export class API {
             }
             case 'editData': {
                 const { finalDiff, extraDiff } = JSONDiff.processIncomingDiff(AppData.data, input.params);
-                
                 JSONDiff.applyDataDiff(AppData.data, finalDiff);
-
                 if(!JSONDiff.isPointlessDiff(extraDiff)) {
                     await Network.send(sourceId, 'SELF', {command: 'editData', params: extraDiff});
                 }
                 if(!JSONDiff.isPointlessDiff(finalDiff)) {
                     await Network.send(sourceId, 'ALL', {command: 'editData', params: finalDiff});
                 }
-
                 AppData.saveData();
                 return {success: true};
             }
