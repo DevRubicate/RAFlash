@@ -34,6 +34,11 @@ enum NODE_TYPE {
     LESS_THAN = 'LESS_THAN',
     LESS_THAN_OR_EQUAL = 'LESS_THAN_OR_EQUAL',
 
+    // Logical Operators
+    AND = 'AND',
+    OR = 'OR',
+    XOR = 'XOR',
+
     // Meta
     LIST = 'LIST',
     OBJECT_ACCESS_EXPRESSION = 'OBJECT_ACCESS_EXPRESSION',

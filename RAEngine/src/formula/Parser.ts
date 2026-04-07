@@ -82,6 +82,21 @@ const OperatorDetails: Partial<
         associativity: 'LEFT',
         precedence: 1,
     },
+    [NODE_TYPE.AND]: {
+        type: 'BINARY',
+        associativity: 'LEFT',
+        precedence: 0,
+    },
+    [NODE_TYPE.OR]: {
+        type: 'BINARY',
+        associativity: 'LEFT',
+        precedence: 0,
+    },
+    [NODE_TYPE.XOR]: {
+        type: 'BINARY',
+        associativity: 'LEFT',
+        precedence: 0,
+    },
 };
 
 class Parser {
@@ -1018,6 +1033,24 @@ class Parser {
                         case TokenType.GREATER_THAN_OR_EQUAL: {
                             operator = NODE_TYPE.GREATER_THAN_OR_EQUAL;
                             // Move past the token
+                            this.advanceToken();
+                            this.currentNode.addConsume(CONSUME.EXPRESSION);
+                            break;
+                        }
+                        case TokenType.AND: {
+                            operator = NODE_TYPE.AND;
+                            this.advanceToken();
+                            this.currentNode.addConsume(CONSUME.EXPRESSION);
+                            break;
+                        }
+                        case TokenType.OR: {
+                            operator = NODE_TYPE.OR;
+                            this.advanceToken();
+                            this.currentNode.addConsume(CONSUME.EXPRESSION);
+                            break;
+                        }
+                        case TokenType.XOR: {
+                            operator = NODE_TYPE.XOR;
                             this.advanceToken();
                             this.currentNode.addConsume(CONSUME.EXPRESSION);
                             break;

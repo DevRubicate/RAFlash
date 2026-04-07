@@ -28,6 +28,9 @@ import { GreaterThanUnit }              from './unit/GreaterThanUnit.ts';
 import { GreaterThanOrEqualUnit }       from './unit/GreaterThanOrEqualUnit.ts';
 import { LessThanUnit }                 from './unit/LessThanUnit.ts';
 import { LessThanOrEqualUnit }          from './unit/LessThanOrEqualUnit.ts';
+import { AndUnit }                      from './unit/AndUnit.ts';
+import { OrUnit }                       from './unit/OrUnit.ts';
+import { XorUnit }                      from './unit/XorUnit.ts';
 import { TernaryUnit }                  from './unit/TernaryUnit.ts';
 
 export class Builder {
@@ -406,6 +409,48 @@ export class Builder {
                 element.children[0].parent = element;
                 element.children[1].parent = element;
                 return element;
+            }
+            case NODE_TYPE.AND: {
+                if (node.children.length !== 2) {
+                    throw new Error(
+                        `Unexpected number of children in AND statement: ${node.children.length}`,
+                    );
+                }
+
+                const andElement = new AndUnit(null);
+                andElement.children.push(Builder.convert(node.children[0]));
+                andElement.children.push(Builder.convert(node.children[1]));
+                andElement.children[0].parent = andElement;
+                andElement.children[1].parent = andElement;
+                return andElement;
+            }
+            case NODE_TYPE.OR: {
+                if (node.children.length !== 2) {
+                    throw new Error(
+                        `Unexpected number of children in OR statement: ${node.children.length}`,
+                    );
+                }
+
+                const orElement = new OrUnit(null);
+                orElement.children.push(Builder.convert(node.children[0]));
+                orElement.children.push(Builder.convert(node.children[1]));
+                orElement.children[0].parent = orElement;
+                orElement.children[1].parent = orElement;
+                return orElement;
+            }
+            case NODE_TYPE.XOR: {
+                if (node.children.length !== 2) {
+                    throw new Error(
+                        `Unexpected number of children in XOR statement: ${node.children.length}`,
+                    );
+                }
+
+                const xorElement = new XorUnit(null);
+                xorElement.children.push(Builder.convert(node.children[0]));
+                xorElement.children.push(Builder.convert(node.children[1]));
+                xorElement.children[0].parent = xorElement;
+                xorElement.children[1].parent = xorElement;
+                return xorElement;
             }
             case NODE_TYPE.TERNARY: {
                 if (node.children.length !== 3) {

@@ -24,6 +24,9 @@ enum TokenType {
     LESS_THAN_OR_EQUAL = 'LESS_THAN_OR_EQUAL',
     GREATER_THAN = 'GREATER_THAN',
     GREATER_THAN_OR_EQUAL = 'GREATER_THAN_OR_EQUAL',
+    AND = 'AND',
+    OR = 'OR',
+    XOR = 'XOR',
     QUESTION = 'QUESTION',
     COLON = 'COLON',
     EOF = 'EOF',
@@ -494,6 +497,39 @@ class Lexer {
             case ':':
                 this.tokens.push(
                     new Token(TokenType.COLON, null, tokenRow, tokenColumn),
+                );
+                break;
+            case '&':
+                if (this.peekChar() === '&') {
+                    this.tokens.push(
+                        new Token(TokenType.AND, null, tokenRow, tokenColumn),
+                    );
+                    this.advancePosition();
+                } else {
+                    throw new LexerError(
+                        `Unrecognized symbol: "&"`,
+                        tokenRow,
+                        tokenColumn,
+                    );
+                }
+                break;
+            case '|':
+                if (this.peekChar() === '|') {
+                    this.tokens.push(
+                        new Token(TokenType.OR, null, tokenRow, tokenColumn),
+                    );
+                    this.advancePosition();
+                } else {
+                    throw new LexerError(
+                        `Unrecognized symbol: "|"`,
+                        tokenRow,
+                        tokenColumn,
+                    );
+                }
+                break;
+            case '^':
+                this.tokens.push(
+                    new Token(TokenType.XOR, null, tokenRow, tokenColumn),
                 );
                 break;
             default:
