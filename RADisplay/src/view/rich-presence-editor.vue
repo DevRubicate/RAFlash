@@ -30,7 +30,7 @@
                 <input type="checkbox" id="active-check" v-model="isAssetActive">
                 <label for="active-check">Active</label>
             </div>
-            <button class="btn btn-primary" :disabled="!hasUnsavedChanges" @click="App.save()">Save</button>
+            <button class="btn btn-primary" :disabled="!hasUnsavedChanges" @click="saveAsset()">Save</button>
         </footer>
     </div>
 </template>
@@ -196,6 +196,11 @@
     const hasUnsavedChanges = computed(() => {
         return selectedAsset.value?._modified === true;
     });
+
+    const saveAsset = async () => {
+        if (selectedAssetId.value === null) return;
+        await Network.send({ command: 'saveAssets', params: { ids: [selectedAssetId.value] } });
+    };
 
     const isAssetActive = computed({
         get() {

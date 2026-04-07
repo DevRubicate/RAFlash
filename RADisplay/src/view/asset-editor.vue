@@ -103,7 +103,7 @@
                     <button class="btn btn-secondary" @click="moveRequirementDown()">Move Down</button>
                 </div>
             </div>
-            <button class="btn btn-primary" :disabled="!hasUnsavedChanges" @click="App.save()">Save</button>
+            <button class="btn btn-primary" :disabled="!hasUnsavedChanges" @click="saveAsset()">Save</button>
         </footer>
     </div>
 </template>
@@ -515,6 +515,11 @@
     const hasUnsavedChanges = computed(() => {
         return selectedAsset.value?._modified === true;
     });
+
+    const saveAsset = async () => {
+        if (selectedAssetId.value === null) return;
+        await Network.send({ command: 'saveAssets', params: { ids: [selectedAssetId.value] } });
+    };
 
     const onFileSelected = (event) => {
         const file = event.target.files[0];
