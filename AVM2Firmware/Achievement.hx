@@ -67,7 +67,7 @@ class Achievement {
 
     // === Requirement Condition Evaluation ===
 
-    private static function evaluateRequirementCondition(requirement:Dynamic, frameCache:Map<String, Array<Dynamic>>, gameRoot:Dynamic):Dynamic {
+    private static function evaluateRequirementCondition(requirement:Dynamic, frameCache:Map<String, Array<Dynamic>>, gameRoot:Dynamic, accumulator:Float = 0):Dynamic {
         var compiledA:Array<Dynamic> = untyped requirement.compiledA;
         var compiledB:Array<Dynamic> = untyped requirement.compiledB;
         if (compiledA == null || compiledB == null) {
@@ -123,19 +123,50 @@ class Achievement {
             resultB = currentB;
         }
 
-        // Evaluate comparison
+        // Add accumulator from AddSource/SubSource chain to left side
         var passed:Bool = false;
         var cmp:String = Std.string(untyped requirement.cmp);
-        var a:Dynamic = resultA[0];
-        var b:Dynamic = resultB[0];
+        var a:Float = (resultA[0] : Float) + accumulator;
+        var b:Float = (resultB[0] : Float);
         if (cmp == "==") passed = a == b;
         else if (cmp == "!=") passed = a != b;
-        else if (cmp == ">") passed = (a : Float) > (b : Float);
-        else if (cmp == ">=") passed = (a : Float) >= (b : Float);
-        else if (cmp == "<") passed = (a : Float) < (b : Float);
-        else if (cmp == "<=") passed = (a : Float) <= (b : Float);
+        else if (cmp == ">") passed = a > b;
+        else if (cmp == ">=") passed = a >= b;
+        else if (cmp == "<") passed = a < b;
+        else if (cmp == "<=") passed = a <= b;
 
-        return {passed: passed, valid: true};
+        return {passed: passed, valid: true, valueA: a};
+    }
+
+    // === Requirement Value-A Evaluation (for AddSource/SubSource) ===
+
+    private static function evaluateRequirementValueA(requirement:Dynamic, frameCache:Map<String, Array<Dynamic>>, gameRoot:Dynamic):Float {
+        if (untyped requirement.compiledA == null) return Math.NaN;
+
+        var cacheKeyA:String = Std.string(untyped requirement.addressA);
+        var currentA:Array<Dynamic> = frameCache.exists(cacheKeyA) ? frameCache.get(cacheKeyA) : null;
+        if (currentA == null) {
+            var cA:Array<Dynamic> = untyped requirement.compiledA;
+            currentA = Evaluate.evaluate(cA, 1, cA.length, [gameRoot], cast ["stage"], gameRoot);
+            if (currentA != null) frameCache.set(cacheKeyA, currentA);
+        }
+
+        if (currentA == null || currentA.length != 1) return Math.NaN;
+
+        // Handle Delta type
+        var reqId:String = Std.string(untyped requirement.id);
+        if (untyped requirement.typeA == "DELTA") {
+            var deltaData:Dynamic = deltaValues.exists(reqId) ? deltaValues.get(reqId) : null;
+            if (deltaData == null || untyped __typeof__(deltaData.prevA) == "undefined") {
+                storeDeltaValue(reqId, "A", currentA[0]);
+                return Math.NaN;
+            }
+            var prev:Float = (deltaData.prevA : Float);
+            storeDeltaValue(reqId, "A", currentA[0]);
+            return prev;
+        }
+
+        return (currentA[0] : Float);
     }
 
     // === Chain Evaluation ===
@@ -230,6 +261,7 @@ class Achievement {
             var groupPauseStates:Array<Bool> = [];
             var groupPauseIfResults:Array<Array<Dynamic>> = [];
             var groupChainInfos:Array<Map<Int, Dynamic>> = [];
+            var groupRnifHandled:Array<Map<Int, Bool>> = [];
 
             var j:Int = 0;
             while (j < groupCount) {
@@ -239,6 +271,7 @@ class Achievement {
                 var isPaused:Bool = false;
                 var pauseIfResults:Array<Dynamic> = [];
                 var chainInfo:Map<Int, Dynamic> = new Map();
+                var rnifHandled:Map<Int, Bool> = new Map();
 
                 // First pass: identify chains ending in Pause If
                 var k:Int = 0;
@@ -304,6 +337,24 @@ class Achievement {
 
                     pauseIfResults.push({req: requirement, passed: passed, valid: true, basePath: basePath, reqIndex: k});
 
+                    // Check for ResetNextIf targeting this PauseIf
+                    // Per RA docs: ResetNextIf followed by PauseIf is evaluated even while paused,
+                    // allowing it to unlock a PauseLock without needing an alt group.
+                    var prevK:Int = k - 1;
+                    while (prevK >= 0 && Std.string(untyped reqs[prevK].flag) == "RESET_NEXT_IF") {
+                        rnifHandled.set(prevK, true);
+                        var rnifReq:Dynamic = reqs[prevK];
+                        var rnifResult:Dynamic = evaluateRequirementCondition(rnifReq, frameCache, gameRoot);
+                        if (rnifResult.valid && rnifResult.passed) {
+                            // Reset the PauseIf's hit count
+                            var rnifHits:Int = untyped requirement.hits != null ? requirement.hits : 0;
+                            if (rnifHits > 0) {
+                                diffSet(requirement, "hits", 0, basePath + "/hits");
+                            }
+                        }
+                        prevK--;
+                    }
+
                     var maxHits:Int = untyped requirement.maxHits != null ? requirement.maxHits : 0;
                     var currentHits:Int = untyped requirement.hits != null ? requirement.hits : 0;
 
@@ -324,6 +375,7 @@ class Achievement {
                 groupPauseStates.push(isPaused);
                 groupPauseIfResults.push(pauseIfResults);
                 groupChainInfos.push(chainInfo);
+                groupRnifHandled.push(rnifHandled);
                 j++;
             }
 
@@ -398,6 +450,11 @@ class Achievement {
                     pauseIfIndices.set(piResults[pi].reqIndex, true);
                     pi++;
                 }
+                // Also skip ResetNextIf requirements that target PauseIf (handled in Phase 0)
+                var rnifHandledMap:Map<Int, Bool> = groupRnifHandled[j];
+                for (rnifIdx in rnifHandledMap.keys()) {
+                    pauseIfIndices.set(rnifIdx, true);
+                }
 
                 // Detect non-Pause-If chains
                 var chainInfo:Map<Int, Dynamic> = groupChainInfos[j];
@@ -445,6 +502,7 @@ class Achievement {
                 }
 
                 // Process each requirement
+                var sourceAccumulator:Float = 0;
                 k = 0;
                 while (k < reqs.length) {
                     var requirement:Dynamic = reqs[k];
@@ -452,6 +510,25 @@ class Achievement {
 
                     var info:Dynamic = chainInfo.exists(k) ? chainInfo.get(k) : null;
                     if (info != null && untyped info.isChainMember == true && untyped info.isTerminal != true) { k++; continue; }
+
+                    // Handle AddSource/SubSource: accumulate left-side value, skip to next
+                    var reqFlag:String = Std.string(untyped requirement.flag);
+                    if (reqFlag == "ADD_SOURCE") {
+                        var addVal:Float = evaluateRequirementValueA(requirement, frameCache, gameRoot);
+                        if (!Math.isNaN(addVal)) sourceAccumulator += addVal;
+                        k++;
+                        continue;
+                    }
+                    if (reqFlag == "SUB_SOURCE") {
+                        var subVal:Float = evaluateRequirementValueA(requirement, frameCache, gameRoot);
+                        if (!Math.isNaN(subVal)) sourceAccumulator -= subVal;
+                        k++;
+                        continue;
+                    }
+
+                    // Consume the accumulator for this requirement, then reset
+                    var reqAccumulator:Float = sourceAccumulator;
+                    sourceAccumulator = 0;
 
                     hasRequirements = true;
                     var basePath:String = "assets/" + ai + "/groups/" + j + "/requirements/" + k;
@@ -472,7 +549,7 @@ class Achievement {
                         passed = info.chainResult;
                         valid = info.chainValid;
                     } else {
-                        var evalResult:Dynamic = evaluateRequirementCondition(requirement, frameCache, gameRoot);
+                        var evalResult:Dynamic = evaluateRequirementCondition(requirement, frameCache, gameRoot, reqAccumulator);
                         passed = evalResult.passed;
                         valid = evalResult.valid;
                     }
@@ -673,137 +750,217 @@ class Achievement {
                 }
             }
 
-            // === PHASE 6: Measured value ===
-            var measuredReqs:Array<Dynamic> = [];
+            // === PHASE 6: Calculate Measured value ===
+            // Process per-group: check MeasuredIf gates, handle paused group freezing
+            var measuredError:Bool = false;
+            var measuredCurrent:Float = Math.NaN;
+            var measuredTarget:Float = Math.NaN;
+            var hasAnyMeasured:Bool = false;
+
             var mg:Int = 0;
             while (mg < groupCount) {
-                var mReqs:Array<Dynamic> = untyped groups[mg].requirements;
+                var mGroup:Dynamic = groups[mg];
+                var mGroupPaused:Bool = groupPauseStates[mg];
+                var mGroupReqs:Array<Dynamic> = untyped mGroup.requirements;
+
+                // Collect MEASURED and MEASURED_IF in this group
+                var groupHasMeasured:Bool = false;
+                var groupHasMeasuredIf:Bool = false;
+
                 var mr:Int = 0;
-                while (mr < mReqs.length) {
-                    var mf:String = Std.string(untyped mReqs[mr].flag);
-                    if (mf == "MEASURED" || mf == "MEASURED_IF") {
-                        measuredReqs.push({req: mReqs[mr], groupIdx: mg, reqIdx: mr, isMeasuredIf: mf == "MEASURED_IF"});
+                while (mr < mGroupReqs.length) {
+                    var mf:String = Std.string(untyped mGroupReqs[mr].flag);
+                    if (mf == "MEASURED") groupHasMeasured = true;
+                    if (mf == "MEASURED_IF") groupHasMeasuredIf = true;
+                    mr++;
+                }
+
+                if (!groupHasMeasured && !groupHasMeasuredIf) { mg++; continue; }
+
+                // If group is paused, use frozen measured value
+                if (mGroupPaused) {
+                    if (untyped __typeof__(untyped mGroup._pausedMeasuredCurrent) != "undefined") {
+                        var pmCurrent:Float = (untyped mGroup._pausedMeasuredCurrent : Float);
+                        var pmTarget:Float = (untyped mGroup._pausedMeasuredTarget : Float);
+                        if (!hasAnyMeasured) {
+                            measuredTarget = pmTarget;
+                            measuredCurrent = pmCurrent;
+                            hasAnyMeasured = true;
+                        } else {
+                            if (pmTarget != measuredTarget) measuredError = true;
+                            else if (pmCurrent > measuredCurrent) measuredCurrent = pmCurrent;
+                        }
+                    }
+                    mg++;
+                    continue;
+                }
+
+                // Clear frozen value when unpaused
+                untyped __delete__(mGroup, "_pausedMeasuredCurrent");
+                untyped __delete__(mGroup, "_pausedMeasuredTarget");
+
+                // Check all MeasuredIf conditions in this group
+                // Per RA docs: if any MeasuredIf is false, the group's Measured value is 0
+                var measuredIfAllPassed:Bool = true;
+                if (groupHasMeasuredIf) {
+                    var mif:Int = 0;
+                    while (mif < mGroupReqs.length) {
+                        if (Std.string(untyped mGroupReqs[mif].flag) == "MEASURED_IF") {
+                            var mCondResult:Dynamic = evaluateRequirementCondition(mGroupReqs[mif], frameCache, gameRoot);
+                            if (!mCondResult.valid || !mCondResult.passed) {
+                                measuredIfAllPassed = false;
+                                break;
+                            }
+                        }
+                        mif++;
+                    }
+                }
+
+                // Process MEASURED requirements in this group
+                var groupMeasuredCurrent:Float = Math.NaN;
+                var groupMeasuredTarget:Float = Math.NaN;
+
+                mr = 0;
+                while (mr < mGroupReqs.length) {
+                    var mReq:Dynamic = mGroupReqs[mr];
+                    if (Std.string(untyped mReq.flag) != "MEASURED") { mr++; continue; }
+
+                    var mCurrent:Float;
+                    var mTargetVal:Float;
+
+                    if (!measuredIfAllPassed) {
+                        // MeasuredIf gate failed — report 0 progress
+                        // Still need the target for consistency checks
+                        var mMaxHitsZero:Int = untyped mReq.maxHits != null ? mReq.maxHits : 0;
+                        if (mMaxHitsZero > 0) {
+                            mTargetVal = mMaxHitsZero;
+                        } else if (untyped mReq.compiledB != null) {
+                            var mCacheKeyBZ:String = Std.string(untyped mReq.addressB);
+                            var mResultBZ:Array<Dynamic> = frameCache.exists(mCacheKeyBZ) ? frameCache.get(mCacheKeyBZ) : null;
+                            if (mResultBZ == null) {
+                                var cBZ:Array<Dynamic> = untyped mReq.compiledB;
+                                mResultBZ = Evaluate.evaluate(cBZ, 1, cBZ.length, [gameRoot], cast ["stage"], gameRoot);
+                                if (mResultBZ != null) frameCache.set(mCacheKeyBZ, mResultBZ);
+                            }
+                            mTargetVal = (mResultBZ != null && mResultBZ.length == 1) ? (mResultBZ[0] : Float) : 0;
+                        } else {
+                            mTargetVal = 0;
+                        }
+                        mCurrent = 0;
+                    } else {
+                        var mMaxHits:Int = untyped mReq.maxHits != null ? mReq.maxHits : 0;
+                        if (mMaxHits > 0) {
+                            // Hit Count Mode
+                            mTargetVal = mMaxHits;
+                            mCurrent = untyped mReq.hits != null ? mReq.hits : 0;
+
+                            // Check for AddHits/SubHits terminal
+                            var mAhsInfo:Dynamic = null;
+                            var mk:Int = 0;
+                            while (mk < mGroupReqs.length) {
+                                var mCheckFlag:String = Std.string(untyped mGroupReqs[mk].flag);
+                                if (mCheckFlag == "ADD_HITS" || mCheckFlag == "SUB_HITS") {
+                                    var mContribs:Array<Int> = [mk];
+                                    var mTermIdx:Int = mk + 1;
+                                    while (mTermIdx < mGroupReqs.length) {
+                                        var mnf:String = Std.string(untyped mGroupReqs[mTermIdx].flag);
+                                        if (mnf == "ADD_HITS" || mnf == "SUB_HITS") { mContribs.push(mTermIdx); mTermIdx++; }
+                                        else break;
+                                    }
+                                    if (mTermIdx == mr) {
+                                        mAhsInfo = {contributors: mContribs};
+                                    }
+                                    mk = mTermIdx;
+                                }
+                                mk++;
+                            }
+
+                            if (mAhsInfo != null) {
+                                var contribs:Array<Int> = mAhsInfo.contributors;
+                                for (contribIdx in contribs) {
+                                    var contribReq:Dynamic = mGroupReqs[contribIdx];
+                                    var contribHits:Int = untyped contribReq.hits != null ? contribReq.hits : 0;
+                                    if (Std.string(untyped contribReq.flag) == "ADD_HITS") mCurrent += contribHits;
+                                    else mCurrent -= contribHits;
+                                }
+                            }
+                        } else {
+                            // Value Mode
+                            if (untyped mReq.compiledA == null || untyped mReq.compiledB == null) { mr++; continue; }
+
+                            var mCacheKeyA:String = Std.string(untyped mReq.addressA);
+                            var mCacheKeyB:String = Std.string(untyped mReq.addressB);
+
+                            var mResultA:Array<Dynamic> = frameCache.exists(mCacheKeyA) ? frameCache.get(mCacheKeyA) : null;
+                            if (mResultA == null) {
+                                var cA:Array<Dynamic> = untyped mReq.compiledA;
+                                mResultA = Evaluate.evaluate(cA, 1, cA.length, [gameRoot], cast ["stage"], gameRoot);
+                                if (mResultA != null) frameCache.set(mCacheKeyA, mResultA);
+                            }
+                            var mResultB:Array<Dynamic> = frameCache.exists(mCacheKeyB) ? frameCache.get(mCacheKeyB) : null;
+                            if (mResultB == null) {
+                                var cB:Array<Dynamic> = untyped mReq.compiledB;
+                                mResultB = Evaluate.evaluate(cB, 1, cB.length, [gameRoot], cast ["stage"], gameRoot);
+                                if (mResultB != null) frameCache.set(mCacheKeyB, mResultB);
+                            }
+
+                            if (mResultA == null || mResultB == null || mResultA.length != 1 || mResultB.length != 1) { mr++; continue; }
+                            mCurrent = (mResultA[0] : Float);
+                            mTargetVal = (mResultB[0] : Float);
+                        }
+                    }
+
+                    // Track per-group max
+                    if (Math.isNaN(groupMeasuredTarget)) {
+                        groupMeasuredTarget = mTargetVal;
+                        groupMeasuredCurrent = mCurrent;
+                    } else {
+                        if (mTargetVal != groupMeasuredTarget) measuredError = true;
+                        else if (mCurrent > groupMeasuredCurrent) groupMeasuredCurrent = mCurrent;
                     }
                     mr++;
+                }
+
+                // Skip if no valid MEASURED in this group
+                if (Math.isNaN(groupMeasuredTarget)) { mg++; continue; }
+
+                // Store measured value for freezing when group becomes paused
+                untyped mGroup._pausedMeasuredCurrent = groupMeasuredCurrent;
+                untyped mGroup._pausedMeasuredTarget = groupMeasuredTarget;
+
+                // Combine across groups
+                if (!hasAnyMeasured) {
+                    measuredTarget = groupMeasuredTarget;
+                    measuredCurrent = groupMeasuredCurrent;
+                    hasAnyMeasured = true;
+                } else {
+                    if (groupMeasuredTarget != measuredTarget) measuredError = true;
+                    else if (groupMeasuredCurrent > measuredCurrent) measuredCurrent = groupMeasuredCurrent;
                 }
                 mg++;
             }
 
-            if (measuredReqs.length > 0) {
-                var measuredError:Bool = false;
-                var measuredCurrent:Float = Math.NaN;
-                var measuredTarget:Float = Math.NaN;
-                var hasAnyMeasured:Bool = false;
+            // Trigger Measure UI if value changed
+            if (hasAnyMeasured) {
+                var prevMeasuredValue:Dynamic = untyped achievement._measuredValue;
+                var prevMeasuredError:Dynamic = untyped achievement._measuredError;
+                var measuredImageUrl:String = "http://localhost:8081/asset-image/" + Std.string(untyped achievement.id);
 
-                var mi:Int = 0;
-                while (mi < measuredReqs.length) {
-                    var mEntry:Dynamic = measuredReqs[mi];
-                    var mReq:Dynamic = mEntry.req;
-                    var mGroup:Dynamic = groups[mEntry.groupIdx];
-
-                    if (mEntry.isMeasuredIf) {
-                        var mCondResult:Dynamic = evaluateRequirementCondition(mReq, frameCache, gameRoot);
-                        if (!mCondResult.passed || !mCondResult.valid) { mi++; continue; }
+                if (measuredError) {
+                    if (prevMeasuredError != true && !assetTriggered) {
+                        Measure.showOrReset(Std.string(untyped achievement.name), Std.string(untyped achievement.description), "ERROR", measuredImageUrl, untyped achievement.id);
                     }
-
-                    var mCurrent:Float;
-                    var mTargetVal:Float;
-                    var mMaxHits:Int = untyped mReq.maxHits != null ? mReq.maxHits : 0;
-
-                    if (mMaxHits > 0) {
-                        // Hit Count Mode
-                        mTargetVal = mMaxHits;
-                        mCurrent = untyped mReq.hits != null ? mReq.hits : 0;
-
-                        // Check for AddHits/SubHits terminal
-                        var mGroupReqs:Array<Dynamic> = untyped mGroup.requirements;
-                        var mAhsInfo:Dynamic = null;
-                        // Rebuild info for this group
-                        var mk:Int = 0;
-                        while (mk < mGroupReqs.length) {
-                            var mCheckFlag:String = Std.string(untyped mGroupReqs[mk].flag);
-                            if (mCheckFlag == "ADD_HITS" || mCheckFlag == "SUB_HITS") {
-                                var mContribs:Array<Int> = [mk];
-                                var mTermIdx:Int = mk + 1;
-                                while (mTermIdx < mGroupReqs.length) {
-                                    var mnf:String = Std.string(untyped mGroupReqs[mTermIdx].flag);
-                                    if (mnf == "ADD_HITS" || mnf == "SUB_HITS") { mContribs.push(mTermIdx); mTermIdx++; }
-                                    else break;
-                                }
-                                if (mTermIdx == mEntry.reqIdx) {
-                                    mAhsInfo = {contributors: mContribs};
-                                }
-                                mk = mTermIdx;
-                            }
-                            mk++;
-                        }
-
-                        if (mAhsInfo != null) {
-                            var contribs:Array<Int> = mAhsInfo.contributors;
-                            for (contribIdx in contribs) {
-                                var contribReq:Dynamic = mGroupReqs[contribIdx];
-                                var contribHits:Int = untyped contribReq.hits != null ? contribReq.hits : 0;
-                                if (Std.string(untyped contribReq.flag) == "ADD_HITS") mCurrent += contribHits;
-                                else mCurrent -= contribHits;
-                            }
-                        }
-                    } else {
-                        // Value Mode
-                        if (untyped mReq.compiledA == null || untyped mReq.compiledB == null) { mi++; continue; }
-
-                        var mCacheKeyA:String = Std.string(untyped mReq.addressA);
-                        var mCacheKeyB:String = Std.string(untyped mReq.addressB);
-
-                        var mResultA:Array<Dynamic> = frameCache.exists(mCacheKeyA) ? frameCache.get(mCacheKeyA) : null;
-                        if (mResultA == null) {
-                            var cA:Array<Dynamic> = untyped mReq.compiledA;
-                            mResultA = Evaluate.evaluate(cA, 1, cA.length, [gameRoot], cast ["stage"], gameRoot);
-                            if (mResultA != null) frameCache.set(mCacheKeyA, mResultA);
-                        }
-                        var mResultB:Array<Dynamic> = frameCache.exists(mCacheKeyB) ? frameCache.get(mCacheKeyB) : null;
-                        if (mResultB == null) {
-                            var cB:Array<Dynamic> = untyped mReq.compiledB;
-                            mResultB = Evaluate.evaluate(cB, 1, cB.length, [gameRoot], cast ["stage"], gameRoot);
-                            if (mResultB != null) frameCache.set(mCacheKeyB, mResultB);
-                        }
-
-                        if (mResultA == null || mResultB == null || mResultA.length != 1 || mResultB.length != 1) { mi++; continue; }
-                        mCurrent = mResultA[0];
-                        mTargetVal = mResultB[0];
+                    untyped achievement._measuredError = true;
+                } else {
+                    untyped achievement._measuredError = false;
+                    var valueChanged:Bool = (prevMeasuredValue != null) &&
+                        (measuredCurrent != (prevMeasuredValue : Float) || measuredTarget != (untyped achievement._measuredTarget : Float));
+                    if (valueChanged && !assetTriggered) {
+                        var measuredText:String = Std.string(Math.floor(measuredCurrent)) + "/" + Std.string(Math.floor(measuredTarget));
+                        Measure.showOrReset(Std.string(untyped achievement.name), Std.string(untyped achievement.description), measuredText, measuredImageUrl, untyped achievement.id);
                     }
-
-                    if (!hasAnyMeasured) {
-                        measuredTarget = mTargetVal;
-                        measuredCurrent = mCurrent;
-                        hasAnyMeasured = true;
-                    } else {
-                        if (mTargetVal != measuredTarget) measuredError = true;
-                        else if (mCurrent > measuredCurrent) measuredCurrent = mCurrent;
-                    }
-                    mi++;
-                }
-
-                if (hasAnyMeasured) {
-                    var prevMeasuredValue:Dynamic = untyped achievement._measuredValue;
-                    var prevMeasuredError:Dynamic = untyped achievement._measuredError;
-                    var measuredImageUrl:String = "http://localhost:8081/asset-image/" + Std.string(untyped achievement.id);
-
-                    if (measuredError) {
-                        if (prevMeasuredError != true && !assetTriggered) {
-                            Measure.showOrReset(Std.string(untyped achievement.name), Std.string(untyped achievement.description), "ERROR", measuredImageUrl, untyped achievement.id);
-                        }
-                        untyped achievement._measuredError = true;
-                    } else {
-                        untyped achievement._measuredError = false;
-                        var valueChanged:Bool = (prevMeasuredValue != null) &&
-                            (measuredCurrent != (prevMeasuredValue : Float) || measuredTarget != (untyped achievement._measuredTarget : Float));
-                        if (valueChanged && !assetTriggered) {
-                            var measuredText:String = Std.string(Math.floor(measuredCurrent)) + "/" + Std.string(Math.floor(measuredTarget));
-                            Measure.showOrReset(Std.string(untyped achievement.name), Std.string(untyped achievement.description), measuredText, measuredImageUrl, untyped achievement.id);
-                        }
-                        untyped achievement._measuredValue = measuredCurrent;
-                        untyped achievement._measuredTarget = measuredTarget;
-                    }
+                    untyped achievement._measuredValue = measuredCurrent;
+                    untyped achievement._measuredTarget = measuredTarget;
                 }
             }
 

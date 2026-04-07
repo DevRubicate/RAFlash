@@ -473,13 +473,11 @@
         { value: 'SUB_SOURCE',      text: 'Sub Source'      },
         { value: 'ADD_HITS',        text: 'Add Hits'        },
         { value: 'SUB_HITS',        text: 'Sub Hits'        },
-        { value: 'ADD_ADDRESS',     text: 'Add Address'     },
         { value: 'AND_NEXT',        text: 'And Next'        },
         { value: 'OR_NEXT',         text: 'Or Next'         },
         { value: 'MEASURED',        text: 'Measured'        },
         { value: 'MEASURED_IF',     text: 'Measured If'     },
         { value: 'TRIGGER',         text: 'Trigger'         },
-        { value: 'REMEMBER',        text: 'Remember'        },
     ];
     const typeOptions = [
         { value: 'VALUE',       text: 'Value'       },

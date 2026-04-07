@@ -610,7 +610,7 @@ class Main {
      * @param requirement The requirement object to evaluate
      * @param frameCache Cache object for formula results this frame
      */
-    private static function evaluateRequirementCondition(requirement:Object, frameCache:Object):Object {
+    private static function evaluateRequirementCondition(requirement:Object, frameCache:Object, accumulator:Number):Object {
         // Check if compiled formulas exist
         if (requirement.compiledA == null || requirement.compiledB == null) {
             return {passed: false, valid: false};
@@ -666,18 +666,53 @@ class Main {
             resultB = currentB;
         }
 
+        // Add accumulator from AddSource/SubSource chain to left side
+        var valA:Number = Number(resultA[0]) + accumulator;
+        var valB:Number = Number(resultB[0]);
+
         // Evaluate condition
         var passed:Boolean = false;
         switch (requirement.cmp) {
-            case "==": passed = (resultA[0] == resultB[0]); break;
-            case "!=": passed = (resultA[0] != resultB[0]); break;
-            case ">":  passed = (resultA[0] > resultB[0]); break;
-            case ">=": passed = (resultA[0] >= resultB[0]); break;
-            case "<":  passed = (resultA[0] < resultB[0]); break;
-            case "<=": passed = (resultA[0] <= resultB[0]); break;
+            case "==": passed = (valA == valB); break;
+            case "!=": passed = (valA != valB); break;
+            case ">":  passed = (valA > valB); break;
+            case ">=": passed = (valA >= valB); break;
+            case "<":  passed = (valA < valB); break;
+            case "<=": passed = (valA <= valB); break;
         }
 
-        return {passed: passed, valid: true};
+        return {passed: passed, valid: true, valueA: valA};
+    }
+
+    /**
+     * Evaluate a requirement's left-side value for AddSource/SubSource accumulation.
+     * Returns the numeric value, or NaN if invalid.
+     */
+    private static function evaluateRequirementValueA(requirement:Object, frameCache:Object):Number {
+        if (requirement.compiledA == null) return NaN;
+
+        var cacheKeyA:String = requirement.addressA;
+        var currentA:Array = frameCache[cacheKeyA];
+        if (currentA == null) {
+            currentA = evaluate(requirement.compiledA, 1, requirement.compiledA.length, [gameContainer.gameLoader._root], ["stage"]);
+            frameCache[cacheKeyA] = currentA;
+        }
+
+        if (currentA == null || currentA.length != 1) return NaN;
+
+        // Handle Delta type
+        if (requirement.typeA == "DELTA") {
+            var deltaData:Object = deltaValues[requirement.id];
+            if (deltaData == null || deltaData.prevA == undefined) {
+                storeDeltaValue(requirement.id, "A", currentA[0]);
+                return NaN;
+            }
+            var prev:Number = Number(deltaData.prevA);
+            storeDeltaValue(requirement.id, "A", currentA[0]);
+            return prev;
+        }
+
+        return Number(currentA[0]);
     }
 
     /**
@@ -695,7 +730,7 @@ class Main {
         var req:Object = group.requirements[k];
 
         // Evaluate the first condition
-        var evalResult:Object = evaluateRequirementCondition(req, frameCache);
+        var evalResult:Object = evaluateRequirementCondition(req, frameCache, 0);
         if (!evalResult.valid) {
             // If first condition is invalid, find terminal and return false
             while (k + 1 < group.requirements.length) {
@@ -725,7 +760,7 @@ class Main {
             }
 
             var nextReq:Object = group.requirements[k];
-            var nextEval:Object = evaluateRequirementCondition(nextReq, frameCache);
+            var nextEval:Object = evaluateRequirementCondition(nextReq, frameCache, 0);
 
             // Apply the operator from the previous requirement
             if (currentOp == "AND_NEXT") {
@@ -1689,12 +1724,14 @@ class Main {
             var groupPauseStates:Array = [];   // Boolean per group
             var groupPauseIfResults:Array = []; // {req, passed, valid, basePath, reqIndex}[] per group
             var groupChainInfo:Array = [];      // Object per group: reqIndex -> {isChainMember, terminalIndex}
+            var groupRnifHandled:Array = [];    // Object per group: reqIndex -> true for ResetNextIf handled in Phase 0
 
             for (var j:Number = 0; j < achievement.groups.length; ++j) {
                 var group:Object = achievement.groups[j];
                 var isPaused:Boolean = false;
                 var pauseIfResults:Array = [];
                 var chainInfo:Object = {};  // Track chain membership for this group
+                var rnifHandledInPhase0:Object = {};  // ResetNextIf indices handled here (skip in Phase 2)
 
                 // First pass: identify AndNext/OrNext chains ending in Pause If
                 for (var k:Number = 0; k < group.requirements.length; ++k) {
@@ -1750,13 +1787,13 @@ class Main {
                         valid = info.chainValid;
                         // Still need to evaluate this terminal's condition and combine
                         if (valid) {
-                            var termEval:Object = evaluateRequirementCondition(requirement, frameCache);
+                            var termEval:Object = evaluateRequirementCondition(requirement, frameCache, 0);
                             valid = termEval.valid;
                             // Chain result is already combined with terminal in evaluateChain
                         }
                     } else {
                         // Standalone Pause If - evaluate normally
-                        var evalResult:Object = evaluateRequirementCondition(requirement, frameCache);
+                        var evalResult:Object = evaluateRequirementCondition(requirement, frameCache, 0);
                         passed = evalResult.passed;
                         valid = evalResult.valid;
                     }
@@ -1773,6 +1810,23 @@ class Main {
                     }
 
                     pauseIfResults.push({req: requirement, passed: passed, valid: true, basePath: basePath, reqIndex: k});
+
+                    // Check for ResetNextIf targeting this PauseIf
+                    // Per RA docs: ResetNextIf followed by PauseIf is evaluated even while paused,
+                    // allowing it to unlock a PauseLock without needing an alt group.
+                    var prevK:Number = k - 1;
+                    while (prevK >= 0 && group.requirements[prevK].flag == "RESET_NEXT_IF") {
+                        rnifHandledInPhase0[prevK] = true;
+                        var rnifReq:Object = group.requirements[prevK];
+                        var rnifResult:Object = evaluateRequirementCondition(rnifReq, frameCache, 0);
+                        if (rnifResult.valid && rnifResult.passed) {
+                            // Reset the PauseIf's hit count
+                            if ((requirement.hits || 0) > 0) {
+                                diffSet(requirement, "hits", 0, basePath + "/hits");
+                            }
+                        }
+                        prevK--;
+                    }
 
                     // Check if this triggers pause
                     var maxHits:Number = requirement.maxHits || 0;
@@ -1802,6 +1856,7 @@ class Main {
                 groupPauseStates.push(isPaused);
                 groupPauseIfResults.push(pauseIfResults);
                 groupChainInfo.push(chainInfo);
+                groupRnifHandled.push(rnifHandledInPhase0);
             }
 
             // === PHASE 1: Delta-only evaluation for non-Pause-If requirements in paused groups ===
@@ -1874,10 +1929,15 @@ class Main {
                     groupReqs.push(groupPauseIfResults[j][pi]);
                 }
 
-                // Build set of Pause If requirement indices to skip
+                // Build set of requirement indices already handled in Phase 0 (skip in Phase 2)
                 var pauseIfIndices:Object = {};
                 for (var pi:Number = 0; pi < groupPauseIfResults[j].length; ++pi) {
                     pauseIfIndices[groupPauseIfResults[j][pi].reqIndex] = true;
+                }
+                // Also skip ResetNextIf requirements that target PauseIf (handled in Phase 0)
+                var rnifHandled:Object = groupRnifHandled[j];
+                for (var rnifIdx:String in rnifHandled) {
+                    pauseIfIndices[rnifIdx] = true;
                 }
 
                 // Get chain info from Phase 0 and detect additional chains for non-Pause-If terminals
@@ -1961,6 +2021,8 @@ class Main {
                     }
                 }
 
+                var sourceAccumulator:Number = 0;
+
                 for (var k:Number = 0; k < group.requirements.length; ++k) {
                     var requirement:Object = group.requirements[k];
 
@@ -1973,6 +2035,22 @@ class Main {
                         // Chain members don't count toward group satisfaction
                         continue;
                     }
+
+                    // Handle AddSource/SubSource: accumulate left-side value, skip to next
+                    if (requirement.flag == "ADD_SOURCE") {
+                        var addVal:Number = evaluateRequirementValueA(requirement, frameCache);
+                        if (!isNaN(addVal)) sourceAccumulator += addVal;
+                        continue;
+                    }
+                    if (requirement.flag == "SUB_SOURCE") {
+                        var subVal:Number = evaluateRequirementValueA(requirement, frameCache);
+                        if (!isNaN(subVal)) sourceAccumulator -= subVal;
+                        continue;
+                    }
+
+                    // Consume the accumulator for this requirement, then reset
+                    var reqAccumulator:Number = sourceAccumulator;
+                    sourceAccumulator = 0;
 
                     hasRequirements = true;
 
@@ -2000,8 +2078,8 @@ class Main {
                         passed = info.chainResult;
                         valid = info.chainValid;
                     } else {
-                        // Standalone requirement - evaluate normally
-                        var evalResult:Object = evaluateRequirementCondition(requirement, frameCache);
+                        // Standalone requirement - evaluate with accumulator
+                        var evalResult:Object = evaluateRequirementCondition(requirement, frameCache, reqAccumulator);
                         passed = evalResult.passed;
                         valid = evalResult.valid;
                     }
@@ -2045,7 +2123,7 @@ class Main {
                                     var contribReq:Object = group.requirements[contribIdx];
                                     var contribHits:Number = contribReq.hits || 0;
                                     // Check if this contributor passes this frame (for lookahead)
-                                    var contribResult:Object = evaluateRequirementCondition(contribReq, frameCache);
+                                    var contribResult:Object = evaluateRequirementCondition(contribReq, frameCache, 0);
                                     var contribPasses:Boolean = contribResult.passed && contribResult.valid;
                                     if (contribReq.flag == "ADD_HITS") {
                                         effectiveHits += contribHits;
@@ -2258,53 +2336,98 @@ class Main {
             }
 
             // === PHASE 6: Calculate Measured value ===
-            // Collect all MEASURED and MEASURED_IF requirements across all groups
-            var measuredReqs:Array = [];
+            // Process per-group: check MeasuredIf gates, handle paused group freezing
+            var measuredError:Boolean = false;
+            var measuredCurrent:Number = NaN;
+            var measuredTarget:Number = NaN;
+            var hasAnyMeasured:Boolean = false;
+
             for (var mg:Number = 0; mg < achievement.groups.length; ++mg) {
-                var measuredGroup:Object = achievement.groups[mg];
-                for (var mr:Number = 0; mr < measuredGroup.requirements.length; ++mr) {
-                    var measuredReq:Object = measuredGroup.requirements[mr];
-                    if (measuredReq.flag == "MEASURED" || measuredReq.flag == "MEASURED_IF") {
-                        measuredReqs.push({
-                            req: measuredReq,
-                            groupIdx: mg,
-                            reqIdx: mr,
-                            isMeasuredIf: (measuredReq.flag == "MEASURED_IF")
-                        });
-                    }
+                var mGroup:Object = achievement.groups[mg];
+                var mGroupPaused:Boolean = groupPauseStates[mg];
+
+                // Collect MEASURED and MEASURED_IF in this group
+                var groupHasMeasured:Boolean = false;
+                var groupHasMeasuredIf:Boolean = false;
+                var measuredIfAllPassed:Boolean = true;
+
+                for (var mr:Number = 0; mr < mGroup.requirements.length; ++mr) {
+                    if (mGroup.requirements[mr].flag == "MEASURED") groupHasMeasured = true;
+                    if (mGroup.requirements[mr].flag == "MEASURED_IF") groupHasMeasuredIf = true;
                 }
-            }
 
-            // Process measured requirements if any exist
-            if (measuredReqs.length > 0) {
-                var measuredError:Boolean = false;
-                var measuredCurrent:Number = NaN;
-                var measuredTarget:Number = NaN;
-                var hasAnyMeasured:Boolean = false;
+                if (!groupHasMeasured && !groupHasMeasuredIf) continue;
 
-                for (var mi:Number = 0; mi < measuredReqs.length; ++mi) {
-                    var mEntry:Object = measuredReqs[mi];
-                    var mReq:Object = mEntry.req;
-                    var mGroup:Object = achievement.groups[mEntry.groupIdx];
-
-                    // For MeasuredIf, check if condition is true
-                    if (mEntry.isMeasuredIf) {
-                        var mCondResult:Object = evaluateRequirementCondition(mReq, frameCache);
-                        if (!mCondResult.passed || !mCondResult.valid) {
-                            continue;  // Skip this measurement - condition not met
+                // If group is paused, use frozen measured value
+                if (mGroupPaused) {
+                    if (mGroup._pausedMeasuredCurrent != undefined) {
+                        var pmCurrent:Number = mGroup._pausedMeasuredCurrent;
+                        var pmTarget:Number = mGroup._pausedMeasuredTarget;
+                        if (!hasAnyMeasured) {
+                            measuredTarget = pmTarget;
+                            measuredCurrent = pmCurrent;
+                            hasAnyMeasured = true;
+                        } else {
+                            if (pmTarget != measuredTarget) {
+                                measuredError = true;
+                            } else if (pmCurrent > measuredCurrent) {
+                                measuredCurrent = pmCurrent;
+                            }
                         }
                     }
+                    continue;
+                }
 
-                    // Calculate current and target values
+                // Clear frozen value when unpaused
+                delete mGroup._pausedMeasuredCurrent;
+                delete mGroup._pausedMeasuredTarget;
+
+                // Check all MeasuredIf conditions in this group
+                // Per RA docs: if any MeasuredIf is false, the group's Measured value is 0
+                if (groupHasMeasuredIf) {
+                    for (var mif:Number = 0; mif < mGroup.requirements.length; ++mif) {
+                        if (mGroup.requirements[mif].flag != "MEASURED_IF") continue;
+                        var mCondResult:Object = evaluateRequirementCondition(mGroup.requirements[mif], frameCache, 0);
+                        if (!mCondResult.valid || !mCondResult.passed) {
+                            measuredIfAllPassed = false;
+                            break;
+                        }
+                    }
+                }
+
+                // Process MEASURED requirements in this group
+                var groupMeasuredCurrent:Number = NaN;
+                var groupMeasuredTarget:Number = NaN;
+
+                for (var mr:Number = 0; mr < mGroup.requirements.length; ++mr) {
+                    var mReq:Object = mGroup.requirements[mr];
+                    if (mReq.flag != "MEASURED") continue;
+
                     var mCurrent:Number;
                     var mTarget:Number;
 
-                    if ((mReq.maxHits || 0) > 0) {
+                    if (!measuredIfAllPassed) {
+                        // MeasuredIf gate failed — report 0 progress
+                        // Still need the target for consistency checks
+                        if ((mReq.maxHits || 0) > 0) {
+                            mTarget = mReq.maxHits;
+                        } else if (mReq.compiledB != null) {
+                            var mCacheKeyB:String = mReq.addressB;
+                            var mResultB:Array = frameCache[mCacheKeyB];
+                            if (mResultB == null) {
+                                mResultB = evaluate(mReq.compiledB, 1, mReq.compiledB.length, [gameContainer.gameLoader._root], ["stage"]);
+                                frameCache[mCacheKeyB] = mResultB;
+                            }
+                            mTarget = (mResultB != null && mResultB.length == 1) ? Number(mResultB[0]) : 0;
+                        } else {
+                            mTarget = 0;
+                        }
+                        mCurrent = 0;
+                    } else if ((mReq.maxHits || 0) > 0) {
                         // Hit Count Mode
                         mTarget = mReq.maxHits;
 
                         // Check if this is an AddHits/SubHits terminal
-                        // Rebuild addHitsSubHitsInfo for this group
                         var mAddHitsInfo:Object = {};
                         for (var mk:Number = 0; mk < mGroup.requirements.length; ++mk) {
                             var mCheckReq:Object = mGroup.requirements[mk];
@@ -2332,7 +2455,7 @@ class Main {
 
                         // Calculate effective hits
                         mCurrent = mReq.hits || 0;
-                        var mAhsInfo:Object = mAddHitsInfo[mEntry.reqIdx];
+                        var mAhsInfo:Object = mAddHitsInfo[mr];
                         if (mAhsInfo && mAhsInfo.isTerminal && mAhsInfo.contributors) {
                             for (var maci:Number = 0; maci < mAhsInfo.contributors.length; maci++) {
                                 var mContribReq:Object = mGroup.requirements[mAhsInfo.contributors[maci]];
@@ -2349,9 +2472,8 @@ class Main {
                             continue;  // Can't evaluate
                         }
 
-                        // Use frameCache for efficiency
                         var mCacheKeyA:String = mReq.addressA;
-                        var mCacheKeyB:String = mReq.addressB;
+                        var mCacheKeyB2:String = mReq.addressB;
 
                         var mResultA:Array = frameCache[mCacheKeyA];
                         if (mResultA == null) {
@@ -2359,68 +2481,81 @@ class Main {
                             frameCache[mCacheKeyA] = mResultA;
                         }
 
-                        var mResultB:Array = frameCache[mCacheKeyB];
-                        if (mResultB == null) {
-                            mResultB = evaluate(mReq.compiledB, 1, mReq.compiledB.length, [gameContainer.gameLoader._root], ["stage"]);
-                            frameCache[mCacheKeyB] = mResultB;
+                        var mResultB2:Array = frameCache[mCacheKeyB2];
+                        if (mResultB2 == null) {
+                            mResultB2 = evaluate(mReq.compiledB, 1, mReq.compiledB.length, [gameContainer.gameLoader._root], ["stage"]);
+                            frameCache[mCacheKeyB2] = mResultB2;
                         }
 
-                        if (mResultA == null || mResultB == null || mResultA.length != 1 || mResultB.length != 1) {
+                        if (mResultA == null || mResultB2 == null || mResultA.length != 1 || mResultB2.length != 1) {
                             continue;  // Invalid multi-value result
                         }
 
                         mCurrent = Number(mResultA[0]);
-                        mTarget = Number(mResultB[0]);
+                        mTarget = Number(mResultB2[0]);
                     }
 
-                    // Validate target consistency across multiple Measured
-                    if (!hasAnyMeasured) {
-                        measuredTarget = mTarget;
-                        measuredCurrent = mCurrent;
-                        hasAnyMeasured = true;
+                    // Track per-group max
+                    if (isNaN(groupMeasuredTarget)) {
+                        groupMeasuredTarget = mTarget;
+                        groupMeasuredCurrent = mCurrent;
                     } else {
-                        if (mTarget != measuredTarget) {
+                        if (mTarget != groupMeasuredTarget) {
                             measuredError = true;
-                        } else {
-                            // Same target - take MAX of currents
-                            if (mCurrent > measuredCurrent) {
-                                measuredCurrent = mCurrent;
-                            }
+                        } else if (mCurrent > groupMeasuredCurrent) {
+                            groupMeasuredCurrent = mCurrent;
                         }
                     }
                 }
 
-                // Trigger Measure UI if value changed
-                if (hasAnyMeasured) {
-                    var prevMeasuredValue:Number = achievement._measuredValue;
-                    var prevMeasuredError:Boolean = achievement._measuredError;
-                    var measuredImageUrl:String = "http://127.0.0.1:8081/asset-image/" + achievement.id;
+                // Skip if no valid MEASURED in this group
+                if (isNaN(groupMeasuredTarget)) continue;
 
-                    if (measuredError) {
-                        // Error state - different targets
-                        if (!prevMeasuredError && !assetTriggered) {
-                            // Newly errored - show ERROR (but not if achievement is triggering)
-                            Measure.showOrReset(achievement.name, achievement.description || "", "ERROR", measuredImageUrl, achievement.id);
-                        }
-                        achievement._measuredError = true;
-                    } else {
-                        achievement._measuredError = false;
+                // Freeze value if group is about to be paused (captured at pause time)
+                // Note: groupPauseStates was already checked above; this stores for NEXT frame
+                // We store on every non-paused frame so the value is current when pause begins
+                mGroup._pausedMeasuredCurrent = groupMeasuredCurrent;
+                mGroup._pausedMeasuredTarget = groupMeasuredTarget;
 
-                        // Check if value changed (not just initialized)
-                        // prevMeasuredValue is null/undefined on first frame
-                        var valueChanged:Boolean = (prevMeasuredValue != null) &&
-                                                   (measuredCurrent != prevMeasuredValue || measuredTarget != achievement._measuredTarget);
-
-                        if (valueChanged && !assetTriggered) {
-                            // Show or reset timer (but not if achievement is triggering - no point showing 50/50 when unlocking)
-                            var measuredText:String = String(Math.floor(measuredCurrent)) + "/" + String(Math.floor(measuredTarget));
-                            Measure.showOrReset(achievement.name, achievement.description || "", measuredText, measuredImageUrl, achievement.id);
-                        }
-
-                        // Update stored values
-                        achievement._measuredValue = measuredCurrent;
-                        achievement._measuredTarget = measuredTarget;
+                // Combine across groups
+                if (!hasAnyMeasured) {
+                    measuredTarget = groupMeasuredTarget;
+                    measuredCurrent = groupMeasuredCurrent;
+                    hasAnyMeasured = true;
+                } else {
+                    if (groupMeasuredTarget != measuredTarget) {
+                        measuredError = true;
+                    } else if (groupMeasuredCurrent > measuredCurrent) {
+                        measuredCurrent = groupMeasuredCurrent;
                     }
+                }
+            }
+
+            // Trigger Measure UI if value changed
+            if (hasAnyMeasured) {
+                var prevMeasuredValue:Number = achievement._measuredValue;
+                var prevMeasuredError:Boolean = achievement._measuredError;
+                var measuredImageUrl:String = "http://127.0.0.1:8081/asset-image/" + achievement.id;
+
+                if (measuredError) {
+                    // Error state - different targets
+                    if (!prevMeasuredError && !assetTriggered) {
+                        Measure.showOrReset(achievement.name, achievement.description || "", "ERROR", measuredImageUrl, achievement.id);
+                    }
+                    achievement._measuredError = true;
+                } else {
+                    achievement._measuredError = false;
+
+                    var valueChanged:Boolean = (prevMeasuredValue != null) &&
+                                               (measuredCurrent != prevMeasuredValue || measuredTarget != achievement._measuredTarget);
+
+                    if (valueChanged && !assetTriggered) {
+                        var measuredText:String = String(Math.floor(measuredCurrent)) + "/" + String(Math.floor(measuredTarget));
+                        Measure.showOrReset(achievement.name, achievement.description || "", measuredText, measuredImageUrl, achievement.id);
+                    }
+
+                    achievement._measuredValue = measuredCurrent;
+                    achievement._measuredTarget = measuredTarget;
                 }
             }
 
