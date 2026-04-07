@@ -891,6 +891,24 @@ async function startFlashServer(gamePath: string): Promise<void> {
     // Flash socket policy file
     const POLICY_FILE = '<?xml version="1.0"?><cross-domain-policy><allow-access-from domain="*" to-ports="*" /></cross-domain-policy>\0';
 
+    // Serve policy on port 843 (Flash's default policy port) to avoid ~3s timeout
+    try {
+        const policyListener = Deno.listen({ port: 843 });
+        const encoder = new TextEncoder();
+        (async () => {
+            for await (const conn of policyListener) {
+                try {
+                    const writer = conn.writable.getWriter();
+                    await writer.write(encoder.encode(POLICY_FILE));
+                    writer.releaseLock();
+                    conn.close();
+                } catch { /* connection closed before write */ }
+            }
+        })();
+    } catch {
+        // Port 843 unavailable (e.g. needs elevated privileges) — Flash falls back to target port
+    }
+
     for await (const conn of listener) {
         handleFlashConnection(conn, gamePath, POLICY_FILE);
     }
@@ -1113,7 +1131,7 @@ function handleFirmwareData(data: string): void {
                 // Firmware log message
                 console.log(`[FIRMWARE] ${parsed.data?.message || JSON.stringify(parsed.data)}`)
             } else if (parsed.type === "gameLoaded") {
-                // Game loaded notification (positioning already done at launch)
+                // Game loaded — no action needed
             } else if (parsed.type === "keypress") {
                 // F12 key pressed - open devtools
                 if (parsed.data?.keyCode === 123) {
@@ -1195,7 +1213,7 @@ function handleFirmwareData(data: string): void {
 function launchFlashPlayer(): Deno.ChildProcess {
     const fpPath = `${Deno.cwd()}/vendor/fp-32.0.0.380.exe`;
     // Note: cwd is .build/ during development (make run) and the exe's directory when distributed
-    const firmwareUrl = `http://localhost:${FLASH_PORT}/firmware.swf`;
+    const firmwareUrl = `http://127.0.0.1:${FLASH_PORT}/firmware.swf`;
 
     const command = new Deno.Command(fpPath, {
         args: [firmwareUrl],

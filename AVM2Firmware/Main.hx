@@ -95,7 +95,7 @@ class Main extends MovieClip {
         socket.addEventListener(Event.CLOSE, onClose);
 
         try {
-            socket.connect("localhost", PORT);
+            socket.connect("127.0.0.1", PORT);
         } catch (e:Dynamic) {
             log("Connection failed: " + e);
             scheduleReconnect();
@@ -394,11 +394,10 @@ class Main extends MovieClip {
         loader.contentLoaderInfo.addEventListener(Event.COMPLETE, onGameLoaded);
         loader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, onGameLoadError);
 
-        var gameUrl = "http://localhost:" + PORT + "/game.swf";
+        var gameUrl = "http://127.0.0.1:" + PORT + "/game.swf";
         log("Loading from: " + gameUrl);
         loader.load(new URLRequest(gameUrl));
 
-        // Add loader to stage
         addChild(loader);
     }
 
