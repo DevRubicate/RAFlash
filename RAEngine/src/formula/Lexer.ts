@@ -4,7 +4,7 @@ enum TokenType {
     NUMBER = 'NUMBER',
     STRING = 'STRING',
     NULL = 'NULL',
-    ASSIGN = 'ASSIGN',
+
     PLUS = 'PLUS',
     MINUS = 'MINUS',
     ASTERISK = 'ASTERISK',
@@ -366,13 +366,10 @@ class Lexer {
                     );
                     this.advancePosition();
                 } else {
-                    this.tokens.push(
-                        new Token(
-                            TokenType.ASSIGN,
-                            null,
-                            tokenRow,
-                            tokenColumn,
-                        ),
+                    throw new LexerError(
+                        `Unexpected '='. Did you mean '=='?`,
+                        tokenRow,
+                        tokenColumn,
                     );
                 }
                 break;

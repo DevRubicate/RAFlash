@@ -155,9 +155,6 @@ class Evaluate {
                     var bi:Int = isTruthy(bv) ? 1 : 0;
                     return (ai ^ bi) != 0 ? 1 : 0;
                 }));
-            } else if (token == "READ_VAR") {
-                stack.pop();
-                stack.push([555]); // stub, matches AVM1
             } else if (token == "READ_GLOBAL") {
                 var identifiers = stack.pop();
                 if (identifiers.length == 1) {

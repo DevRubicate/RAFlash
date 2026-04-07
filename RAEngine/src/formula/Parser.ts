@@ -216,7 +216,7 @@ class Parser {
                                 qnode.type === NODE_TYPE.STRING ||
                                 qnode.type === NODE_TYPE.NULL ||
                                 qnode.type === NODE_TYPE.READ_GLOBAL ||
-                                qnode.type === NODE_TYPE.READ_VAR ||
+
                                 qnode.type === NODE_TYPE.CALL ||
                                 qnode.type === NODE_TYPE.TERNARY) {
                                 elseStack.push(qnode);
@@ -276,8 +276,6 @@ class Parser {
                             } else if (node.type === NODE_TYPE.NULL) {
                                 evaluationStack.push(node);
                             } else if (node.type === NODE_TYPE.READ_GLOBAL) {
-                                evaluationStack.push(node);
-                            } else if (node.type === NODE_TYPE.READ_VAR) {
                                 evaluationStack.push(node);
                             } else if (node.type === NODE_TYPE.CALL) {
                                 evaluationStack.push(node);
@@ -442,19 +440,6 @@ class Parser {
                                             CONSUME.END_PARENTHESIS,
                                             CONSUME.EXPRESSION_LIST,
                                             CONSUME.START_PARENTHESIS,
-                                            CONSUME.IDENTIFIER,
-                                        ),
-                                );
-                            } else if (
-                                this.peakToken(1).type ===
-                                    TokenType.ASSIGN
-                            ) {
-                                // This is a variable assignment
-                                this.replaceCurrentNode(
-                                    new Node(NODE_TYPE.WRITE_VAR)
-                                        .addConsume(
-                                            CONSUME.EXPRESSION,
-                                            CONSUME.KEYWORD_ASSIGNMENT,
                                             CONSUME.IDENTIFIER,
                                         ),
                                 );
@@ -650,17 +635,6 @@ class Parser {
                         );
                     }
                     // Move past the parenthesis token
-                    this.advanceToken();
-                    break;
-                }
-                case CONSUME.KEYWORD_ASSIGNMENT: {
-                    if (this.peakToken().type !== TokenType.ASSIGN) {
-                        throw new ParseError(
-                            `Expected = but found %s`,
-                            this.peakToken(),
-                        );
-                    }
-                    // Move past the keyword token
                     this.advanceToken();
                     break;
                 }
@@ -1144,7 +1118,7 @@ class Parser {
                                         qnode.type === NODE_TYPE.STRING ||
                                         qnode.type === NODE_TYPE.NULL ||
                                         qnode.type === NODE_TYPE.READ_GLOBAL ||
-                                        qnode.type === NODE_TYPE.READ_VAR ||
+        
                                         qnode.type === NODE_TYPE.CALL ||
                                         qnode.type === NODE_TYPE.TERNARY) {
                                         thenStack.push(qnode);
@@ -1205,7 +1179,7 @@ class Parser {
                                     qnode.type === NODE_TYPE.STRING ||
                                     qnode.type === NODE_TYPE.NULL ||
                                     qnode.type === NODE_TYPE.READ_GLOBAL ||
-                                    qnode.type === NODE_TYPE.READ_VAR ||
+    
                                     qnode.type === NODE_TYPE.CALL ||
                                     qnode.type === NODE_TYPE.TERNARY) {
                                     conditionStack.push(qnode);

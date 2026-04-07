@@ -18,10 +18,8 @@ import { SubtractionUnit }              from './unit/SubtractionUnit.ts';
 import { ValueUnit }                    from './unit/ValueUnit.ts';
 import { StringUnit }                   from './unit/StringUnit.ts';
 import { NullUnit }                     from './unit/NullUnit.ts';
-import { ReadVarUnit }                  from './unit/ReadVarUnit.ts';
 import { ReadGlobalUnit }               from './unit/ReadGlobalUnit.ts';
 import { VoidUnit }                     from './unit/VoidUnit.ts';
-import { WriteVarUnit }                 from './unit/WriteVarUnit.ts';
 import { EqualUnit }                    from './unit/EqualUnit.ts';
 import { NotEqualUnit }                 from './unit/NotEqualUnit.ts';
 import { GreaterThanUnit }              from './unit/GreaterThanUnit.ts';
@@ -222,20 +220,6 @@ export class Builder {
                 element.children[0].parent = element;
                 return element;
             }
-            case NODE_TYPE.READ_VAR: {
-                if (node.children.length !== 1) {
-                    throw new Error(
-                        `Unexpected number of children in READ_VAR statement: ${node.children.length}`,
-                    );
-                }
-
-                const element = new ReadVarUnit(null);
-                element.children.push(
-                    Builder.convert(node.children[0]),
-                );
-                element.children[0].parent = element;
-                return element;
-            }
             case NODE_TYPE.ROOT: {
                 const element = new RootUnit(null);
                 for (let i = 0; i < node.children.length; ++i) {
@@ -282,24 +266,6 @@ export class Builder {
                     Builder.convert(node.children[0]),
                 );
                 element.children[0].parent = element;
-                return element;
-            }
-            case NODE_TYPE.WRITE_VAR: {
-                if (node.children.length !== 2) {
-                    throw new Error(
-                        `Unexpected number of children in WRITE_VAR statement: ${node.children.length}`,
-                    );
-                }
-
-                const element = new WriteVarUnit(null);
-                element.children.push(
-                    Builder.convert(node.children[0]),
-                );
-                element.children.push(
-                    Builder.convert(node.children[1]),
-                );
-                element.children[0].parent = element;
-                element.children[1].parent = element;
                 return element;
             }
             case NODE_TYPE.EQUAL: {

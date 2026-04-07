@@ -792,7 +792,7 @@ class Main {
      * - Arithmetic: ADD, SUB, MUL, DIV, MOD, POW
      * - Comparison: EQUAL, NOT_EQUAL, GREATER, GREATER_EQUAL, LESSER, LESSER_EQUAL
      * - Boolean: AND, OR, XOR
-     * - Access: READ_VAR, READ_GLOBAL, OBJECT_ACCESS, ARRAY_ACCESS
+     * - Access: READ_GLOBAL, OBJECT_ACCESS, ARRAY_ACCESS
      */
     private static function evaluate(formula:Array, start:Number, end:Number, context:Array, keys:Array):Array {
         var stack:Array = [];
@@ -1245,11 +1245,6 @@ class Main {
                         log("Invalid number of entries for " + token);
                         return null;
                     }
-                    break;
-                }
-                case "READ_VAR": {
-                    var identifier = stack.pop();
-                    stack.push([555]);
                     break;
                 }
                 case "READ_GLOBAL": {

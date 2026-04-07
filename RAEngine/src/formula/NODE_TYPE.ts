@@ -22,8 +22,6 @@ enum NODE_TYPE {
     CALL = 'CALL',
 
     // Variables
-    READ_VAR = 'READ_VAR',
-    WRITE_VAR = 'WRITE_VAR',
     READ_GLOBAL = 'READ_GLOBAL',
 
     // Comparison Operators
