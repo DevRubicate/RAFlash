@@ -22,6 +22,7 @@ import { AppData } from "./AppData.ts";
 import { WindowManager } from "./WindowManager.ts";
 import type { Requirement } from "./types.ts";
 import { join, SEPARATOR } from "https://deno.land/std/path/mod.ts";
+import { Buffer } from "node:buffer";
 import { PNG } from "npm:pngjs";
 import jpeg from "npm:jpeg-js";
 // @deno-types="npm:@types/pako"
@@ -925,7 +926,7 @@ async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFi
 
     const decoder = new TextDecoder();
     const encoder = new TextEncoder();
-    let buffer = "";
+    let httpBuffer = "";
     let isXMLSocket = false;
 
     const reader = conn.readable.getReader();
@@ -935,10 +936,10 @@ async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFi
         const { done, value } = await reader.read();
         if (done) return;
 
-        buffer = decoder.decode(value);
+        httpBuffer = decoder.decode(value);
 
         // HTTP request for firmware SWF
-        if (buffer.startsWith("GET /firmware.swf")) {
+        if (httpBuffer.startsWith("GET /firmware.swf")) {
             let swfData: Uint8Array;
             if (avmConfig.patchFirmware) {
                 const gameSwfBuffer = await Deno.readFile(gamePath);
@@ -966,7 +967,7 @@ async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFi
         }
 
         // HTTP request for game SWF
-        if (buffer.startsWith("GET /game.swf")) {
+        if (httpBuffer.startsWith("GET /game.swf")) {
             const swfData = await Deno.readFile(gamePath);
             const response = [
                 "HTTP/1.1 200 OK",
@@ -985,8 +986,8 @@ async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFi
         }
 
         // HTTP request for asset badge image
-        if (buffer.startsWith("GET /asset-image/")) {
-            const match = buffer.match(/GET \/asset-image\/(-?\d+)/);
+        if (httpBuffer.startsWith("GET /asset-image/")) {
+            const match = httpBuffer.match(/GET \/asset-image\/(-?\d+)/);
             if (match) {
                 const assetId = parseInt(match[1], 10);
                 const assets = AppData.data.assets as Array<Record<string, unknown>>;
@@ -1010,7 +1011,7 @@ async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFi
                     // Flash AS2 MovieClipLoader has issues with certain PNG formats
                     if (avmConfig.convertPngToJpeg && mimeType === "image/png") {
                         try {
-                            const png = PNG.sync.read(imageBytes);
+                            const png = PNG.sync.read(Buffer.from(imageBytes));
 
                             // PNG may have alpha channel - composite onto white background
                             const rgbData = new Uint8Array(png.width * png.height * 4);
@@ -1059,7 +1060,7 @@ async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFi
         }
 
         // Policy file request
-        if (buffer.includes("<policy-file-request/>")) {
+        if (httpBuffer.includes("<policy-file-request/>")) {
             await writer.write(encoder.encode(policyFile));
             writer.releaseLock();
             reader.releaseLock();
@@ -1076,8 +1077,8 @@ async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFi
         sendToFirmware("setup", { data: AppData.data }).catch(() => {});
 
         // Process initial data
-        if (buffer.trim()) {
-            handleFirmwareData(buffer);
+        if (httpBuffer.trim()) {
+            handleFirmwareData(httpBuffer);
         }
 
         // Read messages
