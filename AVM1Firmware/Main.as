@@ -1284,6 +1284,21 @@ class Main {
                     var targets = stack.pop();
                     var amount = parseInt(formula[i + 1], 10);
 
+                    // Flatten Array targets so .prop maps over array elements
+                    // e.g. stage.allTitles.charTitle → allTitles is an Array,
+                    // so expand its elements as individual targets
+                    var flatTargets = [];
+                    for (var j = 0; j < targets.length; ++j) {
+                        if (targets[j] instanceof Array) {
+                            for (var k = 0; k < targets[j].length; ++k) {
+                                flatTargets.push(targets[j][k]);
+                            }
+                        } else {
+                            flatTargets.push(targets[j]);
+                        }
+                    }
+                    targets = flatTargets;
+
                     var result = [];
 
                     // OPTIMIZATION: Detect simple property access pattern
