@@ -17,20 +17,32 @@
                 <div v-if="memoryResult.length === 0" class="no-results">
                     <p>No results found. Try a different expression.</p>
                 </div>
+                <div v-else-if="filteredResults.length === 0" class="no-results">
+                    <p>No matches for "{{ filterText }}"</p>
+                </div>
                 <table class="results-table" v-else>
                     <thead>
                         <tr>
-                            <th>Result ({{ memoryResult.length }} found)</th>
+                            <th v-if="filterText">Result ({{ filteredResults.length }} of {{ memoryResult.length }})</th>
+                            <th v-else>Result ({{ memoryResult.length }} found)</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="(res, index) in memoryResult">
+                        <tr v-for="(res, index) in filteredResults">
                             <td>{{ res.value }}</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
         </div>
+
+        <input
+            class="filter-input"
+            v-model="filterText"
+            placeholder="Filter results..."
+            spellcheck="false"
+            v-if="memoryResult.length > 0"
+        />
     </div>
 </template>
 
@@ -93,8 +105,28 @@
     }
 
 
+    /* === Filter Input === */
+    .filter-input {
+        flex-shrink: 0;
+        background-color: #ffffff;
+        color: #111827;
+        border: 1px solid #d1d5db;
+        border-radius: 0.5rem;
+        padding: 0.5rem 1rem;
+        font-family: "Fira Code", monospace;
+        font-size: 0.8rem;
+        margin-top: 0.75rem;
+        box-sizing: border-box;
+        transition: border-color 200ms, box-shadow 200ms;
+    }
+
+    .filter-input:focus {
+        outline: none;
+        border-color: #4f46e5;
+        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+    }
+
     /* === Results Area === */
-    /* (No changes needed in this section) */
     .results-wrapper {
         flex-grow: 1;
         display: flex;
@@ -152,16 +184,24 @@
 </style>
 
 <script setup>
-    import { ref, onMounted } from 'vue';
+    import { ref, computed, onMounted } from 'vue';
     import { Network } from '../js/network.ts';
     import { App }          from '../js/app.ts';
 
     const memoryInput = ref('');
     const memoryResult = ref([]);
     const memoryResultValid = ref(false);
+    const filterText = ref('');
+
+    const filteredResults = computed(() => {
+        if (!filterText.value) return memoryResult.value;
+        const needle = filterText.value.toLowerCase();
+        return memoryResult.value.filter(res => String(res.value).toLowerCase().includes(needle));
+    });
 
     const evaluate = async () => {
         memoryResultValid.value = false;
+        filterText.value = '';
         const reply = await Network.send({ command: 'evaluate', params: { input: memoryInput.value } });
         
         if (reply.success) {
