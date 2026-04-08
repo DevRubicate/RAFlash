@@ -71,6 +71,7 @@ class Main extends MovieClip {
 
         stage.align = StageAlign.TOP_LEFT;
         stage.scaleMode = StageScaleMode.NO_SCALE;
+        flash.Lib.fscommand("showmenu", "false");
     }
 
     // === Socket Connection ===

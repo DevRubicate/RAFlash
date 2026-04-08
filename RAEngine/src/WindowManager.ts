@@ -23,6 +23,14 @@ const ICON_BIG = 1;
 const IMAGE_ICON = 1;
 const LR_LOADFROMFILE = 0x0010;
 const LR_DEFAULTSIZE = 0x0040;
+const GWL_STYLE = -16;
+const GWL_EXSTYLE = -20;
+const WS_CAPTION = 0x00C00000;
+const WS_THICKFRAME = 0x00040000;
+const WS_EX_DLGMODALFRAME = 0x00000001;
+const WS_EX_CLIENTEDGE = 0x00000200;
+const WS_EX_STATICEDGE = 0x00020000;
+const SWP_FRAMECHANGED = 0x0020;
 
 // FFI bindings to user32.dll (Windows only)
 const user32 = isWindows ? Deno.dlopen("user32.dll", {
@@ -80,6 +88,14 @@ const user32 = isWindows ? Deno.dlopen("user32.dll", {
     },
     LoadImageW: {
         parameters: ["pointer", "buffer", "u32", "i32", "i32", "u32"],
+        result: "pointer",
+    },
+    GetWindowLongPtrW: {
+        parameters: ["pointer", "i32"],
+        result: "pointer",
+    },
+    SetWindowLongPtrW: {
+        parameters: ["pointer", "i32", "pointer"],
         result: "pointer",
     },
 }) : null;
@@ -543,6 +559,55 @@ export class WindowManager {
         }
 
         console.warn(`WindowManager: Could not find window for PID ${pid} to set icon`);
+        return false;
+    }
+
+    /**
+     * Removes window chrome (title bar, borders) from a process window.
+     * @param pid The process ID.
+     * @param width Content width to resize to after removing chrome.
+     * @param height Content height to resize to after removing chrome.
+     * @param maxRetries Maximum number of retries (default 50).
+     * @param delayMs Delay between retries in ms (default 10).
+     */
+    static async removeWindowChrome(
+        pid: number,
+        width: number,
+        height: number,
+        maxRetries = 50,
+        delayMs = 10
+    ): Promise<boolean> {
+        if (!isWindows || !user32) return false;
+
+        for (let i = 0; i < maxRetries; i++) {
+            const hwnd = this.findWindowByPid(pid);
+            if (hwnd) {
+                // Strip thick frame (resize handle) but keep caption (title bar for dragging)
+                const style = BigInt(Deno.UnsafePointer.value(user32.symbols.GetWindowLongPtrW(hwnd, GWL_STYLE) as Deno.PointerValue));
+                const newStyle = style & ~BigInt(WS_THICKFRAME);
+                user32.symbols.SetWindowLongPtrW(hwnd, GWL_STYLE, Deno.UnsafePointer.create(newStyle));
+
+                // Strip extended border styles
+                const exStyle = BigInt(Deno.UnsafePointer.value(user32.symbols.GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as Deno.PointerValue));
+                const newExStyle = exStyle & ~BigInt(WS_EX_DLGMODALFRAME) & ~BigInt(WS_EX_CLIENTEDGE) & ~BigInt(WS_EX_STATICEDGE);
+                user32.symbols.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, Deno.UnsafePointer.create(newExStyle));
+
+                // Apply style changes and resize to exact content dimensions
+                const screen = this.getScreenSize();
+                const x = Math.floor((screen.width - width) / 2);
+                const y = Math.floor((screen.height - height) / 2);
+                user32.symbols.SetWindowPos(
+                    hwnd,
+                    Deno.UnsafePointer.create(HWND_TOP),
+                    x, y, width, height,
+                    SWP_FRAMECHANGED | SWP_SHOWWINDOW
+                );
+                return true;
+            }
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+
+        console.warn(`WindowManager: Could not find window for PID ${pid} to make borderless`);
         return false;
     }
 

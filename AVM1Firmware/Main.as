@@ -80,6 +80,7 @@ class Main {
     public static function init():Void {
         Stage.scaleMode = "noScale";
         Stage.align = "TL";
+        fscommand("showmenu", "false");
         connectToServer();
     }
 

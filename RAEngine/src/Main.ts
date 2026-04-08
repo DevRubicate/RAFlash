@@ -1365,7 +1365,7 @@ async function main(): Promise<void> {
     // Use fast polling (50 retries, 10ms delay) to catch window quickly
     if (Deno.build.os === "windows") {
         const icoPath = join(Deno.cwd(), "assets", "icon.ico");
-        WindowManager.resizeAndCenterProcess(flashProcess.pid, gameWindowWidth, gameWindowHeight, "RAFlash", 50, 10);
+        WindowManager.removeWindowChrome(flashProcess.pid, gameWindowWidth, gameWindowHeight, 50, 10);
         WindowManager.setProcessIcon(flashProcess.pid, icoPath);
     }
 
