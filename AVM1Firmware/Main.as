@@ -1372,18 +1372,25 @@ class Main {
                     }
                     arrAccessGeneric++;
 
-                    // Generic implementation: evaluate the index expression
+                    // Generic implementation: filter array elements by condition
+                    // Enumerate elements as (this=values, key=indices), evaluate
+                    // condition per-element, keep elements where result is true
                     for (var j = 0; j < targets.length; ++j) {
                         var target = targets[j];
 
-                        // Evaluate the index expression
-                        var indexResult = evaluate(formula, i + 2, i + amount + 2, [target], []);
+                        var childThis = [];
+                        var childKeys = [];
 
-                        // Use the first result as the index
-                        if (indexResult != null && indexResult.length > 0) {
-                            var index = indexResult[0];
-                            if (target[index] != undefined) {
-                                result.push(target[index]);
+                        for (var k = 0; k < target.length; ++k) {
+                            childThis.push(target[k]);
+                            childKeys.push(k);
+                        }
+
+                        var filteredResult = evaluate(formula, i + 2, i + amount + 2, childThis, childKeys);
+
+                        for (var k = 0; k < filteredResult.length; ++k) {
+                            if (filteredResult[k] == true) {
+                                result.push(target[childKeys[k]]);
                             }
                         }
                     }
