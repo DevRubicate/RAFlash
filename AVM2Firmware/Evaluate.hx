@@ -450,6 +450,57 @@ class Evaluate {
     }
 
     /**
+     * Recursively search for property names containing a substring.
+     */
+    public static function searchTargetForName(target:Dynamic, nameLower:String, path:String, output:Array<Dynamic>, visited:Array<Dynamic>):Void {
+        // Circular reference protection for objects
+        if (#if flash Std.isOfType(target, DisplayObjectContainer) || #end (untyped __typeof__(target) == "object" && target != null)) {
+            var v:Int = 0;
+            while (v < visited.length) {
+                if (untyped visited[v] == target) return;
+                v++;
+            }
+            visited.push(target);
+        }
+
+        #if flash
+        if (Std.isOfType(target, DisplayObjectContainer)) {
+            var props = enumerateProperties(target);
+            var k:Int = 0;
+            while (k < props.keys.length) {
+                var key:String = props.keys[k];
+                var childPath:String = path + "." + key;
+                if (key.toLowerCase().indexOf(nameLower) != -1) {
+                    output.push(childPath);
+                }
+                searchTargetForName(props.values[k], nameLower, childPath, output, visited);
+                k++;
+            }
+        } else
+        #end
+        if (Std.isOfType(target, Array)) {
+            var arr:Array<Dynamic> = cast target;
+            var j:Int = 0;
+            while (j < arr.length) {
+                searchTargetForName(arr[j], nameLower, path + "[" + j + "]", output, visited);
+                j++;
+            }
+        } else if (untyped __typeof__(target) == "object" && target != null) {
+            var props = enumerateProperties(target);
+            var k:Int = 0;
+            while (k < props.keys.length) {
+                var key:String = props.keys[k];
+                var childPath:String = path + "." + key;
+                if (key.toLowerCase().indexOf(nameLower) != -1) {
+                    output.push(childPath);
+                }
+                searchTargetForName(props.values[k], nameLower, childPath, output, visited);
+                k++;
+            }
+        }
+    }
+
+    /**
      * Check if a string matches a pattern with * wildcards and | OR operator.
      * Port of AVM1Firmware/Main.as matchesWildcard() (lines 1311-1371).
      */

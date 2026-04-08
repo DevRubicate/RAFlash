@@ -363,7 +363,11 @@ class Main {
                     pathPrefix = "stage";
                 }
 
-                searchTargetForValue(startTarget, find, pathPrefix, searchResult, []);
+                if (params.searchMode == "name") {
+                    searchTargetForName(startTarget, find.toLowerCase(), pathPrefix, searchResult, []);
+                } else {
+                    searchTargetForValue(startTarget, find, pathPrefix, searchResult, []);
+                }
                 var searchFormatted:Object = formatOutput(searchResult, 0);
                 sendResponse(id, { success: true, result: searchFormatted });
                 break;
@@ -1582,6 +1586,36 @@ class Main {
         } else if (typeof(target) == "function") {
             if ("[function]" == value.toLowerCase()) {
                 output.push(path);
+            }
+        }
+    }
+
+    /**
+     * Recursively search for property names containing a substring
+     * @param visited Array to track visited objects (prevents infinite loops from circular references)
+     */
+    private static function searchTargetForName(target:Object, nameLower:String, path:String, output:Array, visited:Array):Void {
+        // Circular reference protection for objects and movieclips
+        if (typeof(target) == "movieclip" || typeof(target) == "object") {
+            for (var v:Number = 0; v < visited.length; v++) {
+                if (visited[v] === target) {
+                    return;
+                }
+            }
+            visited.push(target);
+        }
+
+        if (typeof(target) == "movieclip" || typeof(target) == "object") {
+            for (var key:String in target) {
+                var childPath:String = path + "." + key;
+                if (key.toLowerCase().indexOf(nameLower) >= 0) {
+                    output.push(childPath);
+                }
+                searchTargetForName(target[key], nameLower, childPath, output, visited);
+            }
+        } else if (target instanceof Array) {
+            for (var j:Number = 0, len:Number = target.length; j < len; ++j) {
+                searchTargetForName(target[j], nameLower, path + "[" + j + "]", output, visited);
             }
         }
     }

@@ -784,7 +784,8 @@ async function handleApiRequest(
             const response = await sendToFirmware("searchTargetForValue", {
                 value: input.params.value,
                 pathFormula: compiledPath,
-                pathString: pathString
+                pathString: pathString,
+                searchMode: input.params.searchMode || "value"
             });
             // Wrap firmware response in params to match frontend expectations
             return { success: response.success, params: response };

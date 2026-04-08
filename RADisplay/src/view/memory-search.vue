@@ -10,17 +10,27 @@
                 spellcheck="false"
             />
         </div>
+        <div class="search-mode">
+            <label class="radio-label">
+                <input type="radio" value="value" v-model="searchMode" />
+                Value
+            </label>
+            <label class="radio-label">
+                <input type="radio" value="name" v-model="searchMode" />
+                Name
+            </label>
+        </div>
         <div class="input-wrapper">
             <input
                 type="text"
                 class="mono-input search-input"
                 v-model="searchValue"
-                placeholder="Search (such as Mario or M*io)"
+                :placeholder="searchMode === 'value' ? 'Search for a value (such as Mario or M*io)' : 'Search for a property name (such as health)'"
                 spellcheck="false"
                 @keyup.enter="search"
             />
-            <button class="search-button" @click="search" :disabled="searching">
-                {{ searching ? 'Searching...' : 'Search' }}
+            <button class="search-button" @click="search" :disabled="searching || (previousPaths !== null && previousPaths.size === 0)">
+                {{ searching ? 'Searching...' : previousPaths === null ? 'Search (all)' : `Search (${previousPaths.size})` }}
             </button>
             <button class="reset-button" @click="reset" :disabled="searching || searchCount === 0">
                 Reset
@@ -74,6 +84,21 @@
     .path-input { flex-grow: 1; }
     .search-input { flex-grow: 1; padding: 0.5rem 0.75rem; }
 
+    .search-mode {
+        display: flex;
+        gap: 0.75rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .radio-label {
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+        font-size: 0.8125rem;
+        color: var(--c-text-secondary);
+        cursor: pointer;
+    }
+
     .search-button {
         background-color: #6366f1;
         color: #ffffff;
@@ -83,6 +108,7 @@
         border: none;
         border-radius: var(--radius-md);
         padding: 0 1.125rem;
+        white-space: nowrap;
         cursor: pointer;
         transition: background-color var(--duration) var(--ease);
     }
@@ -230,6 +256,7 @@
 
     const searchValue = ref('');
     const searchPath = ref('');
+    const searchMode = ref('value');
     const results = ref([]);
     const searching = ref(false);
     const searched = ref(false);
@@ -249,7 +276,7 @@
         // Always do full search from firmware
         const reply = await Network.send({
             command: 'searchTargetForValue',
-            params: { value: searchValue.value, path: searchPath.value || '' }
+            params: { value: searchValue.value, path: searchPath.value || '', searchMode: searchMode.value }
         });
 
         if (reply.success) {

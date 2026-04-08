@@ -305,7 +305,11 @@ class Main extends MovieClip {
                     }
                 }
                 var searchOutput:Array<Dynamic> = [];
-                Evaluate.searchTargetForValue(startTarget, find, pathPrefix, searchOutput, []);
+                if (params.searchMode == "name") {
+                    Evaluate.searchTargetForName(startTarget, find.toLowerCase(), pathPrefix, searchOutput, []);
+                } else {
+                    Evaluate.searchTargetForValue(startTarget, find, pathPrefix, searchOutput, []);
+                }
                 var searchFormatted = Evaluate.formatOutput(searchOutput, 0);
                 sendResponse(id, {success: true, result: searchFormatted});
 
