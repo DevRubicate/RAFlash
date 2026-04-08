@@ -13,7 +13,9 @@
                 <button class="split-main" @click="evaluate()">Evaluate</button>
                 <button class="split-toggle" @click="dropdownOpen = !dropdownOpen">&#9662;</button>
                 <div class="split-dropdown" v-if="dropdownOpen">
-                    <button :disabled="!previousResults" @click="compare(); dropdownOpen = false">Compare</button>
+                    <button :disabled="!previousResults" @click="compare(); dropdownOpen = false">Changed</button>
+                    <button :disabled="!previousResults" @click="remains(); dropdownOpen = false">Remains</button>
+                    <button :disabled="!previousResults" @click="leaves(); dropdownOpen = false">Leaves</button>
                 </div>
             </div>
         </div>
@@ -35,6 +37,41 @@
                             <tr v-for="(res, index) in filteredCompareResults" :class="'row-' + res.status">
                                 <td>{{ res.value }}</td>
                                 <td class="status-icon">{{ res.status === 'added' ? '+' : res.status === 'removed' ? '−' : '' }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </template>
+                <template v-else-if="isRemainsMode">
+                    <div v-if="remainsResults.length === 0" class="no-results">
+                        <p>No remaining results.</p>
+                    </div>
+                    <table class="results-table" v-else>
+                        <thead>
+                            <tr>
+                                <th>Remains ({{ remainsResults.length }} rows, {{ remainsChangedCount }} changed)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(res, index) in filteredRemainsResults" :class="'row-' + res.status">
+                                <td>{{ res.value }}</td>
+                                <td class="status-icon">{{ res.status === 'changed' ? '+' : '' }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </template>
+                <template v-else-if="isLeavesMode">
+                    <div v-if="leavesResults.length === 0" class="no-results">
+                        <p>Nothing left. All keys still present.</p>
+                    </div>
+                    <table class="results-table" v-else>
+                        <thead>
+                            <tr>
+                                <th>Leaves ({{ leavesResults.length }} rows gone)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(res, index) in filteredLeavesResults">
+                                <td>{{ res.value }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -68,7 +105,7 @@
             v-model="filterText"
             placeholder="Filter results..."
             spellcheck="false"
-            v-if="memoryResult.length > 0 || isCompareMode"
+            v-if="memoryResult.length > 0 || isCompareMode || isRemainsMode || isLeavesMode"
         />
     </div>
 </template>
@@ -184,9 +221,10 @@
         cursor: not-allowed;
     }
 
-    /* === Compare Rows === */
+    /* === Compare/Remains Rows === */
     .row-added td { color: var(--c-success); }
     .row-removed td { color: var(--c-danger); }
+    .row-changed td { color: var(--c-success); }
 
     .status-icon {
         text-align: right;
@@ -280,6 +318,10 @@
     const previousResults = ref(null);
     const isCompareMode = ref(false);
     const compareResults = ref([]);
+    const isRemainsMode = ref(false);
+    const remainsResults = ref([]);
+    const isLeavesMode = ref(false);
+    const leavesResults = ref([]);
     const dropdownOpen = ref(false);
 
     const filteredResults = computed(() => {
@@ -297,6 +339,20 @@
     const addedCount = computed(() => compareResults.value.filter(r => r.status === 'added').length);
     const removedCount = computed(() => compareResults.value.filter(r => r.status === 'removed').length);
     const modifiedCount = computed(() => compareResults.value.filter(r => r.status === 'modified').length);
+
+    const filteredRemainsResults = computed(() => {
+        if (!filterText.value) return remainsResults.value;
+        const needle = filterText.value.toLowerCase();
+        return remainsResults.value.filter(res => String(res.value).toLowerCase().includes(needle));
+    });
+
+    const remainsChangedCount = computed(() => remainsResults.value.filter(r => r.status === 'changed').length);
+
+    const filteredLeavesResults = computed(() => {
+        if (!filterText.value) return leavesResults.value;
+        const needle = filterText.value.toLowerCase();
+        return leavesResults.value.filter(res => String(res.value).toLowerCase().includes(needle));
+    });
 
     const extractKey = (str) => {
         const idx = str.indexOf(': ');
@@ -381,6 +437,8 @@
         memoryResultValid.value = false;
         filterText.value = '';
         isCompareMode.value = false;
+        isRemainsMode.value = false;
+        isLeavesMode.value = false;
         const results = await runDSL();
         if (results) {
             memoryResult.value = results;
@@ -397,6 +455,74 @@
             previousResults.value = results;
             memoryResult.value = results;
             isCompareMode.value = true;
+            memoryResultValid.value = true;
+        }
+    };
+
+    const remains = async () => {
+        filterText.value = '';
+        const results = await runDSL();
+        if (results) {
+            // Build map of previous results: key → full value string
+            const prevMap = new Map();
+            for (const res of previousResults.value) {
+                const key = extractKey(String(res.value));
+                if (key !== null) {
+                    prevMap.set(key, String(res.value));
+                }
+            }
+
+            // Keep only results whose key existed in previous results
+            const kept = [];
+            for (const res of results) {
+                const key = extractKey(String(res.value));
+                if (key === null) continue;
+                if (!prevMap.has(key)) continue;
+
+                const prevValue = prevMap.get(key);
+                const currValue = String(res.value);
+                kept.push({
+                    value: currValue,
+                    status: prevValue === currValue ? 'same' : 'changed'
+                });
+            }
+
+            remainsResults.value = kept;
+            previousResults.value = kept;
+            memoryResult.value = results;
+            isRemainsMode.value = true;
+            isCompareMode.value = false;
+            memoryResultValid.value = true;
+        }
+    };
+
+    const leaves = async () => {
+        filterText.value = '';
+        const results = await runDSL();
+        if (results) {
+            // Build set of keys found in new results
+            const newKeys = new Set();
+            for (const res of results) {
+                const key = extractKey(String(res.value));
+                if (key !== null) newKeys.add(key);
+            }
+
+            // Keep previous results whose key is NOT in the new results
+            const gone = [];
+            for (const res of previousResults.value) {
+                const key = extractKey(String(res.value));
+                if (key === null) continue;
+                if (!newKeys.has(key)) {
+                    gone.push({ value: String(res.value) });
+                }
+            }
+
+            leavesResults.value = gone;
+            previousResults.value = gone;
+            memoryResult.value = results;
+            isLeavesMode.value = true;
+            isCompareMode.value = false;
+            isRemainsMode.value = false;
             memoryResultValid.value = true;
         }
     };
