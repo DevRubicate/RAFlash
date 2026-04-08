@@ -28,7 +28,7 @@ stage:
 	@rm -rf .build/vendor .build/assets
 	@cp -r vendor .build/vendor
 	@cp -r assets .build/assets
-	@$(DENO) run --allow-read --allow-write RAEngine/src/patchFlashPlayer.ts .build/vendor/adobe/fp-32.0.0.380.exe .build/vendor/adobe/fp-32.0.0.380.patched.exe 2>&1 | cat > /dev/null
+	@$(DENO) run --allow-read --allow-write RAEngine/src/patchFlashPlayer.ts .build/vendor/adobe/fp-32.0.0.380.exe .build/vendor/adobe/fp-32.0.0.380.patched.exe 2>&1 | cat
 	@mv .build/vendor/adobe/fp-32.0.0.380.patched.exe .build/vendor/adobe/fp-32.0.0.380.exe
 	@cp .build/vendor/flashpoint/FlashpointProxy.exe .build/vendor/adobe/FlashpointProxy.exe
 
@@ -45,7 +45,8 @@ avm1-build: $(AVM1_SWF)
 
 $(AVM1_SWF): FORCE
 	@mkdir -p $(dir $@)
-	@$(MTASC) -cp AVM1Firmware -swf $@ -main $(AVM1_MAIN) -header $(MTASC_HEADER)
+	@rm -f $@
+	@$(MTASC) -cp AVM1Firmware -swf $@ -main $(AVM1_MAIN) -header $(MTASC_HEADER) 2>&1 | grep -v -e "32 KiB" -e "overlength jumps" -e "island insertion"; test -f $@
 
 # === AVM2 Firmware ===
 
@@ -64,7 +65,9 @@ DENO_PERMISSIONS=--allow-ffi --allow-net --allow-run --allow-read --allow-write 
 DENO_INCLUDES=--include=$(AVM1_SWF) --include=$(AVM2_SWF) --include=.build/internals/assets --include=assets/icon.png --include=assets/icon.ico
 
 compile: avm1-build avm2-build assets stage
-	@$(DENO) compile -q $(DENO_PERMISSIONS) --no-terminal --icon=assets/icon.ico $(DENO_INCLUDES) --output=.build/RAFlash RAEngine/src/Main.ts 2>&1 | cat > /dev/null
+	@rm -f .build/RAFlash .build/RAFlash.exe
+	@$(DENO) compile -q $(DENO_PERMISSIONS) --no-terminal --icon=assets/icon.ico $(DENO_INCLUDES) --output=.build/RAFlash RAEngine/src/Main.ts 2>&1 | cat
+	@test -f .build/RAFlash.exe || test -f .build/RAFlash
 
 # === Testing ===
 
