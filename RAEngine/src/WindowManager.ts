@@ -27,6 +27,7 @@ const GWL_STYLE = -16;
 const GWL_EXSTYLE = -20;
 const WS_CAPTION = 0x00C00000;
 const WS_THICKFRAME = 0x00040000;
+const WS_MAXIMIZEBOX = 0x00010000;
 const WS_EX_DLGMODALFRAME = 0x00000001;
 const WS_EX_CLIENTEDGE = 0x00000200;
 const WS_EX_STATICEDGE = 0x00020000;
@@ -595,7 +596,7 @@ export class WindowManager {
 
                 // Strip thick frame (resize handle) but keep caption (title bar for dragging)
                 const style = BigInt(Deno.UnsafePointer.value(user32.symbols.GetWindowLongPtrW(hwnd, GWL_STYLE) as Deno.PointerValue));
-                const newStyle = style & ~BigInt(WS_THICKFRAME);
+                const newStyle = style & ~BigInt(WS_THICKFRAME) & ~BigInt(WS_MAXIMIZEBOX);
                 user32.symbols.SetWindowLongPtrW(hwnd, GWL_STYLE, Deno.UnsafePointer.create(newStyle));
 
                 // Strip extended border styles
