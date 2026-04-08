@@ -168,6 +168,13 @@ class Evaluate {
                         stack.push(context);
                     } else if (name == "key") {
                         stack.push(keys);
+                    } else if (name == "stage_frame") {
+                        #if flash
+                        var mc = Std.downcast(gameRoot, flash.display.MovieClip);
+                        stack.push([mc != null ? mc.currentFrame : 0]);
+                        #else
+                        stack.push([0]);
+                        #end
                     } else {
                         trace("[Evaluate] Invalid global identifier: " + name);
                         return null;

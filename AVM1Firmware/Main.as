@@ -1282,6 +1282,10 @@ class Main {
                                 stack.push(keys);
                                 break;
                             }
+                            case "stage_frame": {
+                                stack.push([gameContainer.gameLoader._root._currentframe]);
+                                break;
+                            }
                             default: {
                                 log("Invalid global identifier " + identifiers[0]);
                                 return null;
