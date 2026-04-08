@@ -1274,7 +1274,16 @@ function handleFirmwareData(data: string): void {
                 // Firmware log message
                 console.log(`[FIRMWARE] ${parsed.data?.message || JSON.stringify(parsed.data)}`)
             } else if (parsed.type === "gameLoaded") {
-                // Game loaded — no action needed
+                // Show welcome toast with game info
+                const gameTitle = AppData.data.gameConfig?.title || "Game Loaded";
+                const assetCount = AppData.data.assets.length;
+                const description = assetCount === 0 ? "No achievements" : `${assetCount} achievement${assetCount === 1 ? "" : "s"}`;
+                sendToFirmware("showToast", {
+                    title: gameTitle,
+                    description,
+                    label: "",
+                    align: "right",
+                }).catch(() => {});
             } else if (parsed.type === "keypress") {
                 // F12 key pressed - open devtools
                 if (parsed.data?.keyCode === 123) {
