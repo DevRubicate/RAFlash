@@ -192,9 +192,11 @@
         return App.data.assets.find(a => a.id === selectedAssetId.value) || { name: '', formula: '' };
     });
 
-    // Check if asset has unsaved changes
+    // Check if asset has unsaved changes (new assets always need saving)
     const hasUnsavedChanges = computed(() => {
-        return selectedAsset.value?._modified === true;
+        const asset = selectedAsset.value;
+        if (!asset) return false;
+        return !asset._saved || asset._modified === true;
     });
 
     const saveAsset = async () => {
