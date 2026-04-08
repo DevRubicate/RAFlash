@@ -581,13 +581,15 @@ class Main {
     /**
      * Store a delta value for a requirement (firmware-local, not transmitted)
      */
-    private static function storeDeltaValue(reqId:Number, side:String, value:Number):Void {
+    private static function storeDeltaValue(reqId:Number, side:String, value):Void {
         if (deltaValues[reqId] == null) {
             deltaValues[reqId] = {};
         }
         if (side == "A") {
+            deltaValues[reqId].hasA = true;
             deltaValues[reqId].prevA = value;
         } else {
+            deltaValues[reqId].hasB = true;
             deltaValues[reqId].prevB = value;
         }
     }
@@ -640,8 +642,13 @@ class Main {
             frameCache[cacheKeyB] = currentB;
         }
 
-        // Only allow single-value results
-        if (currentA == null || currentB == null || currentA.length != 1 || currentB.length != 1) {
+        // Evaluate failed
+        if (currentA == null || currentB == null) {
+            return {passed: false, valid: false};
+        }
+
+        // Only allow single-value results (empty array is valid for null comparison)
+        if (currentA.length > 1 || currentB.length > 1) {
             return {passed: false, valid: false};
         }
 
@@ -649,12 +656,12 @@ class Main {
         var resultA:Array;
         if (requirement.typeA == "DELTA") {
             var deltaData:Object = deltaValues[requirement.id];
-            if (deltaData == null || deltaData.prevA == undefined) {
-                storeDeltaValue(requirement.id, "A", currentA[0]);
+            if (deltaData == null || !deltaData.hasA) {
+                storeDeltaValue(requirement.id, "A", currentA.length == 1 ? currentA[0] : undefined);
                 return {passed: false, valid: false};
             }
-            resultA = [deltaData.prevA];
-            storeDeltaValue(requirement.id, "A", currentA[0]);
+            resultA = (deltaData.prevA === undefined) ? [] : [deltaData.prevA];
+            storeDeltaValue(requirement.id, "A", currentA.length == 1 ? currentA[0] : undefined);
         } else {
             resultA = currentA;
         }
@@ -663,32 +670,54 @@ class Main {
         var resultB:Array;
         if (requirement.typeB == "DELTA") {
             var deltaBData:Object = deltaValues[requirement.id];
-            if (deltaBData == null || deltaBData.prevB == undefined) {
-                storeDeltaValue(requirement.id, "B", currentB[0]);
+            if (deltaBData == null || !deltaBData.hasB) {
+                storeDeltaValue(requirement.id, "B", currentB.length == 1 ? currentB[0] : undefined);
                 return {passed: false, valid: false};
             }
-            resultB = [deltaBData.prevB];
-            storeDeltaValue(requirement.id, "B", currentB[0]);
+            resultB = (deltaBData.prevB === undefined) ? [] : [deltaBData.prevB];
+            storeDeltaValue(requirement.id, "B", currentB.length == 1 ? currentB[0] : undefined);
         } else {
             resultB = currentB;
         }
 
+        // Resolve values: empty array means "not found" (null-like)
+        var aEmpty:Boolean = (resultA.length == 0);
+        var bEmpty:Boolean = (resultB.length == 0);
+        var aIsNull:Boolean = aEmpty || resultA[0] === null;
+        var bIsNull:Boolean = bEmpty || resultB[0] === null;
+
+        // Null comparison: mirror the EQUAL opcode's null-aware logic
+        if (aIsNull || bIsNull) {
+            var bothNull:Boolean = (aIsNull && bIsNull);
+            var passed:Boolean = false;
+            switch (requirement.cmp) {
+                case "==": passed = bothNull; break;
+                case "!=": passed = !bothNull; break;
+                default:   passed = false; break;
+            }
+            return {passed: passed, valid: true, valueA: 0};
+        }
+
+        var rawA = resultA[0];
+        var rawB = resultB[0];
+
         // Add accumulator from AddSource/SubSource chain to left side
-        var valA:Number = Number(resultA[0]) + accumulator;
-        var valB:Number = Number(resultB[0]);
+        if (accumulator != 0) {
+            rawA = Number(rawA) + accumulator;
+        }
 
         // Evaluate condition
         var passed:Boolean = false;
         switch (requirement.cmp) {
-            case "==": passed = (valA == valB); break;
-            case "!=": passed = (valA != valB); break;
-            case ">":  passed = (valA > valB); break;
-            case ">=": passed = (valA >= valB); break;
-            case "<":  passed = (valA < valB); break;
-            case "<=": passed = (valA <= valB); break;
+            case "==": passed = (rawA == rawB); break;
+            case "!=": passed = (rawA != rawB); break;
+            case ">":  passed = (rawA > rawB); break;
+            case ">=": passed = (rawA >= rawB); break;
+            case "<":  passed = (rawA < rawB); break;
+            case "<=": passed = (rawA <= rawB); break;
         }
 
-        return {passed: passed, valid: true, valueA: valA};
+        return {passed: passed, valid: true, valueA: rawA};
     }
 
     /**
@@ -710,7 +739,7 @@ class Main {
         // Handle Delta type
         if (requirement.typeA == "DELTA") {
             var deltaData:Object = deltaValues[requirement.id];
-            if (deltaData == null || deltaData.prevA == undefined) {
+            if (deltaData == null || !deltaData.hasA) {
                 storeDeltaValue(requirement.id, "A", currentA[0]);
                 return NaN;
             }
