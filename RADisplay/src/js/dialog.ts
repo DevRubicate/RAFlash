@@ -23,7 +23,12 @@ function createDialog(title: string, message: string, buttons: DialogButton[]): 
     dialog.style.backdropFilter = 'blur(4px)';
 
     // Add content
-    dialog.innerHTML = `<h1>${title}</h1><p>${message}</p>`;
+    const h1 = document.createElement('h1');
+    h1.textContent = title;
+    const p = document.createElement('p');
+    p.textContent = message;
+    dialog.appendChild(h1);
+    dialog.appendChild(p);
     const buttonContainer = document.createElement('div');
     Object.assign(buttonContainer.style, {
         display: 'flex',
