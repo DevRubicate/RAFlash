@@ -1202,6 +1202,60 @@ async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFi
             }
         }
 
+        // HTTP request for game badge image
+        if (httpBuffer.startsWith("GET /game-image")) {
+            const gameConfig = AppData.data.gameConfig;
+            if (gameConfig?.badgeImage) {
+                const dataUri = gameConfig.badgeImage as string;
+                const mimeMatch = dataUri.match(/^data:([^;]+);base64,/);
+                let mimeType = mimeMatch ? mimeMatch[1] : "image/png";
+                const base64Data = dataUri.split(',')[1];
+
+                const binaryString = atob(base64Data);
+                let imageBytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    imageBytes[i] = binaryString.charCodeAt(i);
+                }
+
+                if (avmConfig.convertPngToJpeg && mimeType === "image/png") {
+                    try {
+                        const png = PNG.sync.read(Buffer.from(imageBytes));
+                        const rgbData = new Uint8Array(png.width * png.height * 4);
+                        for (let i = 0; i < png.width * png.height; i++) {
+                            const srcIdx = i * 4;
+                            const alpha = png.data[srcIdx + 3] / 255;
+                            rgbData[srcIdx] = Math.round(png.data[srcIdx] * alpha + 255 * (1 - alpha));
+                            rgbData[srcIdx + 1] = Math.round(png.data[srcIdx + 1] * alpha + 255 * (1 - alpha));
+                            rgbData[srcIdx + 2] = Math.round(png.data[srcIdx + 2] * alpha + 255 * (1 - alpha));
+                            rgbData[srcIdx + 3] = 255;
+                        }
+                        const jpegData = jpeg.encode({ data: rgbData, width: png.width, height: png.height }, 90);
+                        imageBytes = new Uint8Array(jpegData.data);
+                        mimeType = "image/jpeg";
+                    } catch (e) {
+                        console.error("PNG to JPEG conversion failed:", e);
+                    }
+                }
+
+                const response = [
+                    "HTTP/1.1 200 OK",
+                    `Content-Type: ${mimeType}`,
+                    `Content-Length: ${imageBytes.length}`,
+                    "Connection: close",
+                    "",
+                    "",
+                ].join("\r\n");
+                await writer.write(encoder.encode(response));
+                await writer.write(imageBytes);
+            } else {
+                await writer.write(encoder.encode("HTTP/1.1 404 Not Found\r\n\r\n"));
+            }
+            writer.releaseLock();
+            reader.releaseLock();
+            conn.close();
+            return;
+        }
+
         // Policy file request
         if (httpBuffer.includes("<policy-file-request/>")) {
             await writer.write(encoder.encode(policyFile));
@@ -1278,11 +1332,13 @@ function handleFirmwareData(data: string): void {
                 const gameTitle = AppData.data.gameConfig?.title || "Game Loaded";
                 const assetCount = AppData.data.assets.length;
                 const description = assetCount === 0 ? "No achievements" : `${assetCount} achievement${assetCount === 1 ? "" : "s"}`;
+                const imageUrl = AppData.data.gameConfig?.badgeImage ? "http://raflash.local/game-image" : "";
                 sendToFirmware("showToast", {
                     title: gameTitle,
                     description,
                     label: "",
                     align: "right",
+                    imageUrl,
                 }).catch(() => {});
             } else if (parsed.type === "keypress") {
                 // F12 key pressed - open devtools

@@ -6,7 +6,7 @@ export class AppData {
     static data: AppDataStructure = {
         assets: [],
         codeNotes: [],
-        gameConfig: { title: '', originUrl: '' },
+        gameConfig: { title: '', originUrl: '', badgeImage: '' },
     };
 
     // Game-specific state file path
@@ -61,7 +61,7 @@ export class AppData {
         } catch (error) {
             if (error instanceof Deno.errors.NotFound) {
                 // New game, start fresh
-                this.data = { assets: [], codeNotes: [], gameConfig: { title: '', originUrl: '' } };
+                this.data = { assets: [], codeNotes: [], gameConfig: { title: '', originUrl: '', badgeImage: '' } };
             } else {
                 throw error;
             }
@@ -316,6 +316,7 @@ export class AppData {
         properties: {
             title: { type: 'string' },
             originUrl: { type: 'string' },
+            badgeImage: { type: 'string' },
         }
     };
 

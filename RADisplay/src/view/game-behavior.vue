@@ -5,14 +5,24 @@
         </header>
 
         <div class="editor-body">
-            <div class="form-group">
-                <label for="game-title">Title</label>
-                <input type="text" id="game-title" v-model="title" placeholder="Game title" spellcheck="true">
-            </div>
+            <div class="badge-row">
+                <div class="badge-image-wrapper">
+                    <img v-if="badgeImage" :src="badgeImage" alt="Game Badge">
+                    <div v-else class="badge-placeholder">No image</div>
+                    <input type="file" ref="fileInput" accept="image/*" @change="onFileSelected" style="display: none">
+                    <button class="btn btn-secondary btn-compact" @click="fileInput.click()">Upload</button>
+                </div>
+                <div class="badge-fields">
+                    <div class="form-group">
+                        <label for="game-title">Title</label>
+                        <input type="text" id="game-title" v-model="title" placeholder="Game title" spellcheck="true">
+                    </div>
 
-            <div class="form-group">
-                <label for="origin-url">Origin URL</label>
-                <input type="text" id="origin-url" class="mono-input" v-model="originUrl" placeholder="http://www.coolmathgames.com/game.swf">
+                    <div class="form-group">
+                        <label for="origin-url">Origin URL</label>
+                        <input type="text" id="origin-url" class="mono-input" v-model="originUrl" placeholder="http://www.coolmathgames.com/game.swf">
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -53,6 +63,50 @@
         font-family: var(--font-mono);
     }
 
+    .badge-row {
+        display: flex;
+        gap: 1rem;
+    }
+
+    .badge-image-wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.375rem;
+        flex-shrink: 0;
+    }
+
+    .badge-image-wrapper img {
+        width: 96px;
+        height: 96px;
+        object-fit: contain;
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-lg);
+        padding: 0.375rem;
+        background-color: var(--c-surface);
+        box-shadow: var(--shadow-xs);
+    }
+
+    .badge-placeholder {
+        width: 96px;
+        height: 96px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px dashed var(--c-border);
+        border-radius: var(--radius-lg);
+        background-color: var(--c-surface);
+        color: var(--c-text-muted);
+        font-size: 0.6875rem;
+    }
+
+    .badge-fields {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
     .editor-footer {
         flex-shrink: 0;
         display: flex;
@@ -77,36 +131,54 @@
 
     const title = ref('');
     const originUrl = ref('');
+    const badgeImage = ref('');
     const dirty = ref(false);
+    const fileInput = ref(null);
 
     // Snapshot of saved values for dirty comparison
     let savedTitle = '';
     let savedOriginUrl = '';
+    let savedBadgeImage = '';
 
-    watch([title, originUrl], () => {
-        dirty.value = title.value !== savedTitle || originUrl.value !== savedOriginUrl;
+    watch([title, originUrl, badgeImage], () => {
+        dirty.value = title.value !== savedTitle
+            || originUrl.value !== savedOriginUrl
+            || badgeImage.value !== savedBadgeImage;
     });
+
+    const onFileSelected = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            badgeImage.value = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    };
 
     const save = async () => {
         await Network.send({
             command: 'editData',
             params: {
                 edited: [
-                    ['gameConfig', { title: title.value, originUrl: originUrl.value }]
+                    ['gameConfig', { title: title.value, originUrl: originUrl.value, badgeImage: badgeImage.value }]
                 ]
             }
         });
         savedTitle = title.value;
         savedOriginUrl = originUrl.value;
+        savedBadgeImage = badgeImage.value;
         dirty.value = false;
     };
 
     App.initialize().then(() => {
-        const config = App.data.gameConfig || { title: '', originUrl: '' };
+        const config = App.data.gameConfig || { title: '', originUrl: '', badgeImage: '' };
         savedTitle = config.title || '';
         savedOriginUrl = config.originUrl || '';
+        savedBadgeImage = config.badgeImage || '';
         title.value = savedTitle;
         originUrl.value = savedOriginUrl;
+        badgeImage.value = savedBadgeImage;
         App.ready = true;
     });
 </script>

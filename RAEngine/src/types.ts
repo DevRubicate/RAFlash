@@ -63,6 +63,7 @@ export interface CodeNote {
 export interface GameConfig {
     title: string;
     originUrl: string;
+    badgeImage: string;
     [key: string]: unknown;
 }
 
