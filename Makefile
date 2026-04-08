@@ -28,6 +28,8 @@ stage:
 	@rm -rf .build/vendor .build/assets
 	@cp -r vendor .build/vendor
 	@cp -r assets .build/assets
+	@$(DENO) run --allow-read --allow-write RAEngine/src/patchFlashPlayer.ts .build/vendor/fp-32.0.0.380.exe .build/vendor/fp-32.0.0.380.patched.exe 2>&1 | cat > /dev/null
+	@mv .build/vendor/fp-32.0.0.380.patched.exe .build/vendor/fp-32.0.0.380.exe
 
 # Clean up generated files (preserves RACache)
 clean:

@@ -90,7 +90,67 @@ const kernel32 = isWindows ? Deno.dlopen("kernel32.dll", {
         parameters: [],
         result: "u32",
     },
+    CreateToolhelp32Snapshot: {
+        parameters: ["u32", "u32"],
+        result: "pointer",
+    },
+    Process32First: {
+        parameters: ["pointer", "buffer"],
+        result: "i32",
+    },
+    Process32Next: {
+        parameters: ["pointer", "buffer"],
+        result: "i32",
+    },
+    CloseHandle: {
+        parameters: ["pointer"],
+        result: "i32",
+    },
 }) : null;
+
+const TH32CS_SNAPPROCESS = 0x00000002;
+// PROCESSENTRY32 layout on 64-bit Windows (with alignment padding):
+//   0: dwSize (u32)
+//   4: cntUsage (u32)
+//   8: th32ProcessID (u32)
+//  12: (4 bytes padding for ULONG_PTR alignment)
+//  16: th32DefaultHeapID (ULONG_PTR = 8 bytes on x64)
+//  24: th32ModuleID (u32)
+//  28: cntThreads (u32)
+//  32: th32ParentProcessID (u32)
+//  36: pcPriClassBase (i32)
+//  40: dwFlags (u32)
+//  44: szExeFile (260 chars)
+const PROCESSENTRY32_SIZE = 304;
+
+/**
+ * Find all child PIDs of a given parent PID.
+ */
+function getChildPids(parentPid: number): number[] {
+    if (!kernel32) return [];
+
+    const hSnapshot = kernel32.symbols.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (!hSnapshot) return [];
+
+    const entry = new Uint8Array(PROCESSENTRY32_SIZE);
+    const view = new DataView(entry.buffer);
+    view.setUint32(0, PROCESSENTRY32_SIZE, true); // dwSize
+
+    const children: number[] = [];
+
+    if (kernel32.symbols.Process32First(hSnapshot, entry)) {
+        do {
+            const pid = view.getUint32(8, true);
+            const ppid = view.getUint32(32, true);
+            if (ppid === parentPid) {
+                children.push(pid);
+            }
+        } while (kernel32.symbols.Process32Next(hSnapshot, entry));
+    }
+
+    kernel32.symbols.CloseHandle(hSnapshot);
+    return children;
+}
 
 export class WindowManager {
     /** Maps windowId to HWND for tracking window positions */
@@ -146,6 +206,10 @@ export class WindowManager {
     static findWindowByPid(pid: number): Deno.PointerValue | null {
         if (!user32) return null;
 
+        // Build set of PIDs to match: the process itself + any child processes
+        // (FlashpointProxy.dll causes Flash Player to spawn a child that owns the window)
+        const pids = new Set([pid, ...getChildPids(pid)]);
+
         let foundHwnd: Deno.PointerValue | null = null;
 
         // Create a callback for EnumWindows
@@ -164,7 +228,7 @@ export class WindowManager {
                 user32!.symbols.GetWindowThreadProcessId(hwnd, pidBuffer);
                 const windowPid = pidBuffer[0];
 
-                if (windowPid === pid) {
+                if (pids.has(windowPid)) {
                     foundHwnd = hwnd;
                     return 0; // Stop enumeration
                 }

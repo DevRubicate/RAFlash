@@ -53,7 +53,7 @@ class Main extends MovieClip {
     private var disconnectOverlay:flash.display.Sprite = null;
     private var initialSetupDone:Bool = false;
 
-    private static inline var PORT:Int = 8081;
+    private static inline var PORT:Int = 18081;
 
     public function new() {
         super();
@@ -109,7 +109,7 @@ class Main extends MovieClip {
 
         if (!gameLoaded) {
             log("Connected to Deno server");
-            loadGame();
+            sendMessage("ready", {});
         } else {
             log("Reconnected to Deno server");
         }
@@ -236,11 +236,12 @@ class Main extends MovieClip {
                     sendResponse(id, {success: true});
                     sendMessage("syncState", {appData: AppData.data});
                 } else {
-                    // First connect: accept Deno's data
+                    // First connect: accept Deno's data and load game
                     AppData.data = params.data;
                     AppData.originalData = haxe.Json.parse(haxe.Json.stringify(params.data));
                     initialSetupDone = true;
                     sendResponse(id, {success: true});
+                    loadGame(params.gameUrl);
                 }
 
             case "evaluate":
@@ -387,14 +388,14 @@ class Main extends MovieClip {
 
     // === Game Loading ===
 
-    private function loadGame():Void {
+    private function loadGame(?url:String):Void {
         log("Loading game SWF...");
 
         var loader = new Loader();
         loader.contentLoaderInfo.addEventListener(Event.COMPLETE, onGameLoaded);
         loader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, onGameLoadError);
 
-        var gameUrl = "http://127.0.0.1:" + PORT + "/game.swf";
+        var gameUrl = (url != null) ? url : "http://raflash.local/game.swf";
         log("Loading from: " + gameUrl);
         loader.load(new URLRequest(gameUrl));
 

@@ -22,7 +22,7 @@ class Main {
     private static var gameLoaded:Boolean = false;
 
     // Configuration
-    private static var PORT:Number = 8081;
+    private static var PORT:Number = 18081;
 
     // Profiling
     private static var profilingData:Object = {};
@@ -96,7 +96,7 @@ class Main {
                 Main.hideDisconnectOverlay();
 
                 if (!Main.gameLoaded) {
-                    Main.loadGame();
+                    Main.sendMessage("ready", {});
                 } else {
                     trace("[AS2] Reconnected to Deno server");
                 }
@@ -180,14 +180,14 @@ class Main {
     /**
      * Load the game SWF from the server
      */
-    private static function loadGame():Void {
+    private static function loadGame(url:String):Void {
         // Create container for the game (low depth so loading text renders on top)
         gameContainer = _root.createEmptyMovieClip("gameContainer", _root.getNextHighestDepth());
         var gameLoader:MovieClip = gameContainer.createEmptyMovieClip("gameLoader", 1);
         gameLoader._lockroot = true;
 
-        // Load game from server
-        var gameUrl:String = "http://127.0.0.1:" + PORT + "/game.swf";
+        // Load game from server (or spoofed domain URL for sitelock bypass)
+        var gameUrl:String = (url != undefined && url != null) ? url : "http://raflash.local/game.swf";
         gameLoader.loadMovie(gameUrl);
 
         // Monitor loading progress and check achievements
@@ -289,11 +289,12 @@ class Main {
                     sendResponse(id, { success: true });
                     sendMessage("syncState", { appData: AppData.data });
                 } else {
-                    // First connect: accept Deno's data
+                    // First connect: accept Deno's data and load game
                     AppData.data = params.data;
                     AppData.originalData = JSON.parse(JSON.stringify(params.data));
                     initialSetupDone = true;
                     sendResponse(id, { success: true });
+                    loadGame(params.gameUrl);
                 }
                 break;
 
@@ -530,7 +531,7 @@ class Main {
         };
 
         loader.addListener(listener);
-        loader.loadClip("http://127.0.0.1:" + PORT + "/asset-image/" + assetId, holder);
+        loader.loadClip("http://raflash.local/asset-image/" + assetId, holder);
     }
 
     /**
@@ -2253,7 +2254,7 @@ class Main {
                         // PRIMED state - all prerequisites met, waiting for trigger condition
                         if (!achievement._primed) {
                             // Just became primed - show badge
-                            var primedImageUrl:String = "http://127.0.0.1:8081/asset-image/" + achievement.id;
+                            var primedImageUrl:String = "http://raflash.local/asset-image/" + achievement.id;
                             PrimedBadges.show(achievement.id, primedImageUrl);
                         }
                         achievement._primed = true;
@@ -2530,7 +2531,7 @@ class Main {
             if (hasAnyMeasured) {
                 var prevMeasuredValue:Number = achievement._measuredValue;
                 var prevMeasuredError:Boolean = achievement._measuredError;
-                var measuredImageUrl:String = "http://127.0.0.1:8081/asset-image/" + achievement.id;
+                var measuredImageUrl:String = "http://raflash.local/asset-image/" + achievement.id;
 
                 if (measuredError) {
                     // Error state - different targets
@@ -2556,7 +2557,7 @@ class Main {
 
             // Achievement triggered - show toast and handle state
             if (assetTriggered && hasRequirements) {
-                var imageUrl:String = "http://127.0.0.1:8081/asset-image/" + achievement.id;
+                var imageUrl:String = "http://raflash.local/asset-image/" + achievement.id;
                 Toast.show("Achievement Unlocked", achievement.name, achievement.description || "", "left", imageUrl);
 
                 // Reset all hits to 0 on all requirements

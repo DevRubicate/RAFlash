@@ -27,6 +27,7 @@ import { PNG } from "npm:pngjs";
 import jpeg from "npm:jpeg-js";
 // @deno-types="npm:@types/pako"
 import * as pako from "npm:pako";
+import { startSitelockProxy, stopSitelockProxy } from "./SitelockProxy.ts";
 
 // Helper to compile a requirement field based on its type
 function compileRequirementField(req: Requirement, field: 'A' | 'B'): unknown[] {
@@ -87,8 +88,15 @@ JSONDiff.watch(
     }
 );
 
-const HTTP_PORT = 8080;
-const FLASH_PORT = 8081;
+const HTTP_PORT = 18080;
+const FLASH_PORT = 18081;
+const PROXY_PORT = 18082;
+const RAFLASH_DOMAIN = "raflash.local"; // Fake domain for proxy routing (127.0.0.1 bypasses WinInet proxy)
+
+// Sitelock bypass: set to a full URL to spoof the game's origin domain
+// e.g. "http://www.coolmathgames.com/games/0-game.swf"
+// Set to null for no domain spoofing (game loads from raflash.local)
+const SITELOCK_URL: string | null = null;
 
 // AVM mode configuration - set after game SWF is selected and version detected
 interface AVMConfig {
@@ -701,7 +709,7 @@ async function handleApiRequest(
         }
         case "initializeData": {
             // Send current app data to firmware
-            const response = await sendToFirmware("setup", { data: AppData.data });
+            const response = await sendToFirmware("setup", { data: AppData.data, gameUrl: SITELOCK_URL });
             return response;
         }
         case "getData": {
@@ -937,7 +945,6 @@ async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFi
         if (done) return;
 
         httpBuffer = decoder.decode(value);
-
         // HTTP request for firmware SWF
         if (httpBuffer.startsWith("GET /firmware.swf")) {
             let swfData: Uint8Array;
@@ -1072,9 +1079,8 @@ async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFi
         isXMLSocket = true;
         firmwareWriter = writer;
         firmwareConnected = true;
-
         // Send app data to firmware (don't await - would deadlock before read loop starts)
-        sendToFirmware("setup", { data: AppData.data }).catch(() => {});
+        sendToFirmware("setup", { data: AppData.data, gameUrl: SITELOCK_URL }).catch(() => {});
 
         // Process initial data
         if (httpBuffer.trim()) {
@@ -1214,7 +1220,7 @@ function handleFirmwareData(data: string): void {
 function launchFlashPlayer(): Deno.ChildProcess {
     const fpPath = `${Deno.cwd()}/vendor/fp-32.0.0.380.exe`;
     // Note: cwd is .build/ during development (make run) and the exe's directory when distributed
-    const firmwareUrl = `http://127.0.0.1:${FLASH_PORT}/firmware.swf`;
+    const firmwareUrl = `http://${RAFLASH_DOMAIN}/firmware.swf`;
 
     const command = new Deno.Command(fpPath, {
         args: [firmwareUrl],
@@ -1287,10 +1293,21 @@ async function main(): Promise<void> {
     await AppData.setGamePath(resolvedGamePath);
     await AppData.loadData();
 
-    // 7. Switch to game running state
+    // 7. Start sitelock proxy
+    await Deno.writeTextFile(join(Deno.cwd(), "proxy.txt"), "1");
+    await Deno.writeTextFile(join(Deno.cwd(), "port.txt"), String(PROXY_PORT));
+    const sitelockDomain = SITELOCK_URL ? new URL(SITELOCK_URL).hostname : null;
+    startSitelockProxy({
+        port: PROXY_PORT,
+        flashPort: FLASH_PORT,
+        gameDomain: sitelockDomain,
+        gameFilePath: resolvedGamePath,
+    });
+
+    // 8. Switch to game running state
     appState = AppState.GAME_RUNNING;
 
-    // 7. Launch Flash Player (now the boss window)
+    // 8. Launch Flash Player (now the boss window)
     const flashProcess = launchFlashPlayer();
     flashPlayerPid = flashProcess.pid;
 
@@ -1314,6 +1331,7 @@ async function main(): Promise<void> {
         if (richPresenceCheckInterval) {
             clearInterval(richPresenceCheckInterval);
         }
+        stopSitelockProxy();
         await HTMLWindow.shutdown();
         Deno.exit(0);
     });
@@ -1323,6 +1341,7 @@ async function main(): Promise<void> {
         if (richPresenceCheckInterval) {
             clearInterval(richPresenceCheckInterval);
         }
+        stopSitelockProxy();
         try {
             flashProcess.kill();
         } catch {
@@ -1333,7 +1352,7 @@ async function main(): Promise<void> {
     });
 
     // 9. Start socket server for Flash (runs indefinitely)
-    // HTTP server continues running on port 8080 for devtools
+    // HTTP server continues running for devtools
     await startFlashServer(resolvedGamePath);
 }
 

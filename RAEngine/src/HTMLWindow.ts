@@ -64,7 +64,7 @@ export class HTMLWindow {
         }
 
         const chromeArgs = [
-            `--app=http://localhost:8080/${url}?windowId=${windowId}`,
+            `--app=http://localhost:18080/${url}?windowId=${windowId}`,
             '--new-window',
             '--no-first-run',
             '--log-level=3',
@@ -107,7 +107,7 @@ export class HTMLWindow {
         await ensureDir(chromeUserDataDir);
         chromeArgs.push(`--user-data-dir=${chromeUserDataDir}`);
 
-        // Pre-grant clipboard permission for localhost:8080
+        // Pre-grant clipboard permission for localhost:18080
         const defaultDir = join(chromeUserDataDir, 'Default');
         await ensureDir(defaultDir);
         const prefsPath = join(defaultDir, 'Preferences');
@@ -116,7 +116,7 @@ export class HTMLWindow {
                 content_settings: {
                     exceptions: {
                         clipboard: {
-                            "http://localhost:8080,*": {
+                            "http://localhost:18080,*": {
                                 setting: 1
                             }
                         }

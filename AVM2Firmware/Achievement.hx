@@ -691,7 +691,7 @@ class Achievement {
                 if (hasTriggerCondition) {
                     if (allNonTriggerMet && !allTriggerMet) {
                         if (untyped achievement._primed != true) {
-                            var primedImageUrl:String = "http://localhost:8081/asset-image/" + Std.string(untyped achievement.id);
+                            var primedImageUrl:String = "http://raflash.local/asset-image/" + Std.string(untyped achievement.id);
                             PrimedBadges.show(untyped achievement.id, primedImageUrl);
                         }
                         untyped achievement._primed = true;
@@ -944,7 +944,7 @@ class Achievement {
             if (hasAnyMeasured) {
                 var prevMeasuredValue:Dynamic = untyped achievement._measuredValue;
                 var prevMeasuredError:Dynamic = untyped achievement._measuredError;
-                var measuredImageUrl:String = "http://localhost:8081/asset-image/" + Std.string(untyped achievement.id);
+                var measuredImageUrl:String = "http://raflash.local/asset-image/" + Std.string(untyped achievement.id);
 
                 if (measuredError) {
                     if (prevMeasuredError != true && !assetTriggered) {
@@ -966,7 +966,7 @@ class Achievement {
 
             // Achievement triggered
             if (assetTriggered && hasRequirements) {
-                var imageUrl:String = "http://localhost:8081/asset-image/" + Std.string(untyped achievement.id);
+                var imageUrl:String = "http://raflash.local/asset-image/" + Std.string(untyped achievement.id);
                 Toast.show("Achievement Unlocked", Std.string(untyped achievement.name), Std.string(untyped achievement.description), "left", imageUrl);
 
                 // Reset all hits
