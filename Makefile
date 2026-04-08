@@ -17,7 +17,7 @@ check: avm1-build avm2-build assets
 
 # Run from .build (simulates distribution environment)
 run: avm1-build avm2-build assets stage
-	@cd .build && bash -c 'trap "exit 0" INT; $(DENO) run --allow-ffi --allow-net --allow-run --allow-read --allow-write --allow-env ../RAEngine/src/Main.ts 2>&1 | cat'
+	@cd .build && bash -c 'trap "exit 0" INT; $(DENO) run --allow-ffi --allow-net --allow-run --allow-read --allow-write --allow-env ../RAEngine/src/Main.ts 2>&1'
 
 # Build UI assets using npm
 assets:
@@ -61,7 +61,7 @@ DENO_PERMISSIONS=--allow-ffi --allow-net --allow-run --allow-read --allow-write 
 DENO_INCLUDES=--include=$(AVM1_SWF) --include=$(AVM2_SWF) --include=.build/internals/assets --include=assets/icon.png --include=assets/icon.ico
 
 compile: avm1-build avm2-build assets stage
-	@$(DENO) compile -q $(DENO_PERMISSIONS) --no-terminal --icon=assets/icon.ico $(DENO_INCLUDES) --output=.build/RAFlash RAEngine/src/Main.ts
+	@$(DENO) compile -q $(DENO_PERMISSIONS) --no-terminal --icon=assets/icon.ico $(DENO_INCLUDES) --output=.build/RAFlash RAEngine/src/Main.ts 2>&1 | cat > /dev/null
 
 # === Testing ===
 
