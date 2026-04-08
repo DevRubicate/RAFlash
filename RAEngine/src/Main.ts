@@ -120,7 +120,9 @@ let avmConfig: AVMConfig;
 function patchFirmwareSwf(
     firmwareBytes: Uint8Array,
     targetFrameRate: number,
-    targetBgColor: string | null
+    targetBgColor: string | null,
+    targetWidth: number,
+    targetHeight: number
 ): Uint8Array {
     // 1. Check if compressed (CWS = zlib, ZWS = lzma)
     const signature = String.fromCharCode(firmwareBytes[0], firmwareBytes[1], firmwareBytes[2]);
@@ -148,12 +150,58 @@ function patchFirmwareSwf(
         data = new Uint8Array(firmwareBytes);
     }
 
-    // 3. Parse RECT structure to find frameRate offset
-    // RECT starts at byte 8. First 5 bits = Nbits (number of bits for each coordinate)
-    const rectNBits = (data[8] >> 3) & 0x1F;
-    const rectTotalBits = 5 + rectNBits * 4;
-    const rectBytes = Math.ceil(rectTotalBits / 8);
-    const frameRateOffset = 8 + rectBytes;
+    // 3. Rewrite RECT structure with game dimensions
+    // RECT format: [Nbits:5][Xmin:N][Xmax:N][Ymin:N][Ymax:N] (bit-packed)
+    const xMaxTwips = targetWidth * 20;
+    const yMaxTwips = targetHeight * 20;
+    // Nbits must hold the largest value (unsigned) plus a sign bit
+    const maxVal = Math.max(xMaxTwips, yMaxTwips);
+    const newNbits = maxVal > 0 ? Math.ceil(Math.log2(maxVal + 1)) + 1 : 1;
+
+    // Parse old RECT to find where it ends
+    const oldNbits = (data[8] >> 3) & 0x1F;
+    const oldRectTotalBits = 5 + oldNbits * 4;
+    const oldRectBytes = Math.ceil(oldRectTotalBits / 8);
+
+    // Build new RECT bytes
+    const newRectTotalBits = 5 + newNbits * 4;
+    const newRectBytes = Math.ceil(newRectTotalBits / 8);
+    const newRect = new Uint8Array(newRectBytes);
+
+    // Helper to write bits into newRect
+    const writeBits = (startBit: number, numBits: number, value: number) => {
+        for (let i = 0; i < numBits; i++) {
+            const bit = (value >> (numBits - 1 - i)) & 1;
+            if (bit) {
+                const byteIdx = Math.floor((startBit + i) / 8);
+                const bitIdx = 7 - ((startBit + i) % 8);
+                newRect[byteIdx] |= (1 << bitIdx);
+            }
+        }
+    };
+
+    writeBits(0, 5, newNbits);        // Nbits
+    writeBits(5, newNbits, 0);        // Xmin = 0
+    writeBits(5 + newNbits, newNbits, xMaxTwips);    // Xmax
+    writeBits(5 + newNbits * 2, newNbits, 0);        // Ymin = 0
+    writeBits(5 + newNbits * 3, newNbits, yMaxTwips); // Ymax
+
+    // Rebuild data if RECT size changed
+    const afterOldRect = 8 + oldRectBytes;
+    const newData = new Uint8Array(8 + newRectBytes + (data.length - afterOldRect));
+    newData.set(data.slice(0, 8));          // SWF header (signature + version + length)
+    newData.set(newRect, 8);                // New RECT
+    newData.set(data.slice(afterOldRect), 8 + newRectBytes); // Rest of SWF (frameRate, tags, etc.)
+
+    // Update file length in header (bytes 4-7, little-endian)
+    const newLength = newData.length;
+    newData[4] = newLength & 0xFF;
+    newData[5] = (newLength >> 8) & 0xFF;
+    newData[6] = (newLength >> 16) & 0xFF;
+    newData[7] = (newLength >> 24) & 0xFF;
+
+    data = newData;
+    const frameRateOffset = 8 + newRectBytes;
 
     // 4. Patch frameRate (8.8 fixed-point, little-endian)
     // Low byte = fraction (usually 0), high byte = integer part
@@ -504,7 +552,9 @@ function startHttpServer() {
                         const patchedFirmware = patchFirmwareSwf(
                             firmwareBytes,
                             gameMetadata.frameRate,
-                            gameMetadata.backgroundColor
+                            gameMetadata.backgroundColor,
+                            gameMetadata.width,
+                            gameMetadata.height
                         );
                         return new Response(new Uint8Array(patchedFirmware) as BodyInit, {
                             status: 200,
@@ -952,7 +1002,7 @@ async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFi
                 const gameSwfBuffer = await Deno.readFile(gamePath);
                 const gameMetadata = parseSwfMetadata(gameSwfBuffer);
                 const firmwareBytes = await Deno.readFile(avmConfig.firmwareSwf);
-                swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor);
+                swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height);
             } else {
                 swfData = await Deno.readFile(avmConfig.firmwareSwf);
             }
@@ -1286,7 +1336,7 @@ async function main(): Promise<void> {
 
     const swfVersion = gameSwfBuffer[3];
     avmConfig = swfVersion >= 9
-        ? { mode: "AVM2", firmwareSwf: "firmware/AVM2.swf", messageTerminator: "\n", patchFirmware: false, convertPngToJpeg: false }
+        ? { mode: "AVM2", firmwareSwf: "firmware/AVM2.swf", messageTerminator: "\n", patchFirmware: true, convertPngToJpeg: false }
         : { mode: "AVM1", firmwareSwf: "firmware/AVM1.swf", messageTerminator: "\0", patchFirmware: true, convertPngToJpeg: true };
 
     // 6. Load game-specific state (identified by MD5 hash of SWF)

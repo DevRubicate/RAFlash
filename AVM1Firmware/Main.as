@@ -78,6 +78,8 @@ class Main {
      * Called from AVM1Entry.main() for production, or can be called directly in tests.
      */
     public static function init():Void {
+        Stage.scaleMode = "noScale";
+        Stage.align = "TL";
         connectToServer();
     }
 
