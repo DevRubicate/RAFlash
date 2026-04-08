@@ -43,6 +43,9 @@ enum NODE_TYPE {
 
     // Conditional
     TERNARY = 'TERNARY',
+
+    // Remembered value
+    REMEMBERED = 'REMEMBERED',
 }
 
 export { NODE_TYPE };

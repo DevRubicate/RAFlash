@@ -17,6 +17,9 @@ import flash.text.TextField;
  */
 class Evaluate {
 
+    // Remembered values for {expr} syntax — persists across evaluation frames
+    static var rememberedValues:Map<String, Array<Dynamic>> = new Map();
+
     // === Public API ===
 
     /**
@@ -262,6 +265,31 @@ class Evaluate {
                     stack.push(result);
                     i += amount + 1;
                 }
+            } else if (token == "REMEMBER") {
+                var remLen:Int = Std.parseInt(cast(formula[i], String));
+                i++;
+                var remStart:Int = i;
+                var remEnd:Int = remStart + remLen;
+
+                // Build key from inner bytecode for deduplication
+                var remKey:String = "";
+                var rk:Int = remStart;
+                while (rk < remEnd) {
+                    remKey += Std.string(formula[rk]) + "|";
+                    rk++;
+                }
+
+                var remResult = evaluate(formula, remStart, remEnd, context, keys, gameRoot);
+
+                if (remResult != null && remResult.length > 0) {
+                    rememberedValues.set(remKey, remResult);
+                    stack.push(remResult);
+                } else if (rememberedValues.exists(remKey)) {
+                    stack.push(rememberedValues.get(remKey));
+                } else {
+                    stack.push([]);
+                }
+                i = remEnd;
             } else if (token == "TERNARY") {
                 var thenLen:Int = Std.parseInt(cast(formula[i], String));
                 i++;

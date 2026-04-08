@@ -216,7 +216,7 @@ class Parser {
                                 qnode.type === NODE_TYPE.STRING ||
                                 qnode.type === NODE_TYPE.NULL ||
                                 qnode.type === NODE_TYPE.READ_GLOBAL ||
-
+                                qnode.type === NODE_TYPE.REMEMBERED ||
                                 qnode.type === NODE_TYPE.CALL ||
                                 qnode.type === NODE_TYPE.TERNARY) {
                                 elseStack.push(qnode);
@@ -280,6 +280,8 @@ class Parser {
                             } else if (node.type === NODE_TYPE.CALL) {
                                 evaluationStack.push(node);
                             } else if (node.type === NODE_TYPE.TERNARY) {
+                                evaluationStack.push(node);
+                            } else if (node.type === NODE_TYPE.REMEMBERED) {
                                 evaluationStack.push(node);
                             } else if (
                                 operatorDetails && operatorDetails.type === 'BINARY'
@@ -790,6 +792,16 @@ class Parser {
                             );
                             break;
                         }
+                        case TokenType.LBRACE: {
+                            // Remembered value: {expr} — store marker on stack
+                            const rememberMarker = new Node(NODE_TYPE.REMEMBERED);
+                            rememberMarker.value = this.currentNode.queue.length;
+                            this.currentNode.addStack(rememberMarker);
+                            // Move past the token
+                            this.advanceToken();
+                            this.currentNode.addConsume(CONSUME.EXPRESSION);
+                            break;
+                        }
                         case TokenType.LPAREN: {
                             // Store queue length so ternary knows where paren expression starts
                             const parenNode = new Node(NODE_TYPE.LEFT_PARENTHESIS);
@@ -1098,6 +1110,73 @@ class Parser {
                             // If no LEFT_PARENTHESIS found, just break - the ) belongs to outer context
                             break;
                         }
+                        case TokenType.RBRACE: {
+                            // End of remembered value — find matching REMEMBERED marker on stack
+                            let remIdx = this.currentNode.stack.length - 1;
+                            while (
+                                remIdx >= 0 &&
+                                this.currentNode.stack[remIdx].type !== NODE_TYPE.REMEMBERED
+                            ) {
+                                --remIdx;
+                            }
+
+                            if (remIdx >= 0) {
+                                // Pop operators above REMEMBERED marker to queue
+                                while (this.currentNode.stack.length > remIdx + 1) {
+                                    this.currentNode.queue.push(
+                                        this.currentNode.stack.pop()!,
+                                    );
+                                }
+
+                                // Pop the REMEMBERED marker
+                                const marker = this.currentNode.stack.pop()!;
+                                const queueStart = marker.value as number;
+
+                                // Extract inner RPN queue items
+                                const innerRPN = this.currentNode.queue.splice(queueStart);
+
+                                // Evaluate RPN into a single expression tree
+                                const evalStack: Array<Node> = [];
+                                for (const qnode of innerRPN) {
+                                    const opDetails = OperatorDetails[qnode.type];
+                                    if (qnode.type === NODE_TYPE.VALUE ||
+                                        qnode.type === NODE_TYPE.STRING ||
+                                        qnode.type === NODE_TYPE.NULL ||
+                                        qnode.type === NODE_TYPE.READ_GLOBAL ||
+                                        qnode.type === NODE_TYPE.REMEMBERED ||
+                                        qnode.type === NODE_TYPE.CALL ||
+                                        qnode.type === NODE_TYPE.TERNARY) {
+                                        evalStack.push(qnode);
+                                    } else if (opDetails && opDetails.type === 'BINARY') {
+                                        const b = evalStack.pop()!;
+                                        const a = evalStack.pop()!;
+                                        a.parent = qnode;
+                                        b.parent = qnode;
+                                        qnode.children.push(a);
+                                        qnode.children.push(b);
+                                        evalStack.push(qnode);
+                                    } else if (opDetails && opDetails.type === 'UNARY') {
+                                        const a = evalStack.pop()!;
+                                        a.parent = qnode;
+                                        qnode.children.unshift(a);
+                                        evalStack.push(qnode);
+                                    }
+                                }
+
+                                // Build REMEMBERED node wrapping the single evaluated expression
+                                const rememberedNode = new Node(NODE_TYPE.REMEMBERED);
+                                if (evalStack.length === 1) {
+                                    rememberedNode.addChild(evalStack[0]);
+                                }
+                                this.currentNode.addQueue(rememberedNode);
+
+                                // Advance past }
+                                this.advanceToken();
+                                // Continue looking for operators
+                                this.currentNode.addConsume(CONSUME.EXPRESSION_OPERATOR);
+                            }
+                            break;
+                        }
                         case TokenType.COLON: {
                             // COLON ends the current expression (ternary then-branch)
                             // Evaluate what we have and add it as a child, then let TERNARY_ELSE handle the colon
@@ -1118,7 +1197,7 @@ class Parser {
                                         qnode.type === NODE_TYPE.STRING ||
                                         qnode.type === NODE_TYPE.NULL ||
                                         qnode.type === NODE_TYPE.READ_GLOBAL ||
-        
+                                        qnode.type === NODE_TYPE.REMEMBERED ||
                                         qnode.type === NODE_TYPE.CALL ||
                                         qnode.type === NODE_TYPE.TERNARY) {
                                         thenStack.push(qnode);

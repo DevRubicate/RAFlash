@@ -30,6 +30,7 @@ import { AndUnit }                      from './unit/AndUnit.ts';
 import { OrUnit }                       from './unit/OrUnit.ts';
 import { XorUnit }                      from './unit/XorUnit.ts';
 import { TernaryUnit }                  from './unit/TernaryUnit.ts';
+import { RememberedUnit }               from './unit/RememberedUnit.ts';
 
 export class Builder {
     input: Node;
@@ -438,6 +439,20 @@ export class Builder {
                 element.children[0].parent = element;
                 element.children[1].parent = element;
                 element.children[2].parent = element;
+                return element;
+            }
+            case NODE_TYPE.REMEMBERED: {
+                if (node.children.length !== 1) {
+                    throw new Error(
+                        `Unexpected number of children in REMEMBERED statement: ${node.children.length}`,
+                    );
+                }
+
+                const element = new RememberedUnit(null);
+                element.children.push(
+                    Builder.convert(node.children[0]),
+                );
+                element.children[0].parent = element;
                 return element;
             }
             default:

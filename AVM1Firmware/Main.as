@@ -54,6 +54,9 @@ class Main {
     // Format: { reqId: { prevA: value, prevB: value } }
     private static var deltaValues:Object = {};
 
+    // Remembered values for {expr} syntax — persists across evaluation frames
+    private static var rememberedValues:Object = {};
+
     // Memory Watch: active watchers keyed by watcherId
     // Format: { watcherId: { bytecode: Array, buffer: Array, lastFlush: Number } }
     private static var memoryWatchers:Object = {};
@@ -1406,6 +1409,33 @@ class Main {
 
                     stack.push(result);
                     i += amount + 1;
+                    break;
+                }
+                case "REMEMBER": {
+                    var remLen:Number = parseInt(formula[++i], 10);
+                    var remStart:Number = i + 1;
+                    var remEnd:Number = remStart + remLen;
+                    i = remEnd - 1; // -1 because loop will ++i
+
+                    // Build key from inner bytecode for deduplication
+                    var remKey:String = "";
+                    for (var rk:Number = remStart; rk < remEnd; rk++) {
+                        remKey += formula[rk] + "|";
+                    }
+
+                    var remResult:Array = evaluate(formula, remStart, remEnd, context, keys);
+
+                    if (remResult != null && remResult.length > 0) {
+                        // Valid result — store and use
+                        rememberedValues[remKey] = remResult;
+                        stack.push(remResult);
+                    } else if (rememberedValues[remKey] != undefined) {
+                        // Empty/null result — use remembered value
+                        stack.push(rememberedValues[remKey]);
+                    } else {
+                        // No remembered value available — push empty
+                        stack.push([]);
+                    }
                     break;
                 }
                 case "TERNARY": {
