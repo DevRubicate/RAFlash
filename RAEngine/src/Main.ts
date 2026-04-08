@@ -788,11 +788,14 @@ async function handleApiRequest(
                     sendToDevtools(senderSocket, "editData", derivedDiff);
                 }
 
-                // Auto-save for Code Notes (they don't have explicit save yet)
+                // Auto-save for Code Notes and Game Config
                 const hasCodeNotesChanges = incomingDiff.edited?.some(
                     ([path]) => path.startsWith('codeNotes')
                 );
-                if (hasCodeNotesChanges) {
+                const hasGameConfigChanges = incomingDiff.edited?.some(
+                    ([path]) => path.startsWith('gameConfig')
+                );
+                if (hasCodeNotesChanges || hasGameConfigChanges) {
                     await AppData.saveData();
                 }
 

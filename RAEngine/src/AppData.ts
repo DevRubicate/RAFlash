@@ -6,6 +6,7 @@ export class AppData {
     static data: AppDataStructure = {
         assets: [],
         codeNotes: [],
+        gameConfig: { title: '', originUrl: '' },
     };
 
     // Game-specific state file path
@@ -60,7 +61,7 @@ export class AppData {
         } catch (error) {
             if (error instanceof Deno.errors.NotFound) {
                 // New game, start fresh
-                this.data = { assets: [], codeNotes: [] };
+                this.data = { assets: [], codeNotes: [], gameConfig: { title: '', originUrl: '' } };
             } else {
                 throw error;
             }
@@ -115,7 +116,8 @@ export class AppData {
 
             const strippedData = {
                 assets: assets.map(asset => this.stripAssetData(asset, this.assetSchema)),
-                codeNotes: codeNotes.map(note => this.stripAssetData(note, this.codeNoteSchema))
+                codeNotes: codeNotes.map(note => this.stripAssetData(note, this.codeNoteSchema)),
+                gameConfig: this.stripAssetData(this.data.gameConfig || {}, this.gameConfigSchema),
             };
             await Deno.writeTextFile(this.stateFilePath, JSON.stringify(strippedData, null, 2));
             return true;
@@ -306,6 +308,14 @@ export class AppData {
             id: { type: 'number' },
             note: { type: 'string' },
             path: { type: 'string' },
+        }
+    };
+
+    static gameConfigSchema: Record<string, unknown> = {
+        type: 'object',
+        properties: {
+            title: { type: 'string' },
+            originUrl: { type: 'string' },
         }
     };
 

@@ -60,8 +60,15 @@ export interface CodeNote {
     [key: string]: unknown;
 }
 
+export interface GameConfig {
+    title: string;
+    originUrl: string;
+    [key: string]: unknown;
+}
+
 export interface AppDataStructure {
     assets: Asset[];
     codeNotes: CodeNote[];
+    gameConfig: GameConfig;
     [key: string]: unknown;
 }
