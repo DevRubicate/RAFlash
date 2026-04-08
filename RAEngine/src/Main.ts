@@ -123,7 +123,8 @@ function patchFirmwareSwf(
     targetFrameRate: number,
     targetBgColor: string | null,
     targetWidth: number,
-    targetHeight: number
+    targetHeight: number,
+    gameHidesMenuBar: boolean
 ): Uint8Array {
     // 1. Check if compressed (CWS = zlib, ZWS = lzma)
     const signature = String.fromCharCode(firmwareBytes[0], firmwareBytes[1], firmwareBytes[2]);
@@ -152,9 +153,12 @@ function patchFirmwareSwf(
     }
 
     // 3. Rewrite RECT structure with game dimensions
+    // Compensate for Flash Player's menu bar (20px) which fscommand("showmenu","false") removes.
+    // Games that already hide the menu bar themselves don't need compensation.
+    const menuBarCompensation = gameHidesMenuBar ? 0 : 20;
     // RECT format: [Nbits:5][Xmin:N][Xmax:N][Ymin:N][Ymax:N] (bit-packed)
     const xMaxTwips = targetWidth * 20;
-    const yMaxTwips = targetHeight * 20;
+    const yMaxTwips = (targetHeight - menuBarCompensation) * 20;
     // Nbits must hold the largest value (unsigned) plus a sign bit
     const maxVal = Math.max(xMaxTwips, yMaxTwips);
     const newNbits = maxVal > 0 ? Math.ceil(Math.log2(maxVal + 1)) + 1 : 1;
@@ -254,6 +258,47 @@ function patchFirmwareSwf(
     }
 
     return data;
+}
+
+/**
+ * Check if a SWF contains fscommand("showmenu") by scanning for the string.
+ * Games that hide the menu bar themselves don't need menu bar height compensation.
+ */
+function swfHidesMenuBar(swfBytes: Uint8Array): boolean {
+    // Decompress if needed to search actual content
+    let data: Uint8Array;
+    const sig = String.fromCharCode(swfBytes[0], swfBytes[1], swfBytes[2]);
+    if (sig === "CWS") {
+        try {
+            const decompressed = pako.inflate(swfBytes.slice(8));
+            data = new Uint8Array(8 + decompressed.length);
+            data.set(swfBytes.slice(0, 8));
+            data.set(decompressed, 8);
+        } catch {
+            data = swfBytes;
+        }
+    } else {
+        data = swfBytes;
+    }
+
+    // Search for "FSCommand:showMenu" — the compiled form of fscommand("showmenu").
+    // Case-insensitive on the "showMenu" part since Flash accepts any casing.
+    const prefix = new TextEncoder().encode("FSCommand:");
+    const suffix = [115, 104, 111, 119, 109, 101, 110, 117]; // "showmenu" lowercase
+    const needleLen = prefix.length + suffix.length;
+    for (let i = 0; i <= data.length - needleLen; i++) {
+        let match = true;
+        for (let j = 0; j < prefix.length; j++) {
+            if (data[i + j] !== prefix[j]) { match = false; break; }
+        }
+        if (!match) continue;
+        match = true;
+        for (let j = 0; j < suffix.length; j++) {
+            if ((data[i + prefix.length + j] | 0x20) !== suffix[j]) { match = false; break; }
+        }
+        if (match) return true;
+    }
+    return false;
 }
 
 /**
@@ -555,7 +600,8 @@ function startHttpServer() {
                             gameMetadata.frameRate,
                             gameMetadata.backgroundColor,
                             gameMetadata.width,
-                            gameMetadata.height
+                            gameMetadata.height,
+                            swfHidesMenuBar(gameSwfBuffer)
                         );
                         return new Response(new Uint8Array(patchedFirmware) as BodyInit, {
                             status: 200,
@@ -580,7 +626,8 @@ function startHttpServer() {
                         gameMetadata.frameRate,
                         gameMetadata.backgroundColor,
                         gameMetadata.width,
-                        gameMetadata.height
+                        gameMetadata.height,
+                        swfHidesMenuBar(gameSwfBuffer)
                     );
                     return new Response(new Uint8Array(patchedFirmware) as BodyInit, {
                         status: 200,
@@ -1021,7 +1068,7 @@ async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFi
                 const gameSwfBuffer = await Deno.readFile(gamePath);
                 const gameMetadata = parseSwfMetadata(gameSwfBuffer);
                 const firmwareBytes = await Deno.readFile(avmConfig.firmwareSwf);
-                swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height);
+                swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height, swfHidesMenuBar(gameSwfBuffer));
             } else {
                 swfData = await Deno.readFile(avmConfig.firmwareSwf);
             }
@@ -1047,7 +1094,7 @@ async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFi
             const gameSwfBuffer = await Deno.readFile(gamePath);
             const gameMetadata = parseSwfMetadata(gameSwfBuffer);
             const firmwareBytes = await Deno.readFile(avmConfig.innerFirmwareSwf);
-            const swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height);
+            const swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height, swfHidesMenuBar(gameSwfBuffer));
 
             const response = [
                 "HTTP/1.1 200 OK",
@@ -1407,7 +1454,7 @@ async function main(): Promise<void> {
     // Use fast polling (50 retries, 10ms delay) to catch window quickly
     if (Deno.build.os === "windows") {
         const icoPath = join(Deno.cwd(), "assets", "icon.ico");
-        WindowManager.removeWindowChrome(flashProcess.pid, gameWindowWidth, gameWindowHeight, 50, 10);
+        WindowManager.removeWindowChrome(flashProcess.pid, gameWindowWidth, gameWindowHeight, "RAFlash", 50, 10);
         WindowManager.setProcessIcon(flashProcess.pid, icoPath);
     }
 

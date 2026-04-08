@@ -98,6 +98,10 @@ const user32 = isWindows ? Deno.dlopen("user32.dll", {
         parameters: ["pointer", "i32", "pointer"],
         result: "pointer",
     },
+    AdjustWindowRectEx: {
+        parameters: ["buffer", "u32", "i32", "u32"],
+        result: "i32",
+    },
 }) : null;
 
 // FFI bindings to kernel32.dll for GetCurrentThreadId
@@ -574,6 +578,7 @@ export class WindowManager {
         pid: number,
         width: number,
         height: number,
+        title?: string,
         maxRetries = 50,
         delayMs = 10
     ): Promise<boolean> {
@@ -582,6 +587,12 @@ export class WindowManager {
         for (let i = 0; i < maxRetries; i++) {
             const hwnd = this.findWindowByPid(pid);
             if (hwnd) {
+                // Set window title if provided
+                if (title) {
+                    const titleUtf16 = new Uint16Array([...title].map(c => c.charCodeAt(0)).concat(0));
+                    user32.symbols.SetWindowTextW(hwnd, titleUtf16);
+                }
+
                 // Strip thick frame (resize handle) but keep caption (title bar for dragging)
                 const style = BigInt(Deno.UnsafePointer.value(user32.symbols.GetWindowLongPtrW(hwnd, GWL_STYLE) as Deno.PointerValue));
                 const newStyle = style & ~BigInt(WS_THICKFRAME);
@@ -592,14 +603,20 @@ export class WindowManager {
                 const newExStyle = exStyle & ~BigInt(WS_EX_DLGMODALFRAME) & ~BigInt(WS_EX_CLIENTEDGE) & ~BigInt(WS_EX_STATICEDGE);
                 user32.symbols.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, Deno.UnsafePointer.create(newExStyle));
 
-                // Apply style changes and resize to exact content dimensions
+                // Calculate outer window size needed for desired client area
+                const rect = new Int32Array([0, 0, width, height]);
+                user32.symbols.AdjustWindowRectEx(rect, Number(newStyle), 0, Number(newExStyle));
+                const outerWidth = rect[2] - rect[0];
+                const outerHeight = rect[3] - rect[1];
+
+                // Apply style changes and resize to fit content
                 const screen = this.getScreenSize();
-                const x = Math.floor((screen.width - width) / 2);
-                const y = Math.floor((screen.height - height) / 2);
+                const x = Math.floor((screen.width - outerWidth) / 2);
+                const y = Math.floor((screen.height - outerHeight) / 2);
                 user32.symbols.SetWindowPos(
                     hwnd,
                     Deno.UnsafePointer.create(HWND_TOP),
-                    x, y, width, height,
+                    x, y, outerWidth, outerHeight,
                     SWP_FRAMECHANGED | SWP_SHOWWINDOW
                 );
                 return true;
