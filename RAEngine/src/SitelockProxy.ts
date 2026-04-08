@@ -41,31 +41,35 @@ function httpResponse(status: number, statusText: string, headers: Record<string
 async function forwardRequest(targetUrl: URL, requestLine: string, rawHeaders: string): Promise<Uint8Array> {
     const port = parseInt(targetUrl.port) || 80;
     const conn = await Deno.connect({ hostname: targetUrl.hostname, port });
-    const writer = conn.writable.getWriter();
+    try {
+        const writer = conn.writable.getWriter();
 
-    // Rewrite request line to use relative path (as the real server expects)
-    const relativeRequest = `GET ${targetUrl.pathname}${targetUrl.search} HTTP/1.1\r\n${rawHeaders}\r\n`;
-    await writer.write(encoder.encode(relativeRequest));
-    writer.releaseLock();
+        // Rewrite request line to use relative path (as the real server expects)
+        const relativeRequest = `GET ${targetUrl.pathname}${targetUrl.search} HTTP/1.1\r\n${rawHeaders}\r\n`;
+        await writer.write(encoder.encode(relativeRequest));
+        writer.releaseLock();
 
-    // Read full response
-    const chunks: Uint8Array[] = [];
-    const reader = conn.readable.getReader();
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
+        // Read full response
+        const chunks: Uint8Array[] = [];
+        const reader = conn.readable.getReader();
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+        }
+        reader.releaseLock();
+
+        const totalLen = chunks.reduce((s, c) => s + c.length, 0);
+        const result = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const chunk of chunks) {
+            result.set(chunk, offset);
+            offset += chunk.length;
+        }
+        return result;
+    } finally {
+        try { conn.close(); } catch { /* already closed */ }
     }
-    reader.releaseLock();
-
-    const totalLen = chunks.reduce((s, c) => s + c.length, 0);
-    const result = new Uint8Array(totalLen);
-    let offset = 0;
-    for (const chunk of chunks) {
-        result.set(chunk, offset);
-        offset += chunk.length;
-    }
-    return result;
 }
 
 async function handleConnection(conn: Deno.TcpConn) {
@@ -157,7 +161,7 @@ export function startSitelockProxy(proxyConfig: ProxyConfig) {
 
     (async () => {
         for await (const conn of listener!) {
-            handleConnection(conn);
+            handleConnection(conn).catch(() => {});
         }
     })();
 }
