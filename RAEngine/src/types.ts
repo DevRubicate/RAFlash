@@ -73,3 +73,16 @@ export interface AppDataStructure {
     gameConfig: GameConfig;
     [key: string]: unknown;
 }
+
+export interface UserProfileGameData {
+    unlocked: number[];
+    lastPlayed?: string;
+    [key: string]: unknown;
+}
+
+export interface UserProfileData {
+    name: string;
+    created: string;
+    games: Record<string, UserProfileGameData>;
+    [key: string]: unknown;
+}

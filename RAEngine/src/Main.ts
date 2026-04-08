@@ -19,6 +19,7 @@ import { HTMLWindow } from "./HTMLWindow.ts";
 import { JSONDiff, type Diff } from "./JSONDiff.ts";
 import { Formula } from "./formula/Formula.ts";
 import { AppData } from "./AppData.ts";
+import { UserProfile } from "./UserProfile.ts";
 import { WindowManager } from "./WindowManager.ts";
 import type { Requirement } from "./types.ts";
 import { join, SEPARATOR } from "https://deno.land/std/path/mod.ts";
@@ -417,7 +418,8 @@ let appState = AppState.FILE_PICKER;
 let selectedGamePath: string | null = null;
 let gameWindowWidth = 800;  // Will be updated from game SWF metadata
 let gameWindowHeight = 600; // Will be updated from game SWF metadata
-let fileSelectedResolver: ((path: string) => void) | null = null;
+let fileSelectedResolver: ((result: { gamePath: string; user: string }) => void) | null = null;
+let selectedUserName: string | null = null;
 let httpServer: Deno.HttpServer | null = null;
 
 // Flash socket connection and communication
@@ -459,11 +461,13 @@ function resetGameState(): void {
     flashProcess = null;
     lastRichPresenceTime = 0;
     selectedGamePath = null;
+    selectedUserName = null;
     appState = AppState.FILE_PICKER;
     AppData.data = { assets: [], codeNotes: [], gameConfig: { title: '', originUrl: '', badgeImage: '' } };
     AppData.gamePath = null;
     AppData.stateFilePath = null;
     AppData.gameHash = null;
+    UserProfile.reset();
 }
 
 /**
@@ -736,10 +740,20 @@ async function handleApiRequest(
         }
         case "selectFile": {
             const path = String(input.params.path);
+            const user = String(input.params.user || "");
             selectedGamePath = path;
             if (fileSelectedResolver) {
-                fileSelectedResolver(path);
+                fileSelectedResolver({ gamePath: path, user });
             }
+            return { success: true };
+        }
+        case "listUsers": {
+            const users = await UserProfile.listUsers();
+            return { success: true, params: { users } };
+        }
+        case "createUser": {
+            const name = String(input.params.name || "");
+            await UserProfile.createUser(name);
             return { success: true };
         }
 
@@ -1017,12 +1031,12 @@ async function handleApiRequest(
  * Show file picker and wait for selection.
  * Returns null if the user closes the window without selecting a file.
  */
-async function showFilePicker(): Promise<string | null> {
+async function showFilePicker(): Promise<{ gamePath: string; user: string } | null> {
     const windowId = Math.floor(Math.random() * 0xFFFFFF);
-    await HTMLWindow.create("file-picker.html", 700, 500, windowId);
+    await HTMLWindow.create("file-picker.html", 800, 500, windowId);
 
     return Promise.race([
-        new Promise<string>((resolve) => { fileSelectedResolver = resolve; }),
+        new Promise<{ gamePath: string; user: string }>((resolve) => { fileSelectedResolver = resolve; }),
         HTMLWindow.waitForAnyClose().then(() => null)
     ]);
 }
@@ -1354,7 +1368,13 @@ function handleFirmwareData(data: string): void {
                 // Show welcome toast with game info
                 const gameTitle = AppData.data.gameConfig?.title || "Game Loaded";
                 const assetCount = AppData.data.assets.length;
-                const description = assetCount === 0 ? "No achievements" : `${assetCount} achievement${assetCount === 1 ? "" : "s"}`;
+                let description: string;
+                if (UserProfile.currentName && AppData.gameHash) {
+                    const unlocked = UserProfile.getUnlockedIds(AppData.gameHash).length;
+                    description = assetCount === 0 ? "No achievements" : `${unlocked} of ${assetCount} achievements unlocked`;
+                } else {
+                    description = assetCount === 0 ? "No achievements" : `${assetCount} achievement${assetCount === 1 ? "" : "s"}`;
+                }
                 const imageUrl = AppData.data.gameConfig?.badgeImage ? "http://raflash.local/game-image" : "";
                 sendToFirmware("showToast", {
                     title: gameTitle,
@@ -1373,6 +1393,21 @@ function handleFirmwareData(data: string): void {
                 const changes = parsed.data?.changes || parsed.data;
                 if (changes) {
                     const { fullDiff, derivedDiff } = JSONDiff.processIncomingDiff(AppData.data, changes as Diff);
+
+                    // Record achievement unlocks to user profile
+                    if (UserProfile.currentName && AppData.gameHash && fullDiff.edited) {
+                        for (const [path, value] of fullDiff.edited) {
+                            const match = path.match(/^assets\/(\d+)\/state$/);
+                            if (match && value === "TRIGGERED") {
+                                const index = parseInt(match[1]);
+                                const asset = AppData.data.assets[index];
+                                if (asset) {
+                                    UserProfile.recordUnlock(AppData.gameHash, asset.id);
+                                }
+                            }
+                        }
+                        UserProfile.saveUser();
+                    }
 
                     // Broadcast fullDiff to all devtools clients
                     broadcastToDevtools("editData", fullDiff);
@@ -1492,13 +1527,15 @@ async function main(): Promise<void> {
 
     // 4. Game loop: file picker → game → cleanup → repeat
     while (true) {
-        const gamePath = await showFilePicker();
+        const pickerResult = await showFilePicker();
 
         // User closed file picker without selecting → exit
-        if (!gamePath) {
+        if (!pickerResult) {
             await HTMLWindow.shutdown();
             Deno.exit(0);
         }
+
+        const { gamePath, user } = pickerResult;
 
         // Close file picker window
         await HTMLWindow.shutdown();
@@ -1535,6 +1572,16 @@ async function main(): Promise<void> {
         // Load game-specific state (identified by MD5 hash of SWF)
         await AppData.setGamePath(resolvedGamePath);
         await AppData.loadData();
+
+        // Load user and apply previously unlocked achievements
+        selectedUserName = user;
+        await UserProfile.loadUser(user);
+        const unlockedIds = UserProfile.getUnlockedIds(AppData.gameHash!);
+        for (const asset of AppData.data.assets) {
+            if (unlockedIds.includes(asset.id)) {
+                asset.state = "TRIGGERED";
+            }
+        }
 
         // Start sitelock proxy
         await Deno.writeTextFile(join(Deno.cwd(), "proxy.txt"), "1");
@@ -1577,6 +1624,9 @@ async function main(): Promise<void> {
             richPresenceCheckInterval = null;
         }
         stopSitelockProxy();
+
+        // Flush user profile before cleanup
+        await UserProfile.saveUser();
 
         // Close all devtools WebSocket connections and windows
         for (const ws of devtoolsClients) {

@@ -1,45 +1,64 @@
 <template>
-    <div class="container" v-if="ready">
-        <header class="path-bar">
-            <span class="path-segment"
-                  v-for="(segment, index) in pathSegments"
-                  :key="index"
-                  @click="navigateToSegment(index)">
-                {{ segment || 'Root' }}<span v-if="index < pathSegments.length - 1"> / </span>
-            </span>
-        </header>
-
-        <div class="file-list">
-            <div class="file-item parent-dir"
-                 v-if="pathSegments.length > 1"
-                 @click="navigateUp()">
-                <span class="icon">📁</span>
-                <span class="name">..</span>
-            </div>
-            <div class="file-item"
-                 v-for="item in sortedItems"
-                 :key="item.name"
-                 :class="{ selected: selectedFile === item.name, directory: item.type === 'directory' }"
-                 @click="handleClick(item)"
-                 @dblclick="handleDoubleClick(item)">
-                <span class="icon">{{ item.type === 'directory' ? '📁' : '📄' }}</span>
-                <span class="name">{{ item.name }}</span>
-            </div>
-            <div class="empty-message" v-if="items.length === 0">
-                No .swf files found in this directory
+    <div class="launcher" v-if="ready">
+        <div class="user-sidebar">
+            <div class="sidebar-header">Users</div>
+            <div class="user-list">
+                <div class="user-item"
+                     v-for="name in users"
+                     :key="name"
+                     :class="{ selected: selectedUser === name }"
+                     @click="selectedUser = name">
+                    {{ name }}
+                </div>
+                <div class="user-item new-user"
+                     @click="createUser">
+                    &lt;New User&gt;
+                </div>
             </div>
         </div>
 
-        <footer class="action-bar">
-            <div class="selected-info">
-                {{ selectedFile ? selectedFile : 'No file selected' }}
+        <div class="file-panel">
+            <header class="path-bar">
+                <span class="path-segment"
+                      v-for="(segment, index) in pathSegments"
+                      :key="index"
+                      @click="navigateToSegment(index)">
+                    {{ segment || 'Root' }}<span v-if="index < pathSegments.length - 1"> / </span>
+                </span>
+            </header>
+
+            <div class="file-list">
+                <div class="file-item parent-dir"
+                     v-if="pathSegments.length > 1"
+                     @click="navigateUp()">
+                    <span class="icon">📁</span>
+                    <span class="name">..</span>
+                </div>
+                <div class="file-item"
+                     v-for="item in sortedItems"
+                     :key="item.name"
+                     :class="{ selected: selectedFile === item.name, directory: item.type === 'directory' }"
+                     @click="handleClick(item)"
+                     @dblclick="handleDoubleClick(item)">
+                    <span class="icon">{{ item.type === 'directory' ? '📁' : '📄' }}</span>
+                    <span class="name">{{ item.name }}</span>
+                </div>
+                <div class="empty-message" v-if="items.length === 0">
+                    No .swf files found in this directory
+                </div>
             </div>
-            <button class="btn btn-primary"
-                    :disabled="!selectedFile"
-                    @click="confirmSelection">
-                Open
-            </button>
-        </footer>
+
+            <footer class="action-bar">
+                <div class="selected-info">
+                    {{ selectedFile ? selectedFile : 'No file selected' }}
+                </div>
+                <button class="btn btn-primary"
+                        :disabled="!selectedFile || !selectedUser"
+                        @click="confirmSelection">
+                    Open
+                </button>
+            </footer>
+        </div>
     </div>
     <div class="loading" v-else>
         Loading...
@@ -54,6 +73,74 @@
         height: 100vh;
         color: var(--c-text-muted);
         font-size: 0.8125rem;
+    }
+
+    .launcher {
+        display: flex;
+        height: 100vh;
+    }
+
+    /* === User Sidebar === */
+    .user-sidebar {
+        width: 160px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        background-color: var(--c-surface-alt);
+        border-right: 1px solid var(--c-border);
+    }
+
+    .sidebar-header {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--c-text-muted);
+        border-bottom: 1px solid var(--c-border);
+    }
+
+    .user-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 0.375rem;
+    }
+
+    .user-item {
+        padding: 0.375rem 0.625rem;
+        border-radius: var(--radius-md);
+        cursor: pointer;
+        font-size: 0.8125rem;
+        transition: background-color 80ms var(--ease);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .user-item:hover {
+        background-color: var(--c-surface);
+    }
+
+    .user-item.selected {
+        background-color: var(--c-primary);
+        color: #ffffff;
+    }
+
+    .user-item.selected:hover {
+        background-color: var(--c-primary-hover);
+    }
+
+    .user-item.new-user {
+        color: var(--c-text-muted);
+        font-style: italic;
+    }
+
+    /* === File Panel === */
+    .file-panel {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
     }
 
     .path-bar {
@@ -161,6 +248,8 @@ const ready = ref(false);
 const pathSegments = ref([]);
 const items = ref([]);
 const selectedFile = ref(null);
+const users = ref([]);
+const selectedUser = ref(null);
 
 // Sort items: directories first, then files, alphabetically
 const sortedItems = computed(() => {
@@ -195,6 +284,42 @@ async function loadDirectory(path) {
     }
 }
 
+// Load available users
+async function loadUsers() {
+    try {
+        const response = await Network.send({
+            command: 'listUsers',
+            params: {}
+        });
+        if (response.success) {
+            users.value = response.params.users;
+            // Auto-select if only one user
+            if (users.value.length === 1) {
+                selectedUser.value = users.value[0];
+            }
+        }
+    } catch (err) {
+        console.error('Failed to load users:', err);
+    }
+}
+
+// Create a new user
+async function createUser() {
+    const name = prompt('User name:');
+    if (!name || !name.trim()) return;
+
+    try {
+        await Network.send({
+            command: 'createUser',
+            params: { name: name.trim() }
+        });
+        await loadUsers();
+        selectedUser.value = name.trim();
+    } catch (err) {
+        console.error('Failed to create user:', err);
+    }
+}
+
 // Navigate to a specific path segment
 function navigateToSegment(index) {
     pathSegments.value = pathSegments.value.slice(0, index + 1);
@@ -212,10 +337,8 @@ function navigateUp() {
 // Handle single click on item
 function handleClick(item) {
     if (item.type === 'directory') {
-        // Single click on directory just selects it visually
         selectedFile.value = null;
     } else {
-        // Single click on file selects it
         selectedFile.value = item.name;
     }
 }
@@ -223,11 +346,9 @@ function handleClick(item) {
 // Handle double click on item
 function handleDoubleClick(item) {
     if (item.type === 'directory') {
-        // Double click on directory navigates into it
         pathSegments.value.push(item.name);
         loadDirectory(currentPath.value);
     } else {
-        // Double click on file confirms selection
         selectedFile.value = item.name;
         confirmSelection();
     }
@@ -235,16 +356,15 @@ function handleDoubleClick(item) {
 
 // Confirm file selection and notify server
 async function confirmSelection() {
-    if (!selectedFile.value) return;
+    if (!selectedFile.value || !selectedUser.value) return;
 
     const fullPath = currentPath.value + '/' + selectedFile.value;
 
     try {
         await Network.send({
             command: 'selectFile',
-            params: { path: fullPath }
+            params: { path: fullPath, user: selectedUser.value }
         });
-        // Server will close the window after receiving this
     } catch (err) {
         console.error('Failed to select file:', err);
     }
@@ -252,25 +372,20 @@ async function confirmSelection() {
 
 // Initialize on mount
 onMounted(async () => {
-    // Connect to server
     Network.connect();
 
-    // Get current working directory
-    try {
-        const response = await Network.send({
-            command: 'getDirectoryInfo',
-            params: {}
-        });
+    // Load users and directory info in parallel
+    const [, dirResponse] = await Promise.all([
+        loadUsers(),
+        Network.send({ command: 'getDirectoryInfo', params: {} })
+    ]);
 
-        if (response.success) {
-            pathSegments.value = response.params.currentDirectory;
-        }
-    } catch (err) {
-        console.error('Failed to get directory info:', err);
+    if (dirResponse.success) {
+        pathSegments.value = dirResponse.params.currentDirectory;
+    } else {
         pathSegments.value = ['.'];
     }
 
-    // Load initial directory
     await loadDirectory(currentPath.value);
     ready.value = true;
 });
