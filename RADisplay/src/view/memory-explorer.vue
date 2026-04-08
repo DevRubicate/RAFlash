@@ -7,7 +7,7 @@
                 class="memory-input" 
                 v-model="memoryInput" 
                 placeholder="Example: .player.health"
-                spellcheck="false"
+
             ></textarea>
             <button class="search-button" @click="evaluate()">Evaluate</button>
         </div>
@@ -150,6 +150,10 @@
         padding: 0.75rem 1rem;
         text-align: left;
         border-bottom: 1px solid #e5e7eb;
+    }
+
+    .results-table td {
+        user-select: text;
     }
 
     .results-table thead {
