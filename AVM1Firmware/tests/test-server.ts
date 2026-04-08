@@ -219,7 +219,7 @@ async function runTestServer(swfPath: string): Promise<number> {
     // Launch Flash Player with HTTP URL (not file path)
     console.log(`${colors.dim}Launching Flash Player...${colors.reset}`);
 
-    const fpPath = `${Deno.cwd()}/vendor/fp-32.0.0.380.exe`;
+    const fpPath = `${Deno.cwd()}/vendor/adobe/fp-32.0.0.380.exe`;
     const httpUrl = `http://localhost:${PORT}/AVM1Tests.swf`;
 
     let flashProcess: Deno.ChildProcess;

@@ -1218,7 +1218,7 @@ function handleFirmwareData(data: string): void {
  * Launch Flash Player with firmware
  */
 function launchFlashPlayer(): Deno.ChildProcess {
-    const fpPath = `${Deno.cwd()}/vendor/fp-32.0.0.380.exe`;
+    const fpPath = `${Deno.cwd()}/vendor/adobe/fp-32.0.0.380.exe`;
     // Note: cwd is .build/ during development (make run) and the exe's directory when distributed
     const firmwareUrl = `http://${RAFLASH_DOMAIN}/firmware.swf`;
 

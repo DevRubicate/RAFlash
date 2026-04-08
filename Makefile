@@ -28,8 +28,9 @@ stage:
 	@rm -rf .build/vendor .build/assets
 	@cp -r vendor .build/vendor
 	@cp -r assets .build/assets
-	@$(DENO) run --allow-read --allow-write RAEngine/src/patchFlashPlayer.ts .build/vendor/fp-32.0.0.380.exe .build/vendor/fp-32.0.0.380.patched.exe 2>&1 | cat > /dev/null
-	@mv .build/vendor/fp-32.0.0.380.patched.exe .build/vendor/fp-32.0.0.380.exe
+	@$(DENO) run --allow-read --allow-write RAEngine/src/patchFlashPlayer.ts .build/vendor/adobe/fp-32.0.0.380.exe .build/vendor/adobe/fp-32.0.0.380.patched.exe 2>&1 | cat > /dev/null
+	@mv .build/vendor/adobe/fp-32.0.0.380.patched.exe .build/vendor/adobe/fp-32.0.0.380.exe
+	@cp .build/vendor/flashpoint/FlashpointProxy.exe .build/vendor/adobe/FlashpointProxy.exe
 
 # Clean up generated files (preserves RACache)
 clean:
