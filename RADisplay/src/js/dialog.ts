@@ -11,11 +11,13 @@ function createDialog(title: string, message: string, buttons: DialogButton[]): 
     // Apply inline styles
     Object.assign(dialog.style, {
         border: 'none',
-        borderRadius: '8px',
-        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.2)',
-        padding: '20px',
-        maxWidth: '400px',
+        borderRadius: '10px',
+        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.08)',
+        padding: '24px 28px',
+        maxWidth: '380px',
         textAlign: 'center',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+        color: '#1c1917',
     });
 
     // Create backdrop styling
@@ -25,16 +27,28 @@ function createDialog(title: string, message: string, buttons: DialogButton[]): 
     // Add content
     const h1 = document.createElement('h1');
     h1.textContent = title;
+    Object.assign(h1.style, {
+        fontSize: '1rem',
+        fontWeight: '650',
+        margin: '0 0 6px 0',
+        color: '#1c1917',
+    });
     const p = document.createElement('p');
     p.textContent = message;
+    Object.assign(p.style, {
+        fontSize: '0.8125rem',
+        color: '#57534e',
+        margin: '0',
+        lineHeight: '1.5',
+    });
     dialog.appendChild(h1);
     dialog.appendChild(p);
     const buttonContainer = document.createElement('div');
     Object.assign(buttonContainer.style, {
         display: 'flex',
         justifyContent: 'center',
-        gap: '10px',
-        marginTop: '15px',
+        gap: '8px',
+        marginTop: '20px',
     });
 
     // Append buttons
@@ -48,10 +62,14 @@ function createDialog(title: string, message: string, buttons: DialogButton[]): 
 
         // Apply button styles
         Object.assign(button.style, {
-            padding: '5px 15px',
-            border: 'none',
-            borderRadius: '4px',
+            padding: '6px 18px',
+            border: '1px solid transparent',
+            borderRadius: '6px',
             cursor: 'pointer',
+            fontFamily: 'inherit',
+            fontSize: '0.8125rem',
+            fontWeight: '550',
+            transition: 'filter 150ms ease',
             ...style,
         });
 
@@ -76,7 +94,7 @@ function alertDialog(title: string, message: string): Promise<void> {
         const dialog = createDialog(title, message, [{
             label: 'OK',
             style: {
-                backgroundColor: '#007BFF',
+                backgroundColor: '#6366f1',
                 color: 'white'
             },
             callback: resolve,
@@ -91,7 +109,7 @@ function confirmDialog(title: string, message: string): Promise<boolean> {
         const dialog = createDialog(title, message, [{
                 label: 'Yes',
                 style: {
-                    backgroundColor: '#007BFF',
+                    backgroundColor: '#6366f1',
                     color: 'white'
                 },
                 callback: () => resolve(true),
@@ -99,8 +117,9 @@ function confirmDialog(title: string, message: string): Promise<boolean> {
             {
                 label: 'No',
                 style: {
-                    backgroundColor: '#f44336',
-                    color: 'white'
+                    backgroundColor: '#ffffff',
+                    color: '#1c1917',
+                    borderColor: '#e5e4e2',
                 },
                 callback: () => resolve(false),
             },

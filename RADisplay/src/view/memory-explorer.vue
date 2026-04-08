@@ -64,7 +64,7 @@
         </div>
 
         <input
-            class="filter-input"
+            class="mono-input filter-input"
             v-model="filterText"
             placeholder="Filter results..."
             spellcheck="false"
@@ -75,94 +75,90 @@
 
 <style>
     .container {
-        display: flex;
-        flex-direction: column;
-        height: 100vh;
-        padding: 1rem;
-        box-sizing: border-box;
+        padding: 0.75rem;
     }
 
     /* === Input Area === */
-    /* Updated to use flexbox for alignment */
     .input-wrapper {
         flex-shrink: 0;
         display: flex;
-        gap: 0.75rem; /* Adds space between the textarea and button */
-        margin-bottom: 1rem;
+        gap: 0.5rem;
+        margin-bottom: 0.625rem;
     }
 
     .memory-input {
-        flex-grow: 1; /* Allows the textarea to fill the available space */
-        background-color: #ffffff;
-        color: #111827;
-        border: 1px solid #d1d5db;
-        border-radius: 0.5rem;
-        padding: 0.75rem 1rem;
-        font-family: "Fira Code", monospace;
-        font-size: 0.9rem;
+        flex-grow: 1;
+        background-color: var(--c-surface);
+        color: var(--c-text);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-md);
+        padding: 0.5rem 0.75rem;
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
         resize: vertical;
-        min-height: 60px;
-        box-sizing: border-box;
-        transition: border-color 200ms, box-shadow 200ms;
+        min-height: 56px;
+        transition: border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
     }
 
     .memory-input:focus {
         outline: none;
-        border-color: #4f46e5;
-        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+        border-color: var(--c-primary);
+        box-shadow: var(--shadow-ring);
     }
 
     /* === Split Button === */
     .split-button {
         position: relative;
         display: flex;
-        height: 60px;
+        height: 56px;
         flex-shrink: 0;
     }
 
     .split-main {
-        background-color: #4f46e5;
+        background-color: #6366f1;
         color: #ffffff;
-        font-weight: 500;
-        font-size: 0.9rem;
+        font-weight: 550;
+        font-size: 0.8125rem;
+        font-family: var(--font-sans);
         border: none;
-        border-radius: 0.5rem 0 0 0.5rem;
-        padding: 0.75rem 1.25rem;
+        border-radius: var(--radius-md) 0 0 var(--radius-md);
+        padding: 0 1rem;
         cursor: pointer;
-        transition: background-color 200ms;
+        transition: background-color var(--duration) var(--ease);
     }
 
     .split-main:hover {
-        background-color: #4338ca;
+        background-color: var(--c-primary);
     }
 
     .split-toggle {
-        background-color: #4f46e5;
+        background-color: #6366f1;
         color: #ffffff;
-        font-size: 0.75rem;
+        font-size: 0.6875rem;
         border: none;
-        border-left: 1px solid rgba(255, 255, 255, 0.3);
-        border-radius: 0 0.5rem 0.5rem 0;
-        padding: 0 0.6rem;
+        border-left: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 0 var(--radius-md) var(--radius-md) 0;
+        padding: 0 0.5rem;
         cursor: pointer;
-        transition: background-color 200ms;
+        transition: background-color var(--duration) var(--ease);
     }
 
     .split-toggle:hover {
-        background-color: #4338ca;
+        background-color: var(--c-primary);
     }
 
     .split-dropdown {
         position: absolute;
         top: 100%;
         right: 0;
-        margin-top: 0.25rem;
-        background-color: #ffffff;
-        border: 1px solid #d1d5db;
-        border-radius: 0.375rem;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        margin-top: 4px;
+        background-color: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-md);
         z-index: 10;
         min-width: 100%;
+        overflow: hidden;
     }
 
     .split-dropdown button {
@@ -170,53 +166,39 @@
         width: 100%;
         background: none;
         border: none;
-        padding: 0.5rem 1rem;
-        font-size: 0.85rem;
+        padding: 0.4375rem 0.75rem;
+        font-family: var(--font-sans);
+        font-size: 0.8125rem;
         text-align: left;
         cursor: pointer;
         white-space: nowrap;
-        color: #374151;
+        color: var(--c-text);
     }
 
     .split-dropdown button:hover:not(:disabled) {
-        background-color: #f3f4f6;
+        background-color: var(--c-primary-soft);
     }
 
     .split-dropdown button:disabled {
-        color: #9ca3af;
+        color: var(--c-text-muted);
         cursor: not-allowed;
     }
 
-    .row-added td { color: #16a34a; }
-    .row-removed td { color: #dc2626; }
+    /* === Compare Rows === */
+    .row-added td { color: var(--c-success); }
+    .row-removed td { color: var(--c-danger); }
 
     .status-icon {
         text-align: right;
-        width: 2rem;
-        font-size: 1.4rem;
+        width: 1.75rem;
+        font-size: 1.25rem;
         font-weight: 700;
     }
-
 
     /* === Filter Input === */
     .filter-input {
         flex-shrink: 0;
-        background-color: #ffffff;
-        color: #111827;
-        border: 1px solid #d1d5db;
-        border-radius: 0.5rem;
-        padding: 0.5rem 1rem;
-        font-family: "Fira Code", monospace;
-        font-size: 0.8rem;
-        margin-top: 0.75rem;
-        box-sizing: border-box;
-        transition: border-color 200ms, box-shadow 200ms;
-    }
-
-    .filter-input:focus {
-        outline: none;
-        border-color: #4f46e5;
-        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+        margin-top: 0.5rem;
     }
 
     /* === Results Area === */
@@ -229,9 +211,10 @@
     .results-container {
         flex-grow: 1;
         overflow-y: auto;
-        background-color: #ffffff;
-        border: 1px solid #d1d5db;
-        border-radius: 0.5rem;
+        background-color: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-xs);
     }
 
     .results-table {
@@ -240,46 +223,48 @@
     }
 
     .results-table th, .results-table td {
-        padding: 0.75rem 1rem;
+        padding: 0.4375rem 0.75rem;
         text-align: left;
-        border-bottom: 1px solid #e5e7eb;
+        border-bottom: 1px solid var(--c-border-subtle);
     }
 
     .results-table td {
         user-select: text;
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
     }
 
     .results-table thead {
-        background-color: #f9fafb;
-        color: #6b7280;
-        font-size: 0.8rem;
+        background-color: var(--c-surface-alt);
+        color: var(--c-text-muted);
+        font-size: 0.6875rem;
+        font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.04em;
         position: sticky;
         top: 0;
     }
 
-    .results-table tbody tr:last-child th,
     .results-table tbody tr:last-child td {
         border-bottom: none;
     }
 
     .results-table tbody tr:nth-child(even) {
-        background-color: #f9fafb;
+        background-color: var(--c-surface-alt);
     }
 
     .results-table tbody tr:hover {
-        background-color: #eef2ff;
-        color: #4338ca;
+        background-color: var(--c-primary-soft);
     }
 
-    .results-table tbody tr.row-added:hover td { color: #16a34a; }
-    .results-table tbody tr.row-removed:hover td { color: #dc2626; }
+    .results-table tbody tr.row-added:hover td { color: var(--c-success); }
+    .results-table tbody tr.row-removed:hover td { color: var(--c-danger); }
 
     .no-results {
         text-align: center;
-        padding: 3rem;
-        color: #6b7280;
+        padding: 2.5rem 1.5rem;
+        color: var(--c-text-muted);
+        font-size: 0.8125rem;
     }
 </style>
 

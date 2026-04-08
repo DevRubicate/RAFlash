@@ -47,146 +47,110 @@
 </template>
 
 <style>
-*, *::before, *::after { box-sizing: border-box; }
-html, body {
-    height: 100%;
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    background-color: #f9fafb;
-    color: #374151;
-    font-size: 14px;
-    overflow: hidden;
-}
+    .loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        color: var(--c-text-muted);
+        font-size: 0.8125rem;
+    }
 
-.container {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-}
+    .path-bar {
+        display: flex;
+        align-items: center;
+        padding: 0.5rem 0.875rem;
+        background-color: var(--c-surface);
+        border-bottom: 1px solid var(--c-border);
+        flex-shrink: 0;
+        overflow-x: auto;
+        white-space: nowrap;
+        font-size: 0.8125rem;
+    }
 
-.loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    color: #6b7280;
-}
+    .path-segment {
+        color: var(--c-text-secondary);
+        cursor: pointer;
+        transition: color var(--duration) var(--ease);
+    }
 
-.path-bar {
-    display: flex;
-    align-items: center;
-    padding: 0.75rem 1rem;
-    background-color: #ffffff;
-    border-bottom: 1px solid #e5e7eb;
-    flex-shrink: 0;
-    overflow-x: auto;
-    white-space: nowrap;
-}
+    .path-segment:hover {
+        color: var(--c-primary);
+    }
 
-.path-segment {
-    color: #374151;
-    cursor: pointer;
-}
+    .file-list {
+        flex: 1;
+        overflow: auto;
+        background: var(--c-surface);
+        padding: 0.375rem;
+    }
 
-.path-segment:hover {
-    color: #4f46e5;
-}
+    .file-item {
+        display: flex;
+        align-items: center;
+        gap: 0.625rem;
+        padding: 0.4375rem 0.625rem;
+        border-radius: var(--radius-md);
+        cursor: pointer;
+        font-size: 0.8125rem;
+        transition: background-color 80ms var(--ease);
+    }
 
-.file-list {
-    flex: 1;
-    overflow: auto;
-    background: #ffffff;
-    padding: 0.5rem;
-}
+    .file-item:hover {
+        background-color: var(--c-surface-alt);
+    }
 
-.file-item {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 0.75rem;
-    border-radius: 0.375rem;
-    cursor: pointer;
-    transition: background-color 150ms;
-}
+    .file-item.selected {
+        background-color: var(--c-primary);
+        color: #ffffff;
+    }
 
-.file-item:hover {
-    background-color: #f9fafb;
-}
+    .file-item.selected:hover {
+        background-color: var(--c-primary-hover);
+    }
 
-.file-item.selected {
-    background-color: #4f46e5;
-    color: #ffffff;
-}
+    .file-item .icon {
+        font-size: 1.125rem;
+        flex-shrink: 0;
+    }
 
-.file-item.selected:hover {
-    background-color: #4338ca;
-}
+    .file-item .name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
 
-.file-item .icon {
-    font-size: 1.25rem;
-    flex-shrink: 0;
-}
+    .file-item.parent-dir {
+        color: var(--c-text-muted);
+    }
 
-.file-item .name {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
+    .empty-message {
+        padding: 2.5rem 1.5rem;
+        text-align: center;
+        color: var(--c-text-muted);
+        font-size: 0.8125rem;
+    }
 
-.file-item.parent-dir {
-    color: #6b7280;
-}
+    .action-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.5rem 0.875rem;
+        background-color: var(--c-surface);
+        border-top: 1px solid var(--c-border);
+        flex-shrink: 0;
+    }
 
-.empty-message {
-    padding: 2rem;
-    text-align: center;
-    color: #6b7280;
-}
-
-.action-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
-    background-color: #ffffff;
-    border-top: 1px solid #e5e7eb;
-    flex-shrink: 0;
-}
-
-.selected-info {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: #6b7280;
-}
-
-.btn {
-    border: 1px solid transparent;
-    border-radius: 0.375rem;
-    padding: 0.5rem 1.5rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background-color 200ms, border-color 200ms;
-    white-space: nowrap;
-}
-
-.btn-primary {
-    background-color: #4f46e5;
-    color: #ffffff;
-}
-
-.btn-primary:hover:not(:disabled) {
-    background-color: #4338ca;
-}
-
-.btn-primary:disabled {
-    background-color: #d1d5db;
-    cursor: not-allowed;
-}
+    .selected-info {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--c-text-muted);
+        font-size: 0.8125rem;
+    }
 </style>
 
 <script setup>

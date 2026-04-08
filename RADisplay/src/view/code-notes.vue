@@ -62,11 +62,7 @@
 
 <style>
     .container {
-        display: flex;
-        flex-direction: column;
-        height: 100vh;
         padding: 0.5rem;
-        box-sizing: border-box;
     }
 
     .header {
@@ -74,37 +70,41 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 0.25rem;
+        margin-bottom: 0.375rem;
     }
 
     .add-button {
-        background-color: #4f46e5;
+        background-color: #6366f1;
         color: #ffffff;
-        font-weight: 500;
-        font-size: 0.75rem;
+        font-family: var(--font-sans);
+        font-weight: 600;
+        font-size: 0.6875rem;
         border: none;
-        border-radius: 0.25rem;
+        border-radius: var(--radius-sm);
         padding: 0.25rem 0.5rem;
         cursor: pointer;
-        transition: background-color 200ms;
+        transition: background-color var(--duration) var(--ease);
     }
 
     .add-button:hover {
-        background-color: #4338ca;
+        background-color: var(--c-primary);
     }
 
     .search-input {
-        background-color: #ffffff;
-        border: 1px solid #d1d5db;
-        border-radius: 0.25rem;
+        background-color: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-sm);
         padding: 0.2rem 0.5rem;
+        font-family: var(--font-sans);
         font-size: 0.75rem;
         width: 150px;
+        color: var(--c-text);
+        transition: border-color var(--duration) var(--ease);
     }
 
     .search-input:focus {
         outline: none;
-        border-color: #4f46e5;
+        border-color: var(--c-primary);
     }
 
     .table-wrapper {
@@ -116,9 +116,10 @@
     .table-container {
         flex-grow: 1;
         overflow-y: auto;
-        background-color: #ffffff;
-        border: 1px solid #d1d5db;
-        border-radius: 0.25rem;
+        background-color: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-xs);
     }
 
     .notes-table {
@@ -127,23 +128,24 @@
     }
 
     .notes-table th {
-        padding: 0.2rem 0.4rem;
+        padding: 0.25rem 0.375rem;
         text-align: left;
-        border-bottom: 1px solid #e5e7eb;
-        font-family: "Fira Code", monospace;
-        font-size: 0.65rem;
-        background-color: #f9fafb;
-        color: #6b7280;
+        border-bottom: 1px solid var(--c-border);
+        font-family: var(--font-sans);
+        font-size: 0.625rem;
+        font-weight: 600;
+        background-color: var(--c-surface-alt);
+        color: var(--c-text-muted);
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.04em;
         position: sticky;
         top: 0;
     }
 
     .notes-table td {
-        padding: 0.1rem 0.25rem;
-        border-bottom: 1px solid #f3f4f6;
-        font-family: "Fira Code", monospace;
+        padding: 0.125rem 0.25rem;
+        border-bottom: 1px solid var(--c-border-subtle);
+        font-family: var(--font-mono);
         font-size: 0.75rem;
     }
 
@@ -152,25 +154,21 @@
     }
 
     .notes-table tbody tr:nth-child(even) {
-        background-color: #fafafa;
+        background-color: var(--c-surface-alt);
     }
 
     .notes-table tbody tr:hover {
-        background-color: #eef2ff;
+        background-color: var(--c-primary-soft);
     }
 
-    .note-column {
-        width: 28%;
-    }
-
-    .path-column {
-        width: 47%;
-    }
+    .note-column { width: 28%; }
+    .path-column { width: 47%; }
 
     .value-column {
         width: 15%;
-        color: #4f46e5;
-        padding-left: 0.4rem !important;
+        color: var(--c-primary);
+        padding-left: 0.375rem !important;
+        font-weight: 500;
     }
 
     .actions-column {
@@ -183,63 +181,56 @@
         width: 100%;
         background-color: transparent;
         border: 1px solid transparent;
-        border-radius: 0.15rem;
-        padding: 0.1rem 0.25rem;
-        font-family: "Fira Code", monospace;
+        border-radius: 3px;
+        padding: 0.125rem 0.25rem;
+        font-family: var(--font-mono);
         font-size: 0.75rem;
-        box-sizing: border-box;
-        transition: border-color 200ms, background-color 200ms;
+        color: var(--c-text);
+        transition: border-color var(--duration) var(--ease), background-color var(--duration) var(--ease);
     }
 
     .notes-table input:hover {
-        background-color: #ffffff;
-        border-color: #d1d5db;
+        background-color: var(--c-surface);
+        border-color: var(--c-border);
     }
 
     .notes-table input:focus {
         outline: none;
-        background-color: #ffffff;
-        border-color: #4f46e5;
+        background-color: var(--c-surface);
+        border-color: var(--c-primary);
     }
 
     .delete-button {
         background-color: transparent;
-        color: #9ca3af;
+        color: var(--c-text-muted);
         border: none;
         padding: 0 0.2rem;
         cursor: pointer;
         font-size: 0.7rem;
-        transition: color 200ms;
+        transition: color var(--duration) var(--ease);
     }
 
     .delete-button:hover {
-        color: #ef4444;
+        color: var(--c-danger);
     }
 
     .move-button {
         background-color: transparent;
-        color: #9ca3af;
+        color: var(--c-text-muted);
         border: none;
-        padding: 0 0.1rem;
+        padding: 0 0.125rem;
         cursor: pointer;
-        font-size: 0.55rem;
-        transition: color 200ms;
+        font-size: 0.5625rem;
+        transition: color var(--duration) var(--ease);
     }
 
     .move-button:hover:not(:disabled) {
-        color: #4f46e5;
+        color: var(--c-primary);
     }
 
     .move-button:disabled {
-        color: #e5e7eb;
+        color: var(--c-border);
         cursor: default;
-    }
-
-    .empty-state {
-        text-align: center;
-        padding: 2rem;
-        color: #6b7280;
-        font-size: 0.85rem;
     }
 </style>
 

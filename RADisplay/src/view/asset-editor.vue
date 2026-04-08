@@ -108,154 +108,13 @@
 </template>
 
 <style>
-    /* === Core Layout & Theme === */
-    *, *::before, *::after {
-        box-sizing: border-box;
-    }
-
-    html, body {
-        height: 100%;
-        margin: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-        background-color: #f9fafb;
-        color: #374151;
-        font-size: 14px;
-        overflow: hidden;
-    }
-
-    .container {
-        display: flex;
-        flex-direction: column;
-        height: 100vh;
-    }
-
-    .spacer { flex: 1 1 auto; }
-
-    /* === Form Controls === */
-    .form-group {
-        display: flex;
-        flex-direction: column;
-        flex: 1; 
-    }
-    .form-group label {
-        font-size: 0.8rem;
-        font-weight: 500;
-        color: #6b7280;
-        margin-bottom: 0.25rem;
-    }
-    .form-group-small { flex: 0 1 130px; }
-    .form-group-x-small { flex: 0 1 130px; }
-    .form-group-fixed-width { flex: 0 0 auto; }
-
-    .input-with-button {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    /* New rule to make the input inside this group flexible */
-    .input-with-button input {
-        flex: 1 1 auto; /* Allows the input to grow and shrink */
-        min-width: 0;   /* Allows the input to shrink below its default size */
-    }
-
-    .form-group input[type="text"],
-    .form-group select {
-        width: 100%;
-        background-color: #ffffff;
-        border: 1px solid #d1d5db;
-        border-radius: 0.375rem;
-        padding: 0.5rem 0.75rem;
-        font-size: 0.9rem;
-        transition: border-color 200ms, box-shadow 200ms;
-    }
-    .form-group input[type="text"]:focus,
-    .form-group select:focus {
-        outline: none;
-        border-color: #4f46e5;
-        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
-    }
-    .form-group input[readonly] {
-        background-color: #f9fafb;
-        cursor: not-allowed;
-    }
-
-    .form-group-checkbox {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        white-space: nowrap;
-        padding-bottom: 0.5rem;
-    }
-    .form-group-checkbox input[type="checkbox"] {
-        width: 1rem;
-        height: 1rem;
-        border-radius: 0.25rem;
-        border: 1px solid #d1d5db;
-        accent-color: #4f46e5;
-    }
-    .form-group-checkbox label {
-        margin-bottom: 0;
-    }
-
-    /* === Button Styles === */
-    .btn {
-        border: 1px solid transparent;
-        border-radius: 0.375rem;
-        padding: 0.5rem 1rem;
-        font-size: 0.9rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: background-color 200ms, border-color 200ms;
-        white-space: nowrap;
-    }
-    .btn-primary {
-        background-color: #4f46e5;
-        color: #ffffff;
-    }
-    .btn-primary:hover:not(:disabled) { background-color: #4338ca; }
-    .btn-primary:disabled { background-color: #a5b4fc; cursor: not-allowed; }
-    .btn-secondary {
-        background-color: #ffffff;
-        color: #374151;
-        border-color: #d1d5db;
-    }
-    .btn-secondary:hover { border-color: #374151; }
-    .btn-new {
-        background-color: #4f46e5;
-        color: #ffffff;
-    }
-    .btn-new:hover { background-color: #4338ca; }
-    .btn-remove {
-        background-color: #ffffff;
-        color: #dc2626;
-        border-color: #dc2626;
-    }
-    .btn-remove:hover {
-        background-color: #dc2626;
-        color: #ffffff;
-    }
-
-    /* New class for a thinner button */
-    .btn-compact {
-        padding-left: 0.75rem;
-        padding-right: 0.75rem;
-    }
-
-    .button-group { display: flex; gap: 0.75rem; }
-    .btn-icon {
-        font-size: 1.25rem;
-        font-weight: bold;
-        padding: 0.25rem 0.75rem;
-    }
-
     /* === Header === */
     .editor-header {
         display: flex;
-        gap: 1.5rem;
-        background-color: #ffffff;
-        padding: 1rem;
-        border-bottom: 1px solid #e5e7eb;
+        gap: 1.25rem;
+        background-color: var(--c-surface);
+        padding: 0.75rem 0.875rem;
+        border-bottom: 1px solid var(--c-border);
         flex-shrink: 0;
     }
 
@@ -263,12 +122,12 @@
         flex: 1;
         display: flex;
         flex-direction: column;
-        gap: 1rem;
+        gap: 0.625rem;
     }
 
     .header-row {
         display: flex;
-        gap: 1.5rem;
+        gap: 1rem;
         align-items: flex-end;
     }
 
@@ -276,68 +135,92 @@
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.375rem;
         flex-shrink: 0;
         align-self: center;
     }
 
     .header-badge-image img {
-        width: 128px;
-        height: 128px;
+        width: 96px;
+        height: 96px;
         object-fit: contain;
-        border: 1px solid #d1d5db;
-        border-radius: 0.5rem;
-        padding: 0.5rem;
-        background-color: #ffffff;
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-lg);
+        padding: 0.375rem;
+        background-color: var(--c-surface);
+        box-shadow: var(--shadow-xs);
     }
 
+    .form-group-checkbox {
+        padding-bottom: 0.375rem;
+    }
+
+    .input-with-button {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .input-with-button input {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
 
     /* === Main Content === */
     .editor-main {
         flex: 1 1 auto;
         display: flex;
-        gap: 1rem;
-        padding: 1rem;
+        gap: 0.625rem;
+        padding: 0.625rem;
         min-height: 0;
     }
+
     .editor-panel {
-        background-color: #ffffff;
-        border: 1px solid #e5e7eb;
-        border-radius: 0.5rem;
+        background-color: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-lg);
         display: flex;
         flex-direction: column;
+        box-shadow: var(--shadow-xs);
     }
+
     .panel-title {
-        font-size: 1rem;
+        font-size: 0.8125rem;
         font-weight: 600;
         margin: 0;
-        color: #111827;
+        color: var(--c-text);
     }
 
     /* === Left Panel (Groups) === */
     .left-panel {
-        flex: 0 0 200px;
-        padding: 1rem;
+        flex: 0 0 170px;
+        padding: 0.75rem;
     }
+
     .group-list {
         list-style: none;
         padding: 0;
-        margin: 1rem 0;
+        margin: 0.625rem 0;
         flex: 1;
         overflow-y: auto;
-        border: 1px solid #e5e7eb;
-        border-radius: 0.375rem;
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-md);
     }
+
     .group-list li {
-        padding: 0.5rem 0.75rem;
+        padding: 0.4375rem 0.625rem;
         cursor: pointer;
-        border-bottom: 1px solid #e5e7eb;
+        font-size: 0.8125rem;
+        border-bottom: 1px solid var(--c-border-subtle);
+        transition: background-color 80ms var(--ease);
     }
+
     .group-list li:last-child { border-bottom: none; }
-    .group-list li:hover { background-color: #f9fafb; }
+    .group-list li:hover { background-color: var(--c-surface-alt); }
+
     .group-list li.active {
-        background-color: #eef2ff;
-        color: #4338ca;
+        background-color: var(--c-primary-soft);
+        color: var(--c-primary-text);
         font-weight: 600;
     }
 
@@ -346,41 +229,53 @@
         flex: 1 1 auto;
         min-width: 0;
     }
+
     .panel-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 1rem;
-        border-bottom: 1px solid #e5e7eb;
+        padding: 0.625rem 0.75rem;
+        border-bottom: 1px solid var(--c-border);
     }
+
     .table-container {
         flex: 1;
         overflow-y: auto;
     }
+
     .requirements-table {
         width: 100%;
         border-collapse: collapse;
     }
-    .requirements-table th, 
+
+    .requirements-table th,
     .requirements-table td {
-        padding: 0.5rem;
+        padding: 0.375rem 0.5rem;
         text-align: left;
-        border-bottom: 1px solid #e5e7eb;
+        border-bottom: 1px solid var(--c-border-subtle);
         white-space: nowrap;
     }
+
     .requirements-table th {
-        background-color: #f9fafb;
-        font-size: 0.75rem;
+        background-color: var(--c-surface-alt);
+        font-size: 0.6875rem;
         font-weight: 600;
         text-transform: uppercase;
-        color: #6b7280;
+        letter-spacing: 0.04em;
+        color: var(--c-text-muted);
         position: sticky;
         top: 0;
         z-index: 1;
     }
-    .requirements-table tbody tr:hover { background-color: #f9fafb; }
+
+    .requirements-table tbody tr {
+        transition: background-color 80ms var(--ease);
+    }
+
+    .requirements-table tbody tr:hover { background-color: var(--c-surface-alt); }
+
     .requirements-table tbody tr.active {
-        background-color: #475569;
+        background-color: #334155;
         color: #ffffff;
     }
 
@@ -390,20 +285,23 @@
         width: 100%;
         border: 1px solid transparent;
         background: transparent;
-        padding: 0.25rem;
-        border-radius: 0.25rem;
-        font-family: inherit;
+        padding: 0.1875rem 0.25rem;
+        border-radius: 3px;
+        font-family: var(--font-sans);
         font-size: inherit;
         color: inherit;
     }
+
     .requirements-table tr.active input,
     .requirements-table tr.active select {
-        background-color: rgba(0,0,0,0.2);
+        background-color: rgba(0, 0, 0, 0.2);
     }
+
     .requirements-table tr.active select:focus,
     .requirements-table tr.active input:focus {
-        background-color: rgba(0,0,0,0.3);
+        background-color: rgba(0, 0, 0, 0.3);
     }
+
     .requirements-table tr.not-active input,
     .requirements-table tr.not-active select {
         pointer-events: none;
@@ -415,14 +313,20 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 0.75rem 1rem;
-        background-color: #ffffff;
-        border-top: 1px solid #e5e7eb;
+        padding: 0.5rem 0.875rem;
+        background-color: var(--c-surface);
+        border-top: 1px solid var(--c-border);
     }
+
     .footer-buttons {
         display: flex;
-        gap: 1.5rem;
+        gap: 1rem;
     }
+
+    .btn-new { background-color: #6366f1; color: #ffffff; }
+    .btn-new:hover:not(:disabled) { background-color: var(--c-primary); }
+    .btn-remove { background-color: var(--c-surface); color: var(--c-danger); border-color: var(--c-danger); }
+    .btn-remove:hover:not(:disabled) { background-color: var(--c-danger); color: #ffffff; }
 </style>
 
 <script setup>

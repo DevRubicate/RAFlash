@@ -3,7 +3,7 @@
         <div class="input-wrapper">
             <input
                 type="text"
-                class="formula-input"
+                class="mono-input formula-input"
                 v-model="formula"
                 placeholder="Formula (e.g., stage.player.x)"
                 spellcheck="false"
@@ -48,88 +48,64 @@
 
 <style>
     .container {
-        display: flex;
-        flex-direction: column;
-        height: 100vh;
-        padding: 1rem;
-        box-sizing: border-box;
+        padding: 0.75rem;
     }
 
     .input-wrapper {
         flex-shrink: 0;
         display: flex;
-        gap: 0.75rem;
+        gap: 0.5rem;
         margin-bottom: 0.5rem;
     }
 
-    .formula-input {
-        flex-grow: 1;
-        background-color: #ffffff;
-        color: #111827;
-        border: 1px solid #d1d5db;
-        border-radius: 0.5rem;
-        padding: 0.75rem 1rem;
-        font-family: "Fira Code", monospace;
-        font-size: 0.9rem;
-        box-sizing: border-box;
-        transition: border-color 200ms, box-shadow 200ms;
-    }
-
-    .formula-input:focus {
-        outline: none;
-        border-color: #4f46e5;
-        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
-    }
-
-    .formula-input:disabled {
-        background-color: #f3f4f6;
-        color: #6b7280;
-    }
+    .formula-input { flex-grow: 1; }
 
     .watch-button {
-        background-color: #4f46e5;
+        background-color: #6366f1;
         color: #ffffff;
-        font-weight: 500;
-        font-size: 0.9rem;
+        font-family: var(--font-sans);
+        font-weight: 550;
+        font-size: 0.8125rem;
         border: none;
-        border-radius: 0.5rem;
-        padding: 0.75rem 1.5rem;
+        border-radius: var(--radius-md);
+        padding: 0 1.125rem;
         cursor: pointer;
-        transition: background-color 200ms;
-        min-width: 80px;
+        transition: background-color var(--duration) var(--ease);
+        min-width: 72px;
     }
 
     .watch-button:hover {
-        background-color: #4338ca;
+        background-color: var(--c-primary);
     }
 
     .watch-button.active {
-        background-color: #dc2626;
+        background-color: var(--c-danger);
     }
 
     .watch-button.active:hover {
-        background-color: #b91c1c;
+        background-color: var(--c-danger-hover);
     }
 
     .clear-button {
-        background-color: #6b7280;
+        background-color: var(--c-text-secondary);
         color: #ffffff;
-        font-weight: 500;
-        font-size: 0.9rem;
+        font-family: var(--font-sans);
+        font-weight: 550;
+        font-size: 0.8125rem;
         border: none;
-        border-radius: 0.5rem;
-        padding: 0.75rem 1.25rem;
+        border-radius: var(--radius-md);
+        padding: 0 0.875rem;
         cursor: pointer;
-        transition: background-color 200ms;
+        transition: background-color var(--duration) var(--ease);
     }
 
     .clear-button:hover:not(:disabled) {
-        background-color: #4b5563;
+        background-color: #44403c;
     }
 
     .clear-button:disabled {
-        background-color: #d1d5db;
-        color: #9ca3af;
+        background-color: var(--c-border);
+        color: var(--c-text-muted);
         cursor: not-allowed;
     }
 
@@ -142,9 +118,10 @@
     .log-container {
         flex-grow: 1;
         overflow-y: auto;
-        background-color: #ffffff;
-        border: 1px solid #d1d5db;
-        border-radius: 0.5rem;
+        background-color: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-xs);
     }
 
     .log-table {
@@ -153,11 +130,11 @@
     }
 
     .log-table td {
-        padding: 0.5rem 1rem;
+        padding: 0.375rem 0.75rem;
         text-align: left;
-        border-bottom: 1px solid #e5e7eb;
-        font-family: "Fira Code", monospace;
-        font-size: 0.85rem;
+        border-bottom: 1px solid var(--c-border-subtle);
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
     }
 
     .log-table tbody tr:last-child td {
@@ -165,28 +142,22 @@
     }
 
     .log-table tbody tr:nth-child(even) {
-        background-color: #f9fafb;
+        background-color: var(--c-surface-alt);
     }
 
-    .value-column {
-        width: 100%;
-        color: #111827;
-    }
+    .value-column { width: 100%; color: var(--c-text); }
+    .key-column { width: 100%; color: var(--c-text); }
 
     .no-results {
         text-align: center;
-        padding: 3rem;
-        color: #6b7280;
-    }
-
-    .key-column {
-        width: 100%;
-        color: #111827;
+        padding: 2.5rem 1.5rem;
+        color: var(--c-text-muted);
+        font-size: 0.8125rem;
     }
 
     .log-table tbody tr.removed td {
         text-decoration: line-through;
-        color: #9ca3af;
+        color: var(--c-text-muted);
     }
 </style>
 

@@ -31,78 +31,77 @@
 </template>
 
 <style>
-    /* === Sidebar Layout === */
+    html, body {
+        background: #1a1744;
+    }
+
     .sidebar {
-        width: 280px; /* A fixed width often works well for sidebars */
-        height: 100%;
-        background-color: #ffffff; /* A clean white for the menu itself */
-        border-right: 1px solid #e5e7eb; /* A subtle border to separate it from content */
+        width: 100%;
+        min-height: 100vh;
+        background: linear-gradient(180deg, #1e1b4b 0%, #1a1744 100%);
         display: flex;
         flex-direction: column;
     }
 
     .sidebar-header {
-        padding: 1.5rem;
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: #111827; /* Dark text for the header */
-        border-bottom: 1px solid #e5e7eb;
+        padding: 1.25rem 1.25rem;
+        font-size: 0.9375rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        color: rgba(255, 255, 255, 0.95);
     }
 
-    /* === Menu Buttons === */
     .menu-buttons {
-        padding: 1rem;
+        padding: 0.5rem 0.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
     }
 
     .menu-button {
-        /* Reset button defaults */
         background: none;
         border: none;
-        font-family: inherit;
-        font-size: 1rem;
+        font-family: var(--font-sans);
+        font-size: 0.8125rem;
         text-align: left;
         cursor: pointer;
         width: 100%;
-        
-        /* Custom styles */
         display: flex;
         align-items: center;
-        padding: 0.75rem 1rem;
-        margin-bottom: 0.5rem;
-        border-radius: 0.5rem;
-        color: #374151; /* Standard dark gray for text */
+        padding: 0.5625rem 0.75rem;
+        border-radius: var(--radius-md);
+        color: rgba(255, 255, 255, 0.65);
         font-weight: 500;
-        transition: background-color 200ms, color 200ms;
+        transition: all var(--duration) var(--ease);
     }
 
     .menu-button svg {
-        width: 1.5rem;
-        height: 1.5rem;
-        margin-right: 0.75rem;
-        stroke: currentColor; /* Icon color inherits from text color */
+        width: 1.25rem;
+        height: 1.25rem;
+        margin-right: 0.625rem;
+        stroke: currentColor;
+        opacity: 0.7;
+        transition: opacity var(--duration) var(--ease);
     }
-
-    /* --- Button States --- */
 
     .menu-button:hover {
-        background-color: #f3f4f6; /* Subtle gray on hover */
-        color: #111827; /* Darken text slightly on hover */
+        background-color: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.95);
     }
 
-    /* ✨ New 'active' state for the currently selected button */
+    .menu-button:hover svg {
+        opacity: 1;
+    }
+
     .menu-button.active {
-        background-color: #eef2ff; /* Light indigo background */
-        color: #4f46e5; /* Primary blue text and icon */
-        font-weight: 600; /* Make it bolder */
+        background-color: rgba(99, 102, 241, 0.25);
+        color: #c7d2fe;
+        font-weight: 600;
     }
 
-    /* === Menu Divider === */
-    .menu-divider {
-        border: none;
-        border-top: 1px solid #e5e7eb;
-        margin: 0.5rem 0;
+    .menu-button.active svg {
+        opacity: 1;
     }
-
 </style>
 
 <script setup>

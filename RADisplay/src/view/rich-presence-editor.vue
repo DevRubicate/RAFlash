@@ -36,71 +36,39 @@
 </template>
 
 <style>
-    *, *::before, *::after { box-sizing: border-box; }
-    html, body { height: 100%; margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f9fafb; color: #374151; font-size: 14px; overflow: hidden; }
-    .container { display: flex; flex-direction: column; height: 100vh; }
-
     /* Header */
     .editor-header {
         display: flex;
-        gap: 1.5rem;
-        background-color: #ffffff;
-        padding: 1rem;
-        border-bottom: 1px solid #e5e7eb;
+        gap: 1rem;
+        background-color: var(--c-surface);
+        padding: 0.75rem 0.875rem;
+        border-bottom: 1px solid var(--c-border);
         flex-shrink: 0;
-    }
-
-    .form-group {
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-    }
-    .form-group label {
-        font-size: 0.8rem;
-        font-weight: 500;
-        color: #6b7280;
-        margin-bottom: 0.25rem;
-    }
-    .form-group-small { flex: 0 1 130px; }
-
-    .form-group input[type="text"] {
-        width: 100%;
-        background-color: #ffffff;
-        border: 1px solid #d1d5db;
-        border-radius: 0.375rem;
-        padding: 0.5rem 0.75rem;
-        font-size: 0.9rem;
-        transition: border-color 200ms, box-shadow 200ms;
-    }
-    .form-group input[type="text"]:focus {
-        outline: none;
-        border-color: #4f46e5;
-        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
-    }
-    .form-group input[readonly] {
-        background-color: #f9fafb;
-        cursor: not-allowed;
     }
 
     /* Preview row */
     .preview-row {
         display: flex;
         align-items: center;
-        gap: 0.75rem;
-        padding: 0.75rem 1rem;
-        background-color: #f3f4f6;
-        border-bottom: 1px solid #e5e7eb;
+        gap: 0.625rem;
+        padding: 0.5rem 0.875rem;
+        background-color: var(--c-surface-alt);
+        border-bottom: 1px solid var(--c-border);
         flex-shrink: 0;
     }
+
     .preview-row label {
-        font-size: 0.85rem;
-        font-weight: 500;
-        color: #6b7280;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        color: var(--c-text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
     }
+
     .preview-result {
-        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-        font-size: 0.9rem;
-        color: #111827;
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+        color: var(--c-text);
         flex: 1;
     }
 
@@ -108,27 +76,33 @@
     .editor-main {
         flex: 1;
         display: flex;
-        padding: 1rem;
+        padding: 0.625rem;
         min-height: 0;
     }
+
     .editor-main textarea {
         flex: 1;
-        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-        font-size: 0.9rem;
-        line-height: 1.5;
-        padding: 0.75rem;
-        border: 1px solid #d1d5db;
-        border-radius: 0.375rem;
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+        line-height: 1.6;
+        padding: 0.625rem 0.75rem;
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-lg);
         resize: none;
-        background-color: #ffffff;
+        background-color: var(--c-surface);
+        color: var(--c-text);
+        box-shadow: var(--shadow-xs);
+        transition: border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
     }
+
     .editor-main textarea:focus {
         outline: none;
-        border-color: #4f46e5;
-        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+        border-color: var(--c-primary);
+        box-shadow: var(--shadow-ring);
     }
+
     .editor-main textarea::placeholder {
-        color: #9ca3af;
+        color: var(--c-text-muted);
     }
 
     /* Footer */
@@ -137,40 +111,9 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 0.75rem 1rem;
-        background-color: #ffffff;
-        border-top: 1px solid #e5e7eb;
-    }
-
-    /* Button Styles */
-    .btn {
-        border: 1px solid transparent;
-        border-radius: 0.375rem;
-        padding: 0.5rem 1rem;
-        font-size: 0.9rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: background-color 200ms, border-color 200ms;
-        white-space: nowrap;
-    }
-    .btn-primary {
-        background-color: #4f46e5;
-        color: #ffffff;
-    }
-    .btn-primary:hover:not(:disabled) { background-color: #4338ca; }
-    .btn-primary:disabled { background-color: #a5b4fc; cursor: not-allowed; }
-
-    .form-group-checkbox {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-    .form-group-checkbox input[type="checkbox"] {
-        width: 1rem;
-        height: 1rem;
-        border-radius: 0.25rem;
-        border: 1px solid #d1d5db;
-        accent-color: #4f46e5;
+        padding: 0.5rem 0.875rem;
+        background-color: var(--c-surface);
+        border-top: 1px solid var(--c-border);
     }
 </style>
 

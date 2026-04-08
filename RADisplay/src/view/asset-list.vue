@@ -20,7 +20,7 @@
                 <span>Achievements: {{ filteredAssets.length }}</span>
                 <span>Points: {{ filteredAssets.reduce((c, v) => c + (Number(v.points) || 0), 0) }}</span>
             </div>
-            <button class="btn btn-secondary btn-compact" @click="toggleActivation">{{ activationButtonLabel }}</button>
+            <button class="btn btn-secondary btn-compact btn-activate" @click="toggleActivation">{{ activationButtonLabel }}</button>
             <div class="form-group-checkbox">
                 <input type="checkbox" id="proc-active" v-model="processingActive"/>
                 <label for="proc-active">Processing Active</label>
@@ -50,10 +50,10 @@
                         :class="{ selected: selectedAssetIds.has(asset.id) }"
                     >
                         <td><span class="icon">♔</span></td>
-                        <td>{{asset.id}}</td>
+                        <td>{{ asset.id < 0 ? 'Local' : asset.id }}</td>
                         <td>{{asset.name}}</td>
                         <td>{{asset.points}}</td>
-                        <td>{{asset.state}}</td>
+                        <td>{{ formatState(asset.state) }}</td>
                         <td>{{ getChangeStatus(asset) }}</td>
                     </tr>
                 </tbody>
@@ -76,46 +76,116 @@
 </template>
 
 <style>
-    *, *::before, *::after { box-sizing: border-box; }
-    html, body { height: 100%; margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f9fafb; color: #374151; font-size: 14px; overflow: hidden; }
-    .container { display: flex; flex-direction: column; height: 100vh; }
-    .spacer { flex: 1 1 auto; }
-    .top-bar { display: flex; justify-content: space-between; align-items: center; gap: 1.5rem; padding: 0.75rem 1rem; background-color: #ffffff; border-bottom: 1px solid #e5e7eb; flex-shrink: 0; }
-    .left-filters, .right-info { display: flex; align-items: center; gap: 1.5rem; }
+    /* === Top Bar === */
+    .top-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.5rem 0.875rem;
+        background-color: var(--c-surface);
+        border-bottom: 1px solid var(--c-border);
+        flex-shrink: 0;
+    }
+
+    .left-filters, .right-info { display: flex; align-items: center; gap: 1rem; }
+
+    /* Tabs */
     .tab-group { display: flex; gap: 0; }
-    .tab { background: none; border: none; padding: 0.5rem 1rem; font-size: 0.9rem; font-weight: 500; color: #6b7280; cursor: pointer; border-bottom: 2px solid transparent; transition: color 150ms, border-color 150ms; }
-    .tab:hover { color: #374151; }
-    .tab.active { color: #4f46e5; border-bottom-color: #4f46e5; }
-    .info-stack { display: flex; flex-direction: column; gap: 0.125rem; }
-    .info-stack span { font-size: 0.85rem; color: #6b7280; white-space: nowrap; line-height: 1.2; }
-    .info-stack #game-id { font-weight: 500; color: #374151; }
-    .top-bar .form-control { background-color: #ffffff; border: 1px solid #d1d5db; border-radius: 0.375rem; padding: 0.5rem 0.75rem; font-size: 0.9rem; }
-    .right-info > span { font-size: 0.9rem; color: #6b7280; white-space: nowrap; }
-    .right-info #game-id { font-weight: 500; color: #374151; }
-    .form-group-checkbox { display: flex; align-items: center; gap: 0.5rem; }
-    .form-group-checkbox input[type="checkbox"] { width: 1rem; height: 1rem; border-radius: 0.25rem; border: 1px solid #d1d5db; accent-color: #4f46e5; }
-    .btn { border: 1px solid transparent; border-radius: 0.375rem; padding: 0.5rem 1rem; font-size: 0.9rem; font-weight: 500; cursor: pointer; transition: background-color 200ms, border-color 200ms; white-space: nowrap; }
-    .btn-compact { padding: 0.25rem 0.75rem; font-size: 0.85rem; }
-    .btn-primary, .btn-new { background-color: #4f46e5; color: #ffffff; }
-    .btn-primary:hover, .btn-new:hover { background-color: #4338ca; }
-    .btn-secondary { background-color: #ffffff; color: #374151; border-color: #d1d5db; }
-    .btn-secondary:hover { border-color: #374151; }
+    .tab {
+        background: none;
+        border: none;
+        padding: 0.375rem 0.75rem;
+        font-family: var(--font-sans);
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--c-text-muted);
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        transition: color var(--duration) var(--ease), border-color var(--duration) var(--ease);
+    }
+    .tab:hover { color: var(--c-text); }
+    .tab.active { color: var(--c-primary); border-bottom-color: var(--c-primary); font-weight: 600; }
+
+    /* Info stack */
+    .info-stack { display: flex; flex-direction: column; gap: 1px; }
+    .info-stack span { font-size: 0.75rem; color: var(--c-text-muted); white-space: nowrap; line-height: 1.25; }
+    .info-stack #game-id { font-weight: 600; color: var(--c-text-secondary); }
+
+    /* Filter select */
+    .top-bar .form-control {
+        background-color: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-md);
+        padding: 0.35rem 0.625rem;
+        font-size: 0.8125rem;
+        font-family: var(--font-sans);
+        color: var(--c-text);
+    }
+
+    /* === Main Table === */
     .main-content { flex: 1 1 auto; display: flex; min-height: 0; }
-    .table-container { flex: 1; overflow: auto; background: #ffffff; }
+
+    .table-container {
+        flex: 1;
+        overflow: auto;
+        background: var(--c-surface);
+    }
+
     table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
+
+    th, td {
+        padding: 0.5rem 0.75rem;
+        text-align: left;
+        border-bottom: 1px solid var(--c-border-subtle);
+        white-space: nowrap;
+    }
+
     thead { position: sticky; top: 0; z-index: 1; }
-    th { background-color: #f9fafb; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: #6b7280; }
-    tbody tr { cursor: pointer; transition: background-color 150ms; }
-    tbody tr:hover { background-color: #f9fafb; }
-    tbody tr.selected { background-color: #4f46e5; color: #ffffff; }
-    tbody tr.selected:hover { background-color: #4338ca; }
-    .icon { font-size: 1.2rem; color: #f59e0b; }
-    .bottom-bar { flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 1rem; background-color: #ffffff; border-top: 1px solid #e5e7eb; }
-    .left-actions, .right-actions { display: flex; gap: 0.5rem; }
-    .btn-danger { background-color: #ffffff; color: #dc2626; border-color: #dc2626; }
-    .btn-danger:hover { background-color: #dc2626; color: #ffffff; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+
+    th {
+        background-color: var(--c-surface-alt);
+        font-size: 0.6875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--c-text-muted);
+        padding-top: 0.4375rem;
+        padding-bottom: 0.4375rem;
+    }
+
+    tbody tr {
+        cursor: pointer;
+        transition: background-color 80ms var(--ease);
+    }
+    tbody tr:hover { background-color: var(--c-primary-soft); }
+
+    tbody tr.selected {
+        background-color: var(--c-primary);
+        color: #ffffff;
+    }
+    tbody tr.selected:hover {
+        background-color: var(--c-primary-hover);
+    }
+
+    .icon { font-size: 1rem; color: var(--c-warning); }
+
+    /* === Bottom Bar === */
+    .bottom-bar {
+        flex-shrink: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem 0.875rem;
+        background-color: var(--c-surface);
+        border-top: 1px solid var(--c-border);
+    }
+
+    .left-actions, .right-actions { display: flex; gap: 0.375rem; }
+    .btn-new { background-color: #6366f1; color: #ffffff; }
+    .btn-new:hover:not(:disabled) { background-color: var(--c-primary); }
+
+    .btn-activate { min-width: 6.5rem; text-align: center; }
 </style>
 
 <script setup>
@@ -240,6 +310,12 @@
             }
         }
         await App.save();
+    };
+
+    // Format state for display (ACTIVE → Active)
+    const formatState = (state) => {
+        if (!state) return '';
+        return state.charAt(0) + state.slice(1).toLowerCase();
     };
 
     // Get change status for display in Changes column

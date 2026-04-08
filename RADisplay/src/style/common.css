@@ -1,20 +1,341 @@
+/* ============================================================
+   RAFlash Design System
+   ============================================================ */
+
+:root {
+    /* --- Palette --- */
+    --c-bg:              #f4f3f1;
+    --c-surface:         #ffffff;
+    --c-surface-alt:     #fafaf9;
+    --c-border:          #e5e4e2;
+    --c-border-subtle:   #eeeded;
+
+    --c-text:            #1c1917;
+    --c-text-secondary:  #57534e;
+    --c-text-muted:      #a8a29e;
+
+    --c-primary:         #4f46e5;
+    --c-primary-hover:   #4338ca;
+    --c-primary-soft:    #eef2ff;
+    --c-primary-text:    #3730a3;
+
+    --c-danger:          #dc2626;
+    --c-danger-hover:    #b91c1c;
+    --c-success:         #16a34a;
+    --c-warning:         #d97706;
+
+    /* --- Elevation --- */
+    --shadow-xs:   0 1px 2px rgba(0,0,0,0.04);
+    --shadow-sm:   0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md:   0 4px 8px -2px rgba(0,0,0,0.08), 0 2px 4px -2px rgba(0,0,0,0.04);
+    --shadow-ring: 0 0 0 3px rgba(79, 70, 229, 0.15);
+
+    /* --- Radii --- */
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+
+    /* --- Typography --- */
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "Fira Code", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+    /* --- Motion --- */
+    --ease: cubic-bezier(0.4, 0, 0.2, 1);
+    --duration: 150ms;
+}
+
+/* === Reset === */
+*, *::before, *::after { box-sizing: border-box; }
+
 html, body {
-    margin: 0;
-    padding: 0;
     height: 100%;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    color: #1f2937;
-    font-size: 14px;
-    box-sizing: border-box;
-    background-color: #f9fafb;
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--c-text);
+    background-color: var(--c-bg);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+*:not(input):not(textarea):not(select) {
     user-select: none;
 }
 
-*, *::before, *::after {
-    box-sizing: inherit;
+/* === Layout === */
+.container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
 }
 
-/* Allow text selection in editable fields */
-input, textarea, [contenteditable="true"] {
-    user-select: text;
+/* === Buttons === */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    padding: 0.4rem 0.875rem;
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    font-weight: 550;
+    line-height: 1.4;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all var(--duration) var(--ease);
+}
+
+.btn:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-ring);
+}
+
+.btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.btn-primary {
+    background-color: #6366f1;
+    color: #ffffff;
+}
+.btn-primary:hover:not(:disabled) {
+    background-color: var(--c-primary);
+    box-shadow: var(--shadow-sm);
+}
+
+.btn-secondary {
+    background-color: var(--c-surface);
+    color: var(--c-text);
+    border-color: var(--c-border);
+}
+.btn-secondary:hover:not(:disabled) {
+    background-color: var(--c-surface-alt);
+    border-color: #d4d4d0;
+}
+
+.btn-danger {
+    background-color: var(--c-surface);
+    color: var(--c-danger);
+    border-color: var(--c-danger);
+}
+.btn-danger:hover:not(:disabled) {
+    background-color: var(--c-danger);
+    color: #ffffff;
+}
+
+.btn-compact {
+    padding: 0.25rem 0.625rem;
+    font-size: 0.75rem;
+}
+
+.btn-icon {
+    padding: 0.25rem 0.625rem;
+    font-size: 1.125rem;
+    font-weight: bold;
+    line-height: 1;
+}
+
+.button-group {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* === Form Controls === */
+.form-group {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+}
+
+.form-group label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--c-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.25rem;
+}
+
+.form-group-small  { flex: 0 1 130px; }
+.form-group-x-small { flex: 0 1 130px; }
+
+.form-group input[type="text"],
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    background-color: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-md);
+    padding: 0.4375rem 0.625rem;
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    color: var(--c-text);
+    transition: border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
+}
+
+.form-group input[type="text"]:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: var(--c-primary);
+    box-shadow: var(--shadow-ring);
+}
+
+.form-group input[readonly] {
+    background-color: var(--c-surface-alt);
+    color: var(--c-text-secondary);
+    cursor: default;
+}
+
+.form-group-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    white-space: nowrap;
+}
+
+.form-group-checkbox input[type="checkbox"] {
+    width: 0.875rem;
+    height: 0.875rem;
+    border-radius: 3px;
+    border: 1px solid var(--c-border);
+    accent-color: var(--c-primary);
+    cursor: pointer;
+}
+
+.form-group-checkbox label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--c-text);
+    cursor: pointer;
+    margin: 0;
+}
+
+/* === Bar Layouts (headers / footers) === */
+.bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 0.875rem;
+    background-color: var(--c-surface);
+    flex-shrink: 0;
+}
+
+.bar-top {
+    border-bottom: 1px solid var(--c-border);
+}
+
+.bar-bottom {
+    border-top: 1px solid var(--c-border);
+}
+
+/* === Tables === */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table th,
+.data-table td {
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--c-border-subtle);
+}
+
+.data-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.data-table th {
+    background-color: var(--c-surface-alt);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--c-text-muted);
+    padding-top: 0.4375rem;
+    padding-bottom: 0.4375rem;
+}
+
+.data-table tbody tr {
+    transition: background-color 80ms var(--ease);
+}
+
+.data-table tbody tr:hover {
+    background-color: var(--c-primary-soft);
+}
+
+.data-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* === Scrollable Panel === */
+.scroll-panel {
+    flex: 1;
+    overflow-y: auto;
+    background-color: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xs);
+}
+
+/* === Empty / Placeholder State === */
+.empty-state {
+    text-align: center;
+    padding: 2.5rem 1.5rem;
+    color: var(--c-text-muted);
+    font-size: 0.8125rem;
+}
+
+.empty-state p { margin: 0.25rem 0; }
+
+/* === Mono Input (for DSL/code fields) === */
+.mono-input {
+    width: 100%;
+    background-color: var(--c-surface);
+    color: var(--c-text);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-md);
+    padding: 0.5rem 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    transition: border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
+}
+
+.mono-input:focus {
+    outline: none;
+    border-color: var(--c-primary);
+    box-shadow: var(--shadow-ring);
+}
+
+.mono-input:disabled {
+    background-color: var(--c-surface-alt);
+    color: var(--c-text-muted);
+}
+
+/* === Scrollbar Styling === */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #d4d4d0;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #a8a29e;
 }

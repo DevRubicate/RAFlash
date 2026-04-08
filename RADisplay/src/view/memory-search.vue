@@ -4,7 +4,7 @@
         <div class="input-wrapper">
             <input
                 type="text"
-                class="path-input"
+                class="mono-input path-input"
                 v-model="searchPath"
                 placeholder="Starting path (such as stage.enemies)"
                 spellcheck="false"
@@ -13,7 +13,7 @@
         <div class="input-wrapper">
             <input
                 type="text"
-                class="search-input"
+                class="mono-input search-input"
                 v-model="searchValue"
                 placeholder="Search (such as Mario or M*io)"
                 spellcheck="false"
@@ -61,98 +61,61 @@
 
 <style>
     .container {
-        display: flex;
-        flex-direction: column;
-        height: 100vh;
-        padding: 1rem;
-        box-sizing: border-box;
+        padding: 0.75rem;
     }
 
     .input-wrapper {
         flex-shrink: 0;
         display: flex;
-        gap: 0.75rem;
-        margin-bottom: 0.5rem;
+        gap: 0.5rem;
+        margin-bottom: 0.375rem;
     }
 
-    .path-input {
-        flex-grow: 1;
-        background-color: #ffffff;
-        color: #111827;
-        border: 1px solid #d1d5db;
-        border-radius: 0.5rem;
-        padding: 0.5rem 1rem;
-        font-family: "Fira Code", monospace;
-        font-size: 0.85rem;
-        box-sizing: border-box;
-        transition: border-color 200ms, box-shadow 200ms;
-    }
-
-    .path-input:focus {
-        outline: none;
-        border-color: #4f46e5;
-        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
-    }
-
-    .search-input {
-        flex-grow: 1;
-        background-color: #ffffff;
-        color: #111827;
-        border: 1px solid #d1d5db;
-        border-radius: 0.5rem;
-        padding: 0.75rem 1rem;
-        font-family: "Fira Code", monospace;
-        font-size: 0.9rem;
-        box-sizing: border-box;
-        transition: border-color 200ms, box-shadow 200ms;
-    }
-
-    .search-input:focus {
-        outline: none;
-        border-color: #4f46e5;
-        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
-    }
+    .path-input { flex-grow: 1; }
+    .search-input { flex-grow: 1; padding: 0.5rem 0.75rem; }
 
     .search-button {
-        background-color: #4f46e5;
+        background-color: #6366f1;
         color: #ffffff;
-        font-weight: 500;
-        font-size: 0.9rem;
+        font-family: var(--font-sans);
+        font-weight: 550;
+        font-size: 0.8125rem;
         border: none;
-        border-radius: 0.5rem;
-        padding: 0.75rem 1.5rem;
+        border-radius: var(--radius-md);
+        padding: 0 1.125rem;
         cursor: pointer;
-        transition: background-color 200ms;
+        transition: background-color var(--duration) var(--ease);
     }
 
     .search-button:hover:not(:disabled) {
-        background-color: #4338ca;
+        background-color: var(--c-primary);
     }
 
     .search-button:disabled {
-        background-color: #9ca3af;
+        background-color: var(--c-text-muted);
         cursor: not-allowed;
     }
 
     .reset-button {
-        background-color: #6b7280;
+        background-color: var(--c-text-secondary);
         color: #ffffff;
-        font-weight: 500;
-        font-size: 0.9rem;
+        font-family: var(--font-sans);
+        font-weight: 550;
+        font-size: 0.8125rem;
         border: none;
-        border-radius: 0.5rem;
-        padding: 0.75rem 1.25rem;
+        border-radius: var(--radius-md);
+        padding: 0 0.875rem;
         cursor: pointer;
-        transition: background-color 200ms;
+        transition: background-color var(--duration) var(--ease);
     }
 
     .reset-button:hover:not(:disabled) {
-        background-color: #4b5563;
+        background-color: #44403c;
     }
 
     .reset-button:disabled {
-        background-color: #d1d5db;
-        color: #9ca3af;
+        background-color: var(--c-border);
+        color: var(--c-text-muted);
         cursor: not-allowed;
     }
 
@@ -160,14 +123,16 @@
         flex-grow: 1;
         display: flex;
         min-height: 0;
+        margin-top: 0.375rem;
     }
 
     .results-container {
         flex-grow: 1;
         overflow-y: auto;
-        background-color: #ffffff;
-        border: 1px solid #d1d5db;
-        border-radius: 0.5rem;
+        background-color: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-xs);
     }
 
     .results-table {
@@ -176,54 +141,55 @@
     }
 
     .results-table th, .results-table td {
-        padding: 0.75rem 1rem;
+        padding: 0.4375rem 0.75rem;
         text-align: left;
-        border-bottom: 1px solid #e5e7eb;
-        font-family: "Fira Code", monospace;
-        font-size: 0.85rem;
+        border-bottom: 1px solid var(--c-border-subtle);
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
     }
 
     .results-table thead {
-        background-color: #f9fafb;
-        color: #6b7280;
-        font-size: 0.8rem;
+        background-color: var(--c-surface-alt);
+        color: var(--c-text-muted);
+        font-size: 0.6875rem;
+        font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.04em;
         position: sticky;
         top: 0;
     }
 
-    .results-table tbody tr:last-child th,
     .results-table tbody tr:last-child td {
         border-bottom: none;
     }
 
     .results-table tbody tr:nth-child(even) {
-        background-color: #f9fafb;
+        background-color: var(--c-surface-alt);
     }
 
     .results-table tbody tr:hover {
-        background-color: #eef2ff;
-        color: #4338ca;
+        background-color: var(--c-primary-soft);
     }
 
     .no-results {
         text-align: center;
-        padding: 3rem;
-        color: #6b7280;
+        padding: 2.5rem 1.5rem;
+        color: var(--c-text-muted);
+        font-size: 0.8125rem;
     }
 
     .results-header {
-        padding: 0.75rem 1rem;
-        font-size: 0.85rem;
-        color: #6b7280;
-        border-bottom: 1px solid #e5e7eb;
-        background-color: #f9fafb;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--c-text-muted);
+        border-bottom: 1px solid var(--c-border-subtle);
+        background-color: var(--c-surface-alt);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
     }
 
-    .path-column {
-        width: 70%;
-    }
+    .path-column { width: 70%; }
 
     .value-column {
         width: 30%;
@@ -235,27 +201,25 @@
         width: 100%;
         background: transparent;
         border: none;
-        font-family: "Fira Code", monospace;
-        font-size: 0.85rem;
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
         padding: 0;
         margin: 0;
         color: inherit;
         cursor: text;
-        box-sizing: border-box;
     }
 
     .cell-input:focus {
         outline: none;
-        background-color: rgba(79, 70, 229, 0.1);
+        background-color: rgba(79, 70, 229, 0.08);
+        border-radius: 2px;
     }
 
-    .path-cell {
-        text-align: left;
-    }
+    .path-cell { text-align: left; }
 
     .value-cell {
         text-align: right;
-        color: #4f46e5;
+        color: var(--c-primary);
     }
 </style>
 
