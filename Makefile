@@ -7,16 +7,16 @@ DENO=deno
 MTASC_HEADER=800:575:60
 
 # Dummy target to force rebuild
-.PHONY: all check clean run assets test test-avm1 test-engine test-display test-avm2 avm1-build avm2-build compile stage FORCE
+.PHONY: all check clean run assets test test-avm1 test-engine test-display test-avm2 avm1-build avm1-wrapper-build avm2-build compile stage FORCE
 
 # Default target - full build including standalone executable
 all: compile
 
 # Quick compile check (no executable)
-check: avm1-build avm2-build assets
+check: avm1-build avm1-wrapper-build avm2-build assets
 
 # Run from .build (simulates distribution environment)
-run: avm1-build avm2-build assets stage
+run: avm1-build avm1-wrapper-build avm2-build assets stage
 	@cd .build && bash -c 'trap "exit 0" INT; $(DENO) run --allow-ffi --allow-net --allow-run --allow-read --allow-write --allow-env ../RAEngine/src/Main.ts 2>&1'
 
 # Build UI assets using npm
@@ -48,6 +48,16 @@ $(AVM1_SWF): FORCE
 	@rm -f $@
 	@$(MTASC) -cp AVM1Firmware -swf $@ -main $(AVM1_MAIN) -header $(MTASC_HEADER) 2>&1 | grep -v -e "32 KiB" -e "overlength jumps" -e "island insertion"; test -f $@
 
+# === AVM1 Wrapper (AVM2 shell for right-click suppression) ===
+
+AVM1_WRAPPER_SWF=.build/firmware/AVM1Wrapper.swf
+
+avm1-wrapper-build: $(AVM1_WRAPPER_SWF)
+
+$(AVM1_WRAPPER_SWF): FORCE
+	@mkdir -p $(dir $@)
+	@$(HAXE) -cp AVM2Firmware -swf $@ -swf-version 16 -D swf-header=800:575:60:0 -main AVM1Wrapper
+
 # === AVM2 Firmware ===
 
 AVM2_SWF=.build/firmware/AVM2.swf
@@ -57,14 +67,14 @@ avm2-build: $(AVM2_SWF)
 
 $(AVM2_SWF): FORCE
 	@mkdir -p $(dir $@)
-	@$(HAXE) -cp AVM2Firmware -swf $@ -swf-version 11 -D swf-header=800:575:60:0 -main Main
+	@$(HAXE) -cp AVM2Firmware -swf $@ -swf-version 16 -D swf-header=800:575:60:0 -main Main
 
 # === Compile to standalone executable ===
 
 DENO_PERMISSIONS=--allow-ffi --allow-net --allow-run --allow-read --allow-write --allow-env
-DENO_INCLUDES=--include=$(AVM1_SWF) --include=$(AVM2_SWF) --include=.build/internals/assets --include=assets/icon.png --include=assets/icon.ico
+DENO_INCLUDES=--include=$(AVM1_SWF) --include=$(AVM1_WRAPPER_SWF) --include=$(AVM2_SWF) --include=.build/internals/assets --include=assets/icon.png --include=assets/icon.ico
 
-compile: avm1-build avm2-build assets stage
+compile: avm1-build avm1-wrapper-build avm2-build assets stage
 	@rm -f .build/RAFlash .build/RAFlash.exe
 	@$(DENO) compile -q $(DENO_PERMISSIONS) --no-terminal --icon=assets/icon.ico $(DENO_INCLUDES) --output=.build/RAFlash RAEngine/src/Main.ts 2>&1 | cat
 	@test -f .build/RAFlash.exe || test -f .build/RAFlash

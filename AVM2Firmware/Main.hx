@@ -72,6 +72,10 @@ class Main extends MovieClip {
         stage.align = StageAlign.TOP_LEFT;
         stage.scaleMode = StageScaleMode.NO_SCALE;
         flash.Lib.fscommand("showmenu", "false");
+        var cm = new flash.ui.ContextMenu();
+        cm.hideBuiltInItems();
+        contextMenu = cm;
+        stage.addEventListener(flash.events.MouseEvent.RIGHT_CLICK, function(_:flash.events.MouseEvent):Void {});
     }
 
     // === Socket Connection ===

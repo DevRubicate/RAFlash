@@ -81,6 +81,9 @@ class Main {
         Stage.scaleMode = "noScale";
         Stage.align = "TL";
         fscommand("showmenu", "false");
+        var cm:ContextMenu = new ContextMenu();
+        cm.hideBuiltInItems();
+        _root.menu = cm;
         connectToServer();
     }
 

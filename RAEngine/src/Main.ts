@@ -102,6 +102,7 @@ const SITELOCK_URL: string | null = null;
 interface AVMConfig {
     mode: "AVM1" | "AVM2";
     firmwareSwf: string;
+    innerFirmwareSwf?: string; // AVM1 firmware loaded by AVM2 wrapper
     messageTerminator: string;
     patchFirmware: boolean;
     convertPngToJpeg: boolean;
@@ -569,6 +570,24 @@ function startHttpServer() {
                     }
                 }
 
+                // Serve inner AVM1 firmware (loaded by AVM1Wrapper)
+                if (url.pathname === "/avm1-firmware.swf" && avmConfig?.innerFirmwareSwf && selectedGamePath) {
+                    const gameSwfBuffer = await Deno.readFile(selectedGamePath);
+                    const gameMetadata = parseSwfMetadata(gameSwfBuffer);
+                    const firmwareBytes = await Deno.readFile(avmConfig.innerFirmwareSwf);
+                    const patchedFirmware = patchFirmwareSwf(
+                        firmwareBytes,
+                        gameMetadata.frameRate,
+                        gameMetadata.backgroundColor,
+                        gameMetadata.width,
+                        gameMetadata.height
+                    );
+                    return new Response(new Uint8Array(patchedFirmware) as BodyInit, {
+                        status: 200,
+                        headers: { "Content-Type": "application/x-shockwave-flash" },
+                    });
+                }
+
                 // Serve favicon from assets directory
                 if (url.pathname === "/favicon.png") {
                     const icon = await Deno.readFile("assets/icon.png");
@@ -1023,6 +1042,29 @@ async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFi
             return;
         }
 
+        // HTTP request for inner AVM1 firmware (loaded by AVM1Wrapper)
+        if (httpBuffer.startsWith("GET /avm1-firmware.swf") && avmConfig.innerFirmwareSwf) {
+            const gameSwfBuffer = await Deno.readFile(gamePath);
+            const gameMetadata = parseSwfMetadata(gameSwfBuffer);
+            const firmwareBytes = await Deno.readFile(avmConfig.innerFirmwareSwf);
+            const swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height);
+
+            const response = [
+                "HTTP/1.1 200 OK",
+                "Content-Type: application/x-shockwave-flash",
+                `Content-Length: ${swfData.length}`,
+                "Connection: close",
+                "",
+                "",
+            ].join("\r\n");
+            await writer.write(encoder.encode(response));
+            await writer.write(swfData);
+            writer.releaseLock();
+            reader.releaseLock();
+            conn.close();
+            return;
+        }
+
         // HTTP request for game SWF
         if (httpBuffer.startsWith("GET /game.swf")) {
             const swfData = await Deno.readFile(gamePath);
@@ -1337,7 +1379,7 @@ async function main(): Promise<void> {
     const swfVersion = gameSwfBuffer[3];
     avmConfig = swfVersion >= 9
         ? { mode: "AVM2", firmwareSwf: "firmware/AVM2.swf", messageTerminator: "\n", patchFirmware: true, convertPngToJpeg: false }
-        : { mode: "AVM1", firmwareSwf: "firmware/AVM1.swf", messageTerminator: "\0", patchFirmware: true, convertPngToJpeg: true };
+        : { mode: "AVM1", firmwareSwf: "firmware/AVM1Wrapper.swf", innerFirmwareSwf: "firmware/AVM1.swf", messageTerminator: "\0", patchFirmware: true, convertPngToJpeg: true };
 
     // 6. Load game-specific state (identified by MD5 hash of SWF)
     await AppData.setGamePath(resolvedGamePath);
