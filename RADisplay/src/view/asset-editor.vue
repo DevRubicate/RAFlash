@@ -61,7 +61,6 @@
                     <h3 class="panel-title">Requirements</h3>
                     <div class="button-group">
                         <div class="form-group-checkbox"><input type="checkbox" id="active-check" v-model="isAssetActive"><label for="active-check">Active</label></div>
-                        <div class="form-group-checkbox"><input type="checkbox" id="h-check" v-model="highlightsEnabled"><label for="h-check">Highlights</label></div>
                     </div>
                 </div>
                 <div class="table-container" @click="handleTableContainerClick">
@@ -72,7 +71,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="(req, index) in selectedGroup?.requirements" :key="req.id" @click="selectedRequirementId = req.id" :class="[req.id === selectedRequirementId ? 'active' : 'not-active', { 'triggered': highlightsEnabled && triggeredRequirements.has(req.id) }]">
+                            <tr v-for="(req, index) in selectedGroup?.requirements" :key="req.id" @click="selectedRequirementId = req.id" :class="[req.id === selectedRequirementId ? 'active' : 'not-active']">
                                 <td>{{index+1}}</td>
                                 <td><select v-model="req.flag" @change="App.save()"><option v-for="option in flagOptions" :value="option.value">{{option.text}}</option></select></td>
                                 <td><select v-model="req.typeA" @change="App.save()"><option v-for="option in typeOptions" :value="option.value">{{option.text}}</option></select></td>
@@ -410,16 +409,6 @@
         pointer-events: none;
     }
 
-    /* Triggered requirement flash animation */
-    .requirements-table tbody tr.triggered {
-        animation: flash-green 1s ease-out;
-    }
-
-    @keyframes flash-green {
-        0% { background-color: #dcfce7; }
-        100% { background-color: transparent; }
-    }
-
     /* === Footer === */
     .editor-footer {
         flex-shrink: 0;
@@ -437,14 +426,9 @@
 </style>
 
 <script setup>
-    import { ref, computed, onUnmounted } from 'vue';
+    import { ref, computed } from 'vue';
     import { App }          from '../js/app.ts';
     import { Network }      from '../js/network.ts';
-
-    // Triggered requirements tracking for green flash
-    const triggeredRequirements = ref(new Set());
-    const highlightsEnabled = ref(true);
-    let triggerPollInterval = null;
 
     const pointsOptions = [
         { value: 0,     text: '0'   },
@@ -763,30 +747,5 @@
         selectedProgressionType.value = asset.progressionType;
         App.ready = true;
 
-        // Start polling for triggered requirements
-        triggerPollInterval = setInterval(async () => {
-            if (!selectedAsset.value) return;
-
-            const reply = await Network.send({
-                command: 'getTriggeredRequirements',
-                params: { assetId: selectedAsset.value.id }
-            });
-
-            if (reply.success && reply.params.triggeredIds) {
-                for (const id of reply.params.triggeredIds) {
-                    triggeredRequirements.value.add(id);
-                    // Remove after animation completes
-                    setTimeout(() => triggeredRequirements.value.delete(id), 1000);
-                }
-            }
-        }, 1000);
-    });
-
-    // Cleanup polling interval
-    onUnmounted(() => {
-        if (triggerPollInterval) {
-            clearInterval(triggerPollInterval);
-            triggerPollInterval = null;
-        }
     });
 </script>

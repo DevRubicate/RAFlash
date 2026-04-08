@@ -323,30 +323,6 @@ class Main {
                 sendResponse(id, { success: true, results: results });
                 break;
 
-            case "getTriggeredRequirements":
-                var assetId:Number = Number(params.assetId);
-                var triggeredIds:Array = [];
-
-                for (var ai:Number = 0; ai < AppData.data.assets.length; ai++) {
-                    var targetAsset:Object = AppData.data.assets[ai];
-                    if (targetAsset.id != assetId) continue;
-
-                    for (var gi:Number = 0; gi < targetAsset.groups.length; gi++) {
-                        var targetGroup:Object = targetAsset.groups[gi];
-                        for (var ri:Number = 0; ri < targetGroup.requirements.length; ri++) {
-                            var targetReq:Object = targetGroup.requirements[ri];
-                            if (targetReq._triggered) {
-                                triggeredIds.push(targetReq.id);
-                                targetReq._triggered = false;
-                            }
-                        }
-                    }
-                    break;
-                }
-
-                sendResponse(id, { success: true, triggeredIds: triggeredIds });
-                break;
-
             case "getRichPresenceResult":
                 var rpAssetId:Number = Number(params.assetId);
                 var rpResult:String = null;
@@ -2343,11 +2319,6 @@ class Main {
 
                         // Skip Pause If (hits already handled in Phase 0)
                         if (req.flag == "PAUSE_IF") continue;
-
-                        // Set _triggered flag for Asset Editor visual feedback
-                        if (reqPassed && !req._triggered) {
-                            req._triggered = true;
-                        }
 
                         var maxHits:Number = req.maxHits || 0;
                         var currentHits:Number = req.hits || 0;

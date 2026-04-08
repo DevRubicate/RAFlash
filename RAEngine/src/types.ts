@@ -20,7 +20,6 @@ export interface Requirement {
     compiledB?: unknown[];
     // Runtime state (managed by achievement engine)
     hits?: number;
-    _triggered?: boolean;
     [key: string]: unknown;
 }
 

@@ -329,36 +329,6 @@ class Main extends MovieClip {
                 }
                 sendResponse(id, {success: true});
 
-            case "getTriggeredRequirements":
-                var triggeredIds:Array<Dynamic> = [];
-                var trAssets:Array<Dynamic> = untyped AppData.data.assets;
-                if (trAssets != null) {
-                    var ti:Int = 0;
-                    while (ti < trAssets.length) {
-                        var trAsset:Dynamic = trAssets[ti];
-                        var trGroups:Array<Dynamic> = untyped trAsset.groups;
-                        if (trGroups != null) {
-                            var tg:Int = 0;
-                            while (tg < trGroups.length) {
-                                var trReqs:Array<Dynamic> = untyped trGroups[tg].requirements;
-                                if (trReqs != null) {
-                                    var tr:Int = 0;
-                                    while (tr < trReqs.length) {
-                                        if (untyped trReqs[tr]._triggered == true) {
-                                            triggeredIds.push(untyped trReqs[tr].id);
-                                            untyped trReqs[tr]._triggered = false;
-                                        }
-                                        tr++;
-                                    }
-                                }
-                                tg++;
-                            }
-                        }
-                        ti++;
-                    }
-                }
-                sendResponse(id, {success: true, triggered: triggeredIds});
-
             case "getRichPresenceResult":
                 var rpResult:Dynamic = null;
                 var rpAssets:Array<Dynamic> = untyped AppData.data.assets;

@@ -735,12 +735,6 @@ async function handleApiRequest(
             const response = await sendToFirmware("evaluateMultiple", { formulas: compiled });
             return { success: response.success, params: response };
         }
-        case "getTriggeredRequirements": {
-            const response = await sendToFirmware("getTriggeredRequirements", {
-                assetId: input.params.assetId
-            });
-            return { success: response.success, params: response };
-        }
         case "getRichPresenceResult": {
             const response = await sendToFirmware("getRichPresenceResult", {
                 assetId: input.params.assetId
