@@ -1258,7 +1258,7 @@ class Parser {
                                     qnode.type === NODE_TYPE.STRING ||
                                     qnode.type === NODE_TYPE.NULL ||
                                     qnode.type === NODE_TYPE.READ_GLOBAL ||
-    
+                                    qnode.type === NODE_TYPE.REMEMBERED ||
                                     qnode.type === NODE_TYPE.CALL ||
                                     qnode.type === NODE_TYPE.TERNARY) {
                                     conditionStack.push(qnode);
