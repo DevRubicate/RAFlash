@@ -1292,7 +1292,7 @@ function handleFirmwareData(data: string): void {
                     }
 
                     // Persist changes to disk
-                    AppData.saveData().catch((e) => console.error("Failed to save data:", e));
+                    AppData.saveData();
                 }
             } else if (parsed.type === "syncState") {
                 // Firmware reconnected - its state is authoritative
@@ -1302,7 +1302,7 @@ function handleFirmwareData(data: string): void {
                     if (!JSONDiff.isPointlessDiff(diff)) {
                         JSONDiff.applyDataDiff(AppData.data, diff);
                         broadcastToDevtools("editData", diff);
-                        AppData.saveData().catch((e) => console.error("Failed to save after syncState:", e));
+                        AppData.saveData();
                     }
                     console.log("[FIRMWARE] State synced after reconnect");
                 }

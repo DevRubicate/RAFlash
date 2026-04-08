@@ -94,28 +94,35 @@ export class AppData {
      * Saves game-specific state to the state file.
      * Must call setGamePath() first.
      */
-    static async saveData(): Promise<void> {
+    static async saveData(): Promise<boolean> {
         if (!this.stateFilePath) {
-            throw new Error("Game path not set. Call setGamePath() first.");
+            console.error("Failed to save data: game path not set");
+            return false;
         }
 
-        // Ensure directory exists
-        await Deno.mkdir("RACache/games", { recursive: true });
+        try {
+            // Ensure directory exists
+            await Deno.mkdir("RACache/games", { recursive: true });
 
-        // Sanitize and strip computed fields before saving
-        const assets = this.data.assets;
-        const codeNotes = this.data.codeNotes || [];
+            // Sanitize and strip computed fields before saving
+            const assets = this.data.assets;
+            const codeNotes = this.data.codeNotes || [];
 
-        // Sanitize each asset before saving
-        for (const asset of assets) {
-            this.sanitizeAssetForSave(asset);
+            // Sanitize each asset before saving
+            for (const asset of assets) {
+                this.sanitizeAssetForSave(asset);
+            }
+
+            const strippedData = {
+                assets: assets.map(asset => this.stripAssetData(asset, this.assetSchema)),
+                codeNotes: codeNotes.map(note => this.stripAssetData(note, this.codeNoteSchema))
+            };
+            await Deno.writeTextFile(this.stateFilePath, JSON.stringify(strippedData, null, 2));
+            return true;
+        } catch (e) {
+            console.error("Failed to save data:", e);
+            return false;
         }
-
-        const strippedData = {
-            assets: assets.map(asset => this.stripAssetData(asset, this.assetSchema)),
-            codeNotes: codeNotes.map(note => this.stripAssetData(note, this.codeNoteSchema))
-        };
-        await Deno.writeTextFile(this.stateFilePath, JSON.stringify(strippedData, null, 2));
     }
 
     /**
@@ -127,6 +134,7 @@ export class AppData {
     static async saveAssets(ids?: number[]): Promise<number[]> {
         const assets = this.data.assets;
         const savedIds: number[] = [];
+        const previousState: Array<{ asset: Asset, saved: boolean | undefined, modified: boolean | undefined, snapshot: Record<string, unknown> | undefined }> = [];
 
         for (const asset of assets) {
             const shouldSave = ids
@@ -134,6 +142,7 @@ export class AppData {
                 : (!asset._saved || asset._modified);
 
             if (shouldSave) {
+                previousState.push({ asset, saved: asset._saved, modified: asset._modified, snapshot: asset._originalSnapshot });
                 asset._saved = true;
                 asset._modified = false;
                 asset._originalSnapshot = JSON.parse(JSON.stringify(this.stripAssetData(asset, this.assetSchema)));
@@ -142,7 +151,16 @@ export class AppData {
         }
 
         // Persist to disk
-        await this.saveData();
+        const ok = await this.saveData();
+        if (!ok) {
+            // Revert flag changes since disk write failed
+            for (const prev of previousState) {
+                prev.asset._saved = prev.saved;
+                prev.asset._modified = prev.modified;
+                prev.asset._originalSnapshot = prev.snapshot;
+            }
+            return [];
+        }
 
         return savedIds;
     }
@@ -203,7 +221,12 @@ export class AppData {
 
         // If any saved assets were deleted, update disk
         if (diskModified) {
-            await this.saveData();
+            const ok = await this.saveData();
+            if (!ok) {
+                // Restore deleted assets since disk write failed
+                this.data.assets = assets;
+                return { deletedIds: [], diskModified: false };
+            }
         }
 
         return { deletedIds, diskModified };
