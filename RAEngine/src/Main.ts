@@ -438,10 +438,33 @@ const windowParams = new Map<number, Record<string, unknown>>();
 
 // Flash Player window management
 let flashPlayerPid: number | null = null;
+let flashProcess: Deno.ChildProcess | null = null;
 
 // Rich Presence title updates
 let lastRichPresenceTime = 0;
 let richPresenceCheckInterval: number | null = null;
+
+/**
+ * Reset all game-specific state between sessions.
+ * Called after a game closes before showing the file picker again.
+ */
+function resetGameState(): void {
+    firmwareWriter = null;
+    firmwareConnected = false;
+    pendingRequests.clear();
+    requestIdCounter = 0;
+    watcherSockets.clear();
+    windowParams.clear();
+    flashPlayerPid = null;
+    flashProcess = null;
+    lastRichPresenceTime = 0;
+    selectedGamePath = null;
+    appState = AppState.FILE_PICKER;
+    AppData.data = { assets: [], codeNotes: [], gameConfig: { title: '', originUrl: '', badgeImage: '' } };
+    AppData.gamePath = null;
+    AppData.stateFilePath = null;
+    AppData.gameHash = null;
+}
 
 /**
  * Generate a unique request ID
@@ -1007,7 +1030,7 @@ async function showFilePicker(): Promise<string | null> {
 /**
  * Start the Flash socket server (XMLSocket for AVM1, Socket for AVM2)
  */
-async function startFlashServer(gamePath: string): Promise<void> {
+async function startFlashServer(): Promise<void> {
     const listener = Deno.listen({ port: FLASH_PORT });
 
     // Flash socket policy file
@@ -1032,14 +1055,14 @@ async function startFlashServer(gamePath: string): Promise<void> {
     }
 
     for await (const conn of listener) {
-        handleFlashConnection(conn, gamePath, POLICY_FILE);
+        handleFlashConnection(conn, POLICY_FILE);
     }
 }
 
 /**
  * Handle a Flash connection
  */
-async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFile: string): Promise<void> {
+async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promise<void> {
     // Disable Nagle's algorithm for immediate message delivery
     if ("setNoDelay" in conn) {
         (conn as Deno.TcpConn).setNoDelay(true);
@@ -1062,7 +1085,7 @@ async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFi
         if (httpBuffer.startsWith("GET /firmware.swf")) {
             let swfData: Uint8Array;
             if (avmConfig.patchFirmware) {
-                const gameSwfBuffer = await Deno.readFile(gamePath);
+                const gameSwfBuffer = await Deno.readFile(selectedGamePath!);
                 const gameMetadata = parseSwfMetadata(gameSwfBuffer);
                 const firmwareBytes = await Deno.readFile(avmConfig.firmwareSwf);
                 swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height, swfHidesMenuBar(gameSwfBuffer));
@@ -1088,7 +1111,7 @@ async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFi
 
         // HTTP request for inner AVM1 firmware (loaded by AVM1Wrapper)
         if (httpBuffer.startsWith("GET /avm1-firmware.swf") && avmConfig.innerFirmwareSwf) {
-            const gameSwfBuffer = await Deno.readFile(gamePath);
+            const gameSwfBuffer = await Deno.readFile(selectedGamePath!);
             const gameMetadata = parseSwfMetadata(gameSwfBuffer);
             const firmwareBytes = await Deno.readFile(avmConfig.innerFirmwareSwf);
             const swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height, swfHidesMenuBar(gameSwfBuffer));
@@ -1111,7 +1134,7 @@ async function handleFlashConnection(conn: Deno.Conn, gamePath: string, policyFi
 
         // HTTP request for game SWF
         if (httpBuffer.startsWith("GET /game.swf")) {
-            const swfData = await Deno.readFile(gamePath);
+            const swfData = await Deno.readFile(selectedGamePath!);
             const response = [
                 "HTTP/1.1 200 OK",
                 "Content-Type: application/x-shockwave-flash",
@@ -1446,105 +1469,20 @@ async function main(): Promise<void> {
         }
     }
 
-    // 1. Start HTTP server (keeps running for devtools)
+    // 1. Start HTTP server (persists across game sessions)
     startHttpServer();
 
-    // 2. Show file picker and wait for selection
-    const gamePath = await showFilePicker();
+    // 2. Start Flash socket server in background (persists across game sessions)
+    startFlashServer();
 
-    // 3. Handle user closing file picker without selecting
-    if (!gamePath) {
-        await HTMLWindow.shutdown();
-        Deno.exit(0);
-    }
-
-    // 4. Close file picker window
-    await HTMLWindow.shutdown();
-
-    // 5. Resolve the game path (handle relative paths with leading ./)
-    let resolvedGamePath = gamePath;
-    if (gamePath.startsWith("./") || gamePath.startsWith(".\\")) {
-        resolvedGamePath = join(Deno.cwd(), gamePath.substring(2));
-    } else if (!gamePath.includes(":") && !gamePath.startsWith("/")) {
-        resolvedGamePath = join(Deno.cwd(), gamePath);
-    }
-
-    // Verify game file exists
-    try {
-        await Deno.stat(resolvedGamePath);
-    } catch {
-        console.error(`ERROR: Game SWF not found: ${resolvedGamePath}`);
-        Deno.exit(1);
-    }
-
-    selectedGamePath = resolvedGamePath;
-
-    // 5.5. Parse game SWF to get window dimensions and detect AVM version
-    const gameSwfBuffer = await Deno.readFile(resolvedGamePath);
-    const gameMetadata = parseSwfMetadata(gameSwfBuffer);
-    gameWindowWidth = gameMetadata.width;
-    gameWindowHeight = gameMetadata.height;
-
-    const swfVersion = gameSwfBuffer[3];
-    avmConfig = swfVersion >= 9
-        ? { mode: "AVM2", firmwareSwf: "firmware/AVM2.swf", messageTerminator: "\n", patchFirmware: true, convertPngToJpeg: false }
-        : { mode: "AVM1", firmwareSwf: "firmware/AVM1Wrapper.swf", innerFirmwareSwf: "firmware/AVM1.swf", messageTerminator: "\0", patchFirmware: true, convertPngToJpeg: true };
-
-    // 6. Load game-specific state (identified by MD5 hash of SWF)
-    await AppData.setGamePath(resolvedGamePath);
-    await AppData.loadData();
-
-    // 7. Start sitelock proxy
-    await Deno.writeTextFile(join(Deno.cwd(), "proxy.txt"), "1");
-    await Deno.writeTextFile(join(Deno.cwd(), "port.txt"), String(PROXY_PORT));
-    const sitelockDomain = SITELOCK_URL ? new URL(SITELOCK_URL).hostname : null;
-    startSitelockProxy({
-        port: PROXY_PORT,
-        flashPort: FLASH_PORT,
-        gameDomain: sitelockDomain,
-        gameFilePath: resolvedGamePath,
-    });
-
-    // 8. Switch to game running state
-    appState = AppState.GAME_RUNNING;
-
-    // 8. Launch Flash Player (now the boss window)
-    const flashProcess = launchFlashPlayer();
-    flashPlayerPid = flashProcess.pid;
-
-    // Resize and center Flash Player to match game dimensions (Windows only)
-    // Use fast polling (50 retries, 10ms delay) to catch window quickly
-    if (Deno.build.os === "windows") {
-        const icoPath = join(Deno.cwd(), "assets", "icon.ico");
-        WindowManager.removeWindowChrome(flashProcess.pid, gameWindowWidth, gameWindowHeight, "RAFlash", 50, 10);
-        WindowManager.setProcessIcon(flashProcess.pid, icoPath);
-    }
-
-    // Start Rich Presence timeout checker (resets title if no update for 4+ seconds)
-    richPresenceCheckInterval = setInterval(() => {
-        if (lastRichPresenceTime > 0 && Date.now() - lastRichPresenceTime >= 4000) {
-            updateFlashPlayerTitle(""); // Reset to just "RAFlash"
-        }
-    }, 1000);
-
-    // 8. Monitor Flash Player exit (boss window closes = app exits)
-    flashProcess.status.then(async () => {
-        if (richPresenceCheckInterval) {
-            clearInterval(richPresenceCheckInterval);
-        }
-        stopSitelockProxy();
-        await HTMLWindow.shutdown();
-        Deno.exit(0);
-    });
-
-    // Handle Ctrl+C
+    // 3. Handle Ctrl+C (registered once, references module-level state)
     Deno.addSignalListener("SIGINT", async () => {
         if (richPresenceCheckInterval) {
             clearInterval(richPresenceCheckInterval);
         }
         stopSitelockProxy();
         try {
-            flashProcess.kill();
+            flashProcess?.kill();
         } catch {
             // Already exited
         }
@@ -1552,9 +1490,104 @@ async function main(): Promise<void> {
         Deno.exit(0);
     });
 
-    // 9. Start socket server for Flash (runs indefinitely)
-    // HTTP server continues running for devtools
-    await startFlashServer(resolvedGamePath);
+    // 4. Game loop: file picker → game → cleanup → repeat
+    while (true) {
+        const gamePath = await showFilePicker();
+
+        // User closed file picker without selecting → exit
+        if (!gamePath) {
+            await HTMLWindow.shutdown();
+            Deno.exit(0);
+        }
+
+        // Close file picker window
+        await HTMLWindow.shutdown();
+
+        // Resolve the game path (handle relative paths)
+        let resolvedGamePath = gamePath;
+        if (gamePath.startsWith("./") || gamePath.startsWith(".\\")) {
+            resolvedGamePath = join(Deno.cwd(), gamePath.substring(2));
+        } else if (!gamePath.includes(":") && !gamePath.startsWith("/")) {
+            resolvedGamePath = join(Deno.cwd(), gamePath);
+        }
+
+        // Verify game file exists
+        try {
+            await Deno.stat(resolvedGamePath);
+        } catch {
+            console.error(`ERROR: Game SWF not found: ${resolvedGamePath}`);
+            continue; // Back to file picker
+        }
+
+        selectedGamePath = resolvedGamePath;
+
+        // Parse game SWF to get window dimensions and detect AVM version
+        const gameSwfBuffer = await Deno.readFile(resolvedGamePath);
+        const gameMetadata = parseSwfMetadata(gameSwfBuffer);
+        gameWindowWidth = gameMetadata.width;
+        gameWindowHeight = gameMetadata.height;
+
+        const swfVersion = gameSwfBuffer[3];
+        avmConfig = swfVersion >= 9
+            ? { mode: "AVM2", firmwareSwf: "firmware/AVM2.swf", messageTerminator: "\n", patchFirmware: true, convertPngToJpeg: false }
+            : { mode: "AVM1", firmwareSwf: "firmware/AVM1Wrapper.swf", innerFirmwareSwf: "firmware/AVM1.swf", messageTerminator: "\0", patchFirmware: true, convertPngToJpeg: true };
+
+        // Load game-specific state (identified by MD5 hash of SWF)
+        await AppData.setGamePath(resolvedGamePath);
+        await AppData.loadData();
+
+        // Start sitelock proxy
+        await Deno.writeTextFile(join(Deno.cwd(), "proxy.txt"), "1");
+        await Deno.writeTextFile(join(Deno.cwd(), "port.txt"), String(PROXY_PORT));
+        const sitelockDomain = SITELOCK_URL ? new URL(SITELOCK_URL).hostname : null;
+        startSitelockProxy({
+            port: PROXY_PORT,
+            flashPort: FLASH_PORT,
+            gameDomain: sitelockDomain,
+            gameFilePath: resolvedGamePath,
+        });
+
+        // Switch to game running state
+        appState = AppState.GAME_RUNNING;
+
+        // Launch Flash Player
+        flashProcess = launchFlashPlayer();
+        flashPlayerPid = flashProcess.pid;
+
+        // Resize and center Flash Player to match game dimensions (Windows only)
+        if (Deno.build.os === "windows") {
+            const icoPath = join(Deno.cwd(), "assets", "icon.ico");
+            WindowManager.removeWindowChrome(flashProcess.pid, gameWindowWidth, gameWindowHeight, "RAFlash", 50, 10);
+            WindowManager.setProcessIcon(flashProcess.pid, icoPath);
+        }
+
+        // Start Rich Presence timeout checker
+        richPresenceCheckInterval = setInterval(() => {
+            if (lastRichPresenceTime > 0 && Date.now() - lastRichPresenceTime >= 4000) {
+                updateFlashPlayerTitle("");
+            }
+        }, 1000);
+
+        // Wait for Flash Player to close
+        await flashProcess.status;
+
+        // Cleanup between games
+        if (richPresenceCheckInterval) {
+            clearInterval(richPresenceCheckInterval);
+            richPresenceCheckInterval = null;
+        }
+        stopSitelockProxy();
+
+        // Close all devtools WebSocket connections and windows
+        for (const ws of devtoolsClients) {
+            try { ws.close(); } catch { /* already closed */ }
+        }
+        devtoolsClients.clear();
+        await HTMLWindow.shutdown();
+
+        // Reset state for next game
+        resetGameState();
+    }
 }
 
 main();
