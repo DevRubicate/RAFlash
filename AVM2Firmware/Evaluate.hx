@@ -158,6 +158,13 @@ class Evaluate {
                     var bi:Int = isTruthy(bv) ? 1 : 0;
                     return (ai ^ bi) != 0 ? 1 : 0;
                 }));
+            } else if (token == "NOT") {
+                var a = stack.pop();
+                var notResult:Array<Dynamic> = [];
+                for (v in a) {
+                    notResult.push(isTruthy(v) ? 0 : 1);
+                }
+                stack.push(notResult);
             } else if (token == "READ_GLOBAL") {
                 var identifiers = stack.pop();
                 if (identifiers.length == 1) {

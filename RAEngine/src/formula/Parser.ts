@@ -97,6 +97,11 @@ const OperatorDetails: Partial<
         associativity: 'LEFT',
         precedence: 0,
     },
+    [NODE_TYPE.NOT]: {
+        type: 'UNARY',
+        associativity: 'RIGHT',
+        precedence: 3,
+    },
 };
 
 class Parser {
@@ -217,7 +222,6 @@ class Parser {
                                 qnode.type === NODE_TYPE.NULL ||
                                 qnode.type === NODE_TYPE.READ_GLOBAL ||
                                 qnode.type === NODE_TYPE.REMEMBERED ||
-                                qnode.type === NODE_TYPE.CALL ||
                                 qnode.type === NODE_TYPE.TERNARY) {
                                 elseStack.push(qnode);
                             } else if (opDetails && opDetails.type === 'BINARY') {
@@ -276,8 +280,6 @@ class Parser {
                             } else if (node.type === NODE_TYPE.NULL) {
                                 evaluationStack.push(node);
                             } else if (node.type === NODE_TYPE.READ_GLOBAL) {
-                                evaluationStack.push(node);
-                            } else if (node.type === NODE_TYPE.CALL) {
                                 evaluationStack.push(node);
                             } else if (node.type === NODE_TYPE.TERNARY) {
                                 evaluationStack.push(node);
@@ -432,26 +434,10 @@ class Parser {
                             break;
                         }
                         case TokenType.IDENTIFIER: {
-                            if (
-                                this.peakToken(1).type ===
-                                    TokenType.LPAREN
-                            ) {
-                                this.replaceCurrentNode(
-                                    new Node(NODE_TYPE.CALL)
-                                        .addConsume(
-                                            CONSUME.END_PARENTHESIS,
-                                            CONSUME.EXPRESSION_LIST,
-                                            CONSUME.START_PARENTHESIS,
-                                            CONSUME.IDENTIFIER,
-                                        ),
+                            this.currentNode
+                                .addConsume(
+                                    CONSUME.EXPRESSION,
                                 );
-                            } else {
-                                // This is a standalone identifier, so treat it like a return expression
-                                this.currentNode
-                                    .addConsume(
-                                        CONSUME.EXPRESSION,
-                                    );
-                            }
                             break;
                         }
                         default: {
@@ -690,53 +676,20 @@ class Parser {
                 case CONSUME.EXPRESSION: {
                     switch (this.peakToken().type) {
                         case TokenType.IDENTIFIER: {
-                            if (
-                                this.peakToken(1).type ===
-                                    TokenType.LPAREN
-                            ) {
-                                // Once we are done with this function call, we should continue parsing the expression
-                                // by looking for an operator (or end of expression)
-                                this.currentNode.addConsume(
-                                    CONSUME.EXPRESSION_OPERATOR,
-                                );
-
-                                // Create the call node
-                                const callNode = new Node(NODE_TYPE.CALL)
-                                    .addConsume(
-                                        CONSUME.END_PARENTHESIS,
-                                        CONSUME.EXPRESSION_LIST,
-                                        CONSUME.START_PARENTHESIS,
-                                        CONSUME.IDENTIFIER,
-                                    );
-
-                                // Add the call node to the expression queue so that when we are done parsing the call node
-                                // it's ready in the queue to be used as part of the expression.
-                                this.currentNode.addQueue(callNode);
-
-                                // Add the current node as the parent of the call node so that once we are done parsing
-                                // the call node we go back to parsing this expression
-                                callNode.parent = this.currentNode;
-
-                                // Change the currentNode to the call node so we can begin consuming everything it needs.
-                                // Note that we have not added the call node to the children of the current node, because
-                                // it is not supposed to be there. Instead it is treated as part of the expression.
-                                this.currentNode = callNode;
-                            } else {
-                                this.currentNode.addQueue(
-                                    new Node(NODE_TYPE.READ_GLOBAL)
-                                        .addChild(
-                                            new Node(
-                                                NODE_TYPE.IDENTIFIER,
-                                                this.peakToken().value,
-                                            ),
+                            this.currentNode.addQueue(
+                                new Node(NODE_TYPE.READ_GLOBAL)
+                                    .addChild(
+                                        new Node(
+                                            NODE_TYPE.IDENTIFIER,
+                                            this.peakToken().value,
                                         ),
-                                );
-                                // Move past the token
-                                this.advanceToken();
-                                this.currentNode.addConsume(
-                                    CONSUME.EXPRESSION_OPERATOR,
-                                );
-                            }
+                                    ),
+                            );
+                            // Move past the token
+                            this.advanceToken();
+                            this.currentNode.addConsume(
+                                CONSUME.EXPRESSION_OPERATOR,
+                            );
                             break;
                         }
                         case TokenType.NUMBER: {
@@ -790,6 +743,14 @@ class Parser {
                             this.currentNode.addConsume(
                                 CONSUME.EXPRESSION_OPERATOR,
                             );
+                            break;
+                        }
+                        case TokenType.NOT: {
+                            this.currentNode.addStack(
+                                new Node(NODE_TYPE.NOT),
+                            );
+                            this.advanceToken();
+                            this.currentNode.addConsume(CONSUME.EXPRESSION);
                             break;
                         }
                         case TokenType.LBRACE: {
@@ -1144,7 +1105,6 @@ class Parser {
                                         qnode.type === NODE_TYPE.NULL ||
                                         qnode.type === NODE_TYPE.READ_GLOBAL ||
                                         qnode.type === NODE_TYPE.REMEMBERED ||
-                                        qnode.type === NODE_TYPE.CALL ||
                                         qnode.type === NODE_TYPE.TERNARY) {
                                         evalStack.push(qnode);
                                     } else if (opDetails && opDetails.type === 'BINARY') {
@@ -1198,7 +1158,6 @@ class Parser {
                                         qnode.type === NODE_TYPE.NULL ||
                                         qnode.type === NODE_TYPE.READ_GLOBAL ||
                                         qnode.type === NODE_TYPE.REMEMBERED ||
-                                        qnode.type === NODE_TYPE.CALL ||
                                         qnode.type === NODE_TYPE.TERNARY) {
                                         thenStack.push(qnode);
                                     } else if (opDetails && opDetails.type === 'BINARY') {
@@ -1259,7 +1218,6 @@ class Parser {
                                     qnode.type === NODE_TYPE.NULL ||
                                     qnode.type === NODE_TYPE.READ_GLOBAL ||
                                     qnode.type === NODE_TYPE.REMEMBERED ||
-                                    qnode.type === NODE_TYPE.CALL ||
                                     qnode.type === NODE_TYPE.TERNARY) {
                                     conditionStack.push(qnode);
                                 } else if (opDetails && opDetails.type === 'BINARY') {

@@ -264,14 +264,15 @@ stage.player.x + 100        // scalar + scalar</pre>
                     <tbody>
                         <tr><td>Arithmetic</td><td><code>+</code> <code>-</code> <code>*</code> <code>/</code> <code>%</code> <code>**</code></td></tr>
                         <tr><td>Comparison</td><td><code>==</code> <code>!=</code> <code>&gt;</code> <code>&lt;</code> <code>&gt;=</code> <code>&lt;=</code></td></tr>
-                        <tr><td>Boolean</td><td><code>&amp;&amp;</code> <code>||</code> <code>^</code></td></tr>
+                        <tr><td>Boolean</td><td><code>&amp;&amp;</code> <code>||</code> <code>^</code> <code>!</code></td></tr>
                         <tr><td>Ternary</td><td><code>condition ? then : else</code></td></tr>
                     </tbody>
                 </table>
 
-                <h2>Comments</h2>
-                <pre>// single line
-/* multi-line (nestable) */</pre>
+                <h2>Negation</h2>
+                <p>The <code>!</code> operator negates a boolean value. It broadcasts over arrays:</p>
+                <pre>!stage.player.dead           // true when player is alive
+!(stage.player.health == 0)  // same thing with grouped expression</pre>
             </section>
 
             <section id="ref-globals">

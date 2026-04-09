@@ -19,7 +19,6 @@ enum NODE_TYPE {
     STRING = 'STRING',
     NULL = 'NULL',
     VOID = 'VOID',
-    CALL = 'CALL',
 
     // Variables
     READ_GLOBAL = 'READ_GLOBAL',
@@ -36,6 +35,7 @@ enum NODE_TYPE {
     AND = 'AND',
     OR = 'OR',
     XOR = 'XOR',
+    NOT = 'NOT',
 
     // Meta
     LIST = 'LIST',

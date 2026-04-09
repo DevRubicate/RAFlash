@@ -5,7 +5,7 @@ import { NODE_TYPE }    from './NODE_TYPE.ts';
 import { AdditionUnit }                 from './unit/AdditionUnit.ts';
 import { ArrayAccessUnit }              from './unit/ArrayAccessUnit.ts';
 import { ArrayUnit }                    from './unit/ArrayUnit.ts';
-import { CallUnit }                     from './unit/CallUnit.ts';
+import { NotUnit }                      from './unit/NotUnit.ts';
 import { DivisionUnit }                 from './unit/DivisionUnit.ts';
 import { ExecutableBlockUnit }          from './unit/ExecutableBlockUnit.ts';
 import { ExponentUnit }                 from './unit/ExponentUnit.ts';
@@ -100,8 +100,11 @@ export class Builder {
                 }
                 return element;
             }
-            case NODE_TYPE.CALL: {
-                const element = new CallUnit(null);
+            case NODE_TYPE.NOT: {
+                const element = new NotUnit(null);
+                for (const child of node.children) {
+                    element.children.push(Builder.convert(child));
+                }
                 return element;
             }
             case NODE_TYPE.EXECUTABLE_BLOCK: {

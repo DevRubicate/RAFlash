@@ -1266,6 +1266,15 @@ class Main {
                     }
                     break;
                 }
+                case "NOT": {
+                    var a = stack.pop();
+                    var result = [];
+                    for (var j = 0; j < a.length; ++j) {
+                        result.push(a[j] ? 0 : 1);
+                    }
+                    stack.push(result);
+                    break;
+                }
                 case "READ_GLOBAL": {
                     var identifiers = stack.pop();
                     if (identifiers.length == 1) {

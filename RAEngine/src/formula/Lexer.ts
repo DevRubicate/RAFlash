@@ -28,6 +28,7 @@ enum TokenType {
     OR = 'OR',
     XOR = 'XOR',
     QUESTION = 'QUESTION',
+    NOT = 'NOT',
     COLON = 'COLON',
     EOF = 'EOF',
 }
@@ -36,9 +37,7 @@ enum TokenType {
 type LexerState =
     | 'DEFAULT'
     | 'STRING'
-    | 'NUMBER'
-    | 'SINGLE_LINE_COMMENT'
-    | 'MULTILINE_COMMENT';
+    | 'NUMBER';
 
 // Define the structure of a token
 class Token {
@@ -68,8 +67,6 @@ class Lexer {
     private tokens: Array<Token>;
     private state: LexerState;
     private stringDelimiter: string | null;
-    private commentDepth: number; // To track the nesting level of multi-line comments
-
     private optionPositionData: boolean;
 
     public log: Array<string> = [];
@@ -86,7 +83,6 @@ class Lexer {
         this.tokens = [];
         this.state = 'DEFAULT'; // FSM will switch between states
         this.stringDelimiter = null; // Tracks whether we are in a " or ' string
-        this.commentDepth = 0; // Track recursive multi-line comments
 
         this.optionPositionData = options.positionData;
         if (this.optionPositionData) {
@@ -126,23 +122,12 @@ class Lexer {
                     case 'NUMBER':
                         this.handleNumberState(char);
                         break;
-                    case 'SINGLE_LINE_COMMENT':
-                        this.handleSingleLineCommentState();
-                        break;
-                    case 'MULTILINE_COMMENT':
-                        this.handleMultiLineCommentState();
-                        break;
                     default:
                         throw new Error(`Unknown lexer state: ${this.state}`);
                 }
             }
 
-            // After processing all input, check for unfinished multi-line comments or strings
-            if (this.state === 'MULTILINE_COMMENT' && this.commentDepth > 0) {
-                throw new Error(
-                    `Unclosed multi-line comment at row ${this.row}, column ${this.column}`,
-                );
-            }
+            // After processing all input, check for unfinished strings
             if (this.state === 'STRING') {
                 throw new Error(
                     `Unclosed string at row ${this.row}, column ${this.column}`,
@@ -176,12 +161,6 @@ class Lexer {
         } else if (char === '"' || char === "'") {
             this.state = 'STRING';
             this.stringDelimiter = char; // Store whether it's " or '
-        } else if (char === '/' && this.peekChar() === '/') {
-            this.state = 'SINGLE_LINE_COMMENT';
-        } else if (char === '/' && this.peekChar() === '*') {
-            this.state = 'MULTILINE_COMMENT';
-            this.commentDepth = 1; // Initialize the comment nesting level
-            this.advancePosition(); // Move past the initial /*
         } else {
             this.handleSymbol(char); // Handle operators and punctuation
         }
@@ -310,49 +289,6 @@ class Lexer {
         this.state = 'DEFAULT'; // Return to default state
     }
 
-    // Handle single-line comments
-    private handleSingleLineCommentState(): void {
-        while (
-            this.input[this.position] !== '\n' &&
-            this.input[this.position] !== null
-        ) {
-            this.advancePosition();
-        }
-        this.state = 'DEFAULT'; // Return to default state after comment
-    }
-
-    // Handle multi-line comments, including recursive nested comments
-    private handleMultiLineCommentState(): void {
-        // Skip the opening /* characters (we already confirmed these)
-        this.advancePosition(); // Move past both the '/' and '*'
-        this.advancePosition();
-
-        while (this.position < this.input.length) {
-            const char = this.input[this.position];
-
-            if (char === '/' && this.peekChar() === '*') {
-                this.commentDepth++; // Nested multi-line comment found
-                this.advancePosition();
-            } else if (char === '*' && this.peekChar() === '/') {
-                this.commentDepth--; // Closing a multi-line comment
-                this.advancePosition(); // Move past the '*'
-                if (this.commentDepth === 0) {
-                    this.advancePosition(); // Move past the '/' to fully exit the comment
-                    this.state = 'DEFAULT'; // Exit comment if depth is 0
-                    break;
-                }
-            }
-
-            this.advancePosition();
-        }
-
-        if (this.position >= this.input.length && this.commentDepth > 0) {
-            throw new Error(
-                `Unclosed multi-line comment at row ${this.row}, column ${this.column}`,
-            );
-        }
-    }
-
     // Handle symbols (operators, punctuation)
     private handleSymbol(char: string): void {
         const tokenRow = this.row; // Capture the current row for the token
@@ -380,10 +316,8 @@ class Lexer {
                     );
                     this.advancePosition();
                 } else {
-                    throw new LexerError(
-                        `Unrecognized symbol: "!"`,
-                        tokenRow,
-                        tokenColumn,
+                    this.tokens.push(
+                        new Token(TokenType.NOT, null, tokenRow, tokenColumn),
                     );
                 }
                 break;
@@ -588,7 +522,7 @@ class Lexer {
 
     // Check if the value is a keyword
     private isKeyword(value: string): boolean {
-        const keywords = ['if', 'else', 'function', 'return', 'var', 'import'];
+        const keywords = ['if', 'else'];
         return keywords.includes(value);
     }
 
