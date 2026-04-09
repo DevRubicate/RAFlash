@@ -30,6 +30,8 @@ export interface Group {
     [key: string]: unknown;
 }
 
+export type AssetState = 'ACTIVE' | 'INACTIVE' | 'TRIGGERED';
+
 export interface Asset {
     id: number;
     type: string;
@@ -44,7 +46,7 @@ export interface Asset {
     badgeImage?: string;
     groups: Group[];
     // Runtime state
-    state?: string;
+    state?: AssetState;
     _saved?: boolean;
     _modified?: boolean;
     _originalSnapshot?: Record<string, unknown>;

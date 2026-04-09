@@ -5,7 +5,7 @@ export class StringUnit extends Unit {
     generateMnemonic(generator: MnemonicGenerator):Array<string> {
         return [
             'STRING',
-            this.value,
+            String(this.value),
         ];
     }
 }

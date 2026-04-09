@@ -6,10 +6,10 @@ class Node {
     parent: Node | null = null;
     children: Array<Node> = [];
     consumes: Array<CONSUME> = [];
-    value: any;
+    value: string | number | null;
     queue: Array<Node> = [];
     stack: Array<Node> = [];
-    constructor(type: NODE_TYPE, value: any = null) {
+    constructor(type: NODE_TYPE, value: string | number | null = null) {
         this.type = type;
         this.value = value;
     }

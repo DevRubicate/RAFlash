@@ -5,7 +5,7 @@ export class IdentifierUnit extends Unit {
     generateMnemonic(generator: MnemonicGenerator):Array<string> {
         return [
             'IDENTIFIER',
-            this.value,
+            String(this.value),
         ];
     }
 }

@@ -1,10 +1,10 @@
 import { MnemonicGenerator } from './MnemonicGenerator.ts';
 
 export abstract class Unit {
-    value: any;
+    value: string | number | null;
     parent: Unit | null = null;
     children: Array<Unit> = [];
-    constructor(value:any) {
+    constructor(value: string | number | null) {
         this.value = value;
     }
     addChildren(...args: Array<Unit>) {
