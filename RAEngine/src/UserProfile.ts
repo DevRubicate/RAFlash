@@ -25,9 +25,9 @@ export class UserProfile {
             }
         } catch { /* empty */ }
 
-        if (names.length === 0) {
+        if (!names.includes("Guest")) {
             await this.createUser("Guest");
-            return ["Guest"];
+            names.push("Guest");
         }
 
         return names.sort();
@@ -42,6 +42,13 @@ export class UserProfile {
         this.data = JSON.parse(content) as UserProfileData;
         this.currentName = name;
         this.dirty = false;
+
+        // Guest profile resets each session — clear all game data on load
+        if (name === "Guest") {
+            this.data.games = {};
+            this.dirty = true;
+            await this.saveUser();
+        }
     }
 
     /**
