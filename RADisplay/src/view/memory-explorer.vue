@@ -1,6 +1,11 @@
 <template>
     <div class="container" v-if="App.ready">
         
+        <div class="history-bar">
+            <button class="history-btn" :disabled="historyIndex <= 0" @click="historyBack()">&lt;</button>
+            <button class="history-btn" :disabled="historyIndex >= history.length - 1" @click="historyForward()">&gt;</button>
+        </div>
+
         <div class="input-wrapper">
             <textarea
                 id="memory-input-field"
@@ -113,6 +118,36 @@
 <style>
     .container {
         padding: 0.75rem;
+    }
+
+    /* === History Navigation === */
+    .history-bar {
+        display: flex;
+        gap: 2px;
+        margin-bottom: 0.375rem;
+    }
+
+    .history-btn {
+        background-color: var(--c-surface);
+        color: var(--c-text-secondary);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-sm);
+        padding: 0.125rem 0.5rem;
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all var(--duration) var(--ease);
+    }
+
+    .history-btn:hover:not(:disabled) {
+        background-color: var(--c-surface-alt);
+        border-color: #d4d4d0;
+    }
+
+    .history-btn:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
     }
 
     /* === Input Area === */
@@ -324,6 +359,69 @@
     const leavesResults = ref([]);
     const dropdownOpen = ref(false);
 
+    // History stack for undo/redo navigation
+    const history = ref([]);
+    const historyIndex = ref(-1);
+    let restoringHistory = false;
+
+    const pushHistory = () => {
+        // Skip if current state is identical to the latest history entry
+        if (historyIndex.value >= 0) {
+            const last = history.value[historyIndex.value];
+            if (last.input === memoryInput.value &&
+                last.isCompareMode === isCompareMode.value &&
+                last.isRemainsMode === isRemainsMode.value &&
+                last.isLeavesMode === isLeavesMode.value &&
+                JSON.stringify(last.result) === JSON.stringify(memoryResult.value)) {
+                return;
+            }
+        }
+
+        // Truncate any forward history
+        history.value = history.value.slice(0, historyIndex.value + 1);
+        history.value.push({
+            input: memoryInput.value,
+            result: JSON.parse(JSON.stringify(memoryResult.value)),
+            previousResults: previousResults.value ? JSON.parse(JSON.stringify(previousResults.value)) : null,
+            isCompareMode: isCompareMode.value,
+            compareResults: JSON.parse(JSON.stringify(compareResults.value)),
+            isRemainsMode: isRemainsMode.value,
+            remainsResults: JSON.parse(JSON.stringify(remainsResults.value)),
+            isLeavesMode: isLeavesMode.value,
+            leavesResults: JSON.parse(JSON.stringify(leavesResults.value)),
+            filterText: filterText.value,
+        });
+        historyIndex.value = history.value.length - 1;
+    };
+
+    const restoreHistory = (entry) => {
+        restoringHistory = true;
+        memoryInput.value = entry.input;
+        memoryResult.value = entry.result;
+        previousResults.value = entry.previousResults;
+        isCompareMode.value = entry.isCompareMode;
+        compareResults.value = entry.compareResults;
+        isRemainsMode.value = entry.isRemainsMode;
+        remainsResults.value = entry.remainsResults;
+        isLeavesMode.value = entry.isLeavesMode;
+        leavesResults.value = entry.leavesResults;
+        filterText.value = entry.filterText;
+        memoryResultValid.value = true;
+        restoringHistory = false;
+    };
+
+    const historyBack = () => {
+        if (historyIndex.value <= 0) return;
+        historyIndex.value--;
+        restoreHistory(history.value[historyIndex.value]);
+    };
+
+    const historyForward = () => {
+        if (historyIndex.value >= history.value.length - 1) return;
+        historyIndex.value++;
+        restoreHistory(history.value[historyIndex.value]);
+    };
+
     const filteredResults = computed(() => {
         if (!filterText.value) return memoryResult.value;
         const needle = filterText.value.toLowerCase();
@@ -444,6 +542,7 @@
             memoryResult.value = results;
             previousResults.value = results;
             memoryResultValid.value = true;
+            pushHistory();
         }
     };
 
@@ -456,6 +555,7 @@
             memoryResult.value = results;
             isCompareMode.value = true;
             memoryResultValid.value = true;
+            pushHistory();
         }
     };
 
@@ -493,6 +593,7 @@
             isRemainsMode.value = true;
             isCompareMode.value = false;
             memoryResultValid.value = true;
+            pushHistory();
         }
     };
 
@@ -524,6 +625,7 @@
             isCompareMode.value = false;
             isRemainsMode.value = false;
             memoryResultValid.value = true;
+            pushHistory();
         }
     };
 
