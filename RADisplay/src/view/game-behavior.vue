@@ -20,7 +20,7 @@
 
                     <div class="form-group">
                         <label for="origin-url">Origin URL</label>
-                        <input type="text" id="origin-url" class="mono-input" v-model="originUrl" placeholder="http://www.coolmathgames.com/game.swf">
+                        <input type="text" id="origin-url" class="mono-input" v-model="originUrl" placeholder="http://www.coolmathgames.com">
                     </div>
                 </div>
             </div>

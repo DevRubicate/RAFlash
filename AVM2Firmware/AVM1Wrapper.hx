@@ -39,6 +39,6 @@ class AVM1Wrapper extends Sprite {
         // Load the real AVM1 firmware
         var loader = new Loader();
         addChild(loader);
-        loader.load(new URLRequest("http://raflash.local/avm1-firmware.swf"));
+        loader.load(new URLRequest("avm1-firmware.swf"));
     }
 }

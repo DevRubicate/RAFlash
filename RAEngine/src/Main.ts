@@ -103,10 +103,6 @@ const FLASH_PORT = 18081;
 const PROXY_PORT = 18082;
 const RAFLASH_DOMAIN = "raflash.local"; // Fake domain for proxy routing (127.0.0.1 bypasses WinInet proxy)
 
-// Sitelock bypass: set to a full URL to spoof the game's origin domain
-// e.g. "http://www.coolmathgames.com/games/0-game.swf"
-// Set to null for no domain spoofing (game loads from raflash.local)
-const SITELOCK_URL: string | null = null;
 
 // AVM mode configuration - set after game SWF is selected and version detected
 interface AVMConfig {
@@ -878,7 +874,9 @@ async function handleApiRequest(
         }
         case "initializeData": {
             // Send current app data to firmware
-            const response = await sendToFirmware("setup", { data: AppData.data, gameUrl: SITELOCK_URL });
+            const originUrl = AppData.data.gameConfig.originUrl;
+            const gameUrl = originUrl ? originUrl + "/game.swf" : null;
+            const response = await sendToFirmware("setup", { data: AppData.data, gameUrl });
             return response;
         }
         case "getData": {
@@ -1339,7 +1337,9 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
         firmwareConnected = true;
         emitLog("engine", "info", "Firmware connected");
         // Send app data to firmware (don't await - would deadlock before read loop starts)
-        sendToFirmware("setup", { data: AppData.data, gameUrl: SITELOCK_URL }).catch(() => {});
+        const originUrl = AppData.data.gameConfig.originUrl;
+        const gameUrl = originUrl ? originUrl + "/game.swf" : null;
+        sendToFirmware("setup", { data: AppData.data, gameUrl }).catch(() => {});
 
         // Process initial data
         if (httpBuffer.trim()) {
@@ -1518,7 +1518,9 @@ function handleFirmwareData(data: string): void {
 function launchFlashPlayer(): Deno.ChildProcess {
     const fpPath = `${Deno.cwd()}/vendor/adobe/fp-32.0.0.380.exe`;
     // Note: cwd is .build/ during development (make run) and the exe's directory when distributed
-    const firmwareUrl = `http://${RAFLASH_DOMAIN}${avmConfig.firmwareUrl}`;
+    const originUrl = AppData.data.gameConfig.originUrl;
+    const domain = originUrl ? new URL(originUrl).host : RAFLASH_DOMAIN;
+    const firmwareUrl = `http://${domain}${avmConfig.firmwareUrl}`;
 
     const command = new Deno.Command(fpPath, {
         args: [firmwareUrl],
@@ -1622,12 +1624,12 @@ async function main(): Promise<void> {
         // Start sitelock proxy
         await Deno.writeTextFile(join(Deno.cwd(), "proxy.txt"), "1");
         await Deno.writeTextFile(join(Deno.cwd(), "port.txt"), String(PROXY_PORT));
-        const sitelockDomain = SITELOCK_URL ? new URL(SITELOCK_URL).hostname : null;
+        const sitelockOrigin = AppData.data.gameConfig.originUrl;
+        const sitelockDomain = sitelockOrigin ? new URL(sitelockOrigin).hostname : null;
         startSitelockProxy({
             port: PROXY_PORT,
             flashPort: FLASH_PORT,
             gameDomain: sitelockDomain,
-            gameFilePath: resolvedGamePath,
             onRequest: (method, url, status) => {
                 emitLog("network", "info", `${status} ${method} ${url}`);
             },

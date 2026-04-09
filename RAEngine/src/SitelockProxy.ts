@@ -17,8 +17,6 @@ interface ProxyConfig {
     flashPort: number;
     /** The domain the game expects to be loaded from, or null for transparent forwarding */
     gameDomain: string | null;
-    /** Local path to the game SWF file */
-    gameFilePath: string;
     /** Optional callback for logging proxy requests */
     onRequest?: (method: string, url: string, status: number) => void;
 }
@@ -103,24 +101,22 @@ async function handleConnection(conn: Deno.TcpConn) {
         const method = match[1];
         const log = config.onRequest;
 
-        // Check if this is a request for the game domain (sitelock bypass)
+        // Game domain → forward to the flash server (same-origin with firmware for sandbox compat)
         if (config.gameDomain && (targetUrl.hostname === config.gameDomain || targetUrl.hostname === `www.${config.gameDomain}`)) {
-            // Serve the local game SWF
             try {
-                const swfData = await Deno.readFile(config.gameFilePath);
+                const localUrl = new URL(targetUrl.href);
+                localUrl.hostname = '127.0.0.1';
+                localUrl.port = String(config.flashPort);
+                const response = await forwardRequest(localUrl, requestLine, rawHeaders);
                 const writer = conn.writable.getWriter();
-                await writer.write(httpResponse(200, 'OK', {
-                    'Content-Type': 'application/x-shockwave-flash',
-                    'Content-Length': String(swfData.length),
-                    'Connection': 'close',
-                }, swfData));
+                await writer.write(response);
                 writer.releaseLock();
                 log?.(method, match[2], 200);
             } catch {
                 const writer = conn.writable.getWriter();
-                await writer.write(httpResponse(404, 'Not Found', { 'Connection': 'close' }));
+                await writer.write(httpResponse(502, 'Bad Gateway', { 'Connection': 'close' }));
                 writer.releaseLock();
-                log?.(method, match[2], 404);
+                log?.(method, match[2], 502);
             }
             conn.close();
             return;
