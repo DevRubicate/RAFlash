@@ -30,6 +30,15 @@ import jpeg from "npm:jpeg-js";
 import * as pako from "npm:pako";
 import { startSitelockProxy, stopSitelockProxy } from "./SitelockProxy.ts";
 
+// Compile a formula and emit an error log if compilation fails
+function compileFormula(input: string): unknown[] {
+    const compiled = Formula.compile(input);
+    if (compiled.length === 3 && compiled[2] === 'ERROR') {
+        emitLog("engine", "error", `Formula compilation failed: ${input}`);
+    }
+    return compiled;
+}
+
 // Helper to compile a requirement field based on its type
 function compileRequirementField(req: Requirement, field: 'A' | 'B'): unknown[] {
     const address = (field === 'A' ? req.addressA : req.addressB) || '';
@@ -39,7 +48,7 @@ function compileRequirementField(req: Requirement, field: 'A' | 'B'): unknown[] 
     // - String literals like '"hello"' → compiles to STRING bytecode
     // - Formula expressions like "stage.player.health" → compiles to formula bytecode
     // Use '0' for empty to avoid unbalanced formula
-    return Formula.compile(address || '0');
+    return compileFormula(address || '0');
 }
 
 // Register watchers to compile formulas when addressA/addressB or typeA/typeB change
@@ -83,7 +92,7 @@ JSONDiff.watch(
         if (asset && typeof asset === 'object' && !Array.isArray(asset)) {
             const rec = asset as Record<string, unknown>;
             if (rec.type === 'RICH_PRESENCE') {
-                rec.compiledFormula = Formula.compile(String(rec.formula ?? '""'));
+                rec.compiledFormula = compileFormula(String(rec.formula ?? '""'));
             }
         }
     }
@@ -543,6 +552,13 @@ function broadcastToDevtools(type: string, data: Record<string, unknown> | Diff,
 }
 
 /**
+ * Broadcast a log event to any open Event Log windows
+ */
+function emitLog(source: string, level: string, message: string): void {
+    broadcastToDevtools("logEvent", { source, level, message, timestamp: Date.now() });
+}
+
+/**
  * Open the devtools menu window
  */
 async function openDevtoolsMenu(): Promise<void> {
@@ -742,6 +758,7 @@ async function handleApiRequest(
             const path = String(input.params.path);
             const user = String(input.params.user || "");
             selectedGamePath = path;
+            emitLog("engine", "info", `Game selected: ${path}`);
             if (fileSelectedResolver) {
                 fileSelectedResolver({ gamePath: path, user });
             }
@@ -760,7 +777,7 @@ async function handleApiRequest(
         // Devtools commands - forward to firmware
         case "evaluate": {
             // Compile the input string to bytecode
-            const compiled = Formula.compile(String(input.params.input || ""));
+            const compiled = compileFormula(String(input.params.input || ""));
             const response = await sendToFirmware("evaluate", { formula: compiled });
             // Wrap firmware response in params to match frontend expectations
             return { success: response.success, params: response };
@@ -768,7 +785,7 @@ async function handleApiRequest(
         case "evaluateMultiple": {
             // Compile all input strings to bytecode
             const inputs = (input.params.inputs || []) as string[];
-            const compiled = inputs.map(inp => Formula.compile(inp || ""));
+            const compiled = inputs.map(inp => compileFormula(inp || ""));
             const response = await sendToFirmware("evaluateMultiple", { formulas: compiled });
             return { success: response.success, params: response };
         }
@@ -780,7 +797,7 @@ async function handleApiRequest(
         }
         case "searchTargetForValue": {
             const pathString = String(input.params.path || "");
-            const compiledPath = pathString ? Formula.compile(pathString) : null;
+            const compiledPath = pathString ? compileFormula(pathString) : null;
             const response = await sendToFirmware("searchTargetForValue", {
                 value: input.params.value,
                 pathFormula: compiledPath,
@@ -1002,7 +1019,7 @@ async function handleApiRequest(
         case "startWatch": {
             const watcherId = String(input.params.watcherId);
             const formula = String(input.params.formula || "");
-            const compiled = Formula.compile(formula);
+            const compiled = compileFormula(formula);
 
             // Track which socket started this watcher
             watcherSockets.set(watcherId, senderSocket);
@@ -1307,6 +1324,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
         isXMLSocket = true;
         firmwareWriter = writer;
         firmwareConnected = true;
+        emitLog("engine", "info", "Firmware connected");
         // Send app data to firmware (don't await - would deadlock before read loop starts)
         sendToFirmware("setup", { data: AppData.data, gameUrl: SITELOCK_URL }).catch(() => {});
 
@@ -1328,6 +1346,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
         }
     } finally {
         if (isXMLSocket) {
+            emitLog("engine", "warn", "Firmware disconnected");
             firmwareConnected = false;
             firmwareWriter = null;
         }
@@ -1364,8 +1383,10 @@ function handleFirmwareData(data: string): void {
             // Handle unsolicited messages from firmware
             if (parsed.type === "log") {
                 // Firmware log message
-                console.log(`[FIRMWARE] ${parsed.data?.message || JSON.stringify(parsed.data)}`)
+                const fwMsg = parsed.data?.message || JSON.stringify(parsed.data);
+                emitLog("firmware", "info", fwMsg);
             } else if (parsed.type === "gameLoaded") {
+                emitLog("engine", "info", "Game loaded");
                 // Show welcome toast with game info
                 const gameTitle = AppData.data.gameConfig?.title || "Game Loaded";
                 const assetCount = AppData.data.assets.length;
@@ -1403,6 +1424,7 @@ function handleFirmwareData(data: string): void {
                                 const index = parseInt(match[1]);
                                 const asset = AppData.data.assets[index];
                                 if (asset) {
+                                    emitLog("achievement", "info", `Achievement unlocked: ${asset.name || "Unnamed"} (ID: ${asset.id})`);
                                     UserProfile.recordUnlock(AppData.gameHash, asset.id);
                                 }
                             }
@@ -1431,7 +1453,7 @@ function handleFirmwareData(data: string): void {
                         broadcastToDevtools("editData", diff);
                         AppData.saveData();
                     }
-                    console.log("[FIRMWARE] State synced after reconnect");
+                    emitLog("firmware", "info", "State synced after reconnect");
                 }
             } else if (parsed.type === "watchResults") {
                 // Forward watch results to the socket that started the watcher
