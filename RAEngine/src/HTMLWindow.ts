@@ -9,14 +9,18 @@ export class HTMLWindow {
     process: Deno.ChildProcess;
     tempDir: string;
     chromeUserDataDir: string;
+    windowId: number;
     isClosed: boolean;
+    persistent: boolean;
 
     // The constructor is private and is only called by the async `create` method.
     private constructor(process: Deno.ChildProcess, tempDir: string, chromeUserDataDir: string, windowId: number) {
         this.process = process;
         this.tempDir = tempDir;
         this.chromeUserDataDir = chromeUserDataDir;
+        this.windowId = windowId;
         this.isClosed = false;
+        this.persistent = false;
         
         // Asynchronously update the state when the user closes the window.
         this.process.status.then(() => {
@@ -158,36 +162,48 @@ export class HTMLWindow {
      * Shuts down all open Chrome windows managed by this class,
      * cleans up temporary files, and resets the state.
      */
-    static async shutdown() {
-        const closingPromises: Promise<void>[] = [];
-
-        for (let i = 0; i < HTMLWindow.instances.length; i++) {
-            const instance = HTMLWindow.instances[i];
-            const closeAndCleanup = async () => {
-                // First, check if the process hasn't already been closed by the user.
-                if (!instance.isClosed) {
-                    try {
-                        instance.process.kill();
-                        await instance.process.status;
-                    } catch {
-                        // Process already gone or error killing - ignore
-                    }
-                }
-
-                // Finally, clean up the temporary directory for the user profile.
-                try {
-                    await Deno.remove(instance.tempDir, { recursive: true });
-                } catch {
-                    // Failed to remove temp dir - ignore
-                }
-            };
-            closingPromises.push(closeAndCleanup());
+    async close() {
+        if (!this.isClosed) {
+            try {
+                this.process.kill();
+                await this.process.status;
+            } catch {
+                // Process already gone
+            }
         }
+        try {
+            await Deno.remove(this.tempDir, { recursive: true });
+        } catch {
+            // Failed to remove temp dir
+        }
+        HTMLWindow.instances = HTMLWindow.instances.filter(w => w !== this);
+    }
 
-        await Promise.all(closingPromises);
+    static async shutdown(force = false) {
+        const toClose = force
+            ? HTMLWindow.instances
+            : HTMLWindow.instances.filter(w => !w.persistent);
+        const toKeep = force
+            ? []
+            : HTMLWindow.instances.filter(w => w.persistent && !w.isClosed);
 
-        // Clear the instances array for a clean state.
-        HTMLWindow.instances = [];
+        await Promise.all(toClose.map(async (instance) => {
+            if (!instance.isClosed) {
+                try {
+                    instance.process.kill();
+                    await instance.process.status;
+                } catch {
+                    // Process already gone or error killing - ignore
+                }
+            }
+            try {
+                await Deno.remove(instance.tempDir, { recursive: true });
+            } catch {
+                // Failed to remove temp dir - ignore
+            }
+        }));
+
+        HTMLWindow.instances = toKeep;
     }
 
     /**

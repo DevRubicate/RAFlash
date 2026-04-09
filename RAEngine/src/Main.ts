@@ -933,6 +933,12 @@ async function handleApiRequest(
             // Extract just the HTML filename from the URL path
             const htmlFile = url.split("/").pop() || url;
             await HTMLWindow.create(htmlFile, width, height, windowId, parentWindowId);
+
+            // Event Log survives between games
+            if (htmlFile === "event-log.html") {
+                const win = HTMLWindow.instances.find(w => w.windowId === windowId);
+                if (win) win.persistent = true;
+            }
             return { success: true };
         }
 
@@ -1053,10 +1059,16 @@ async function showFilePicker(): Promise<{ gamePath: string; user: string } | nu
     const windowId = Math.floor(Math.random() * 0xFFFFFF);
     await HTMLWindow.create("file-picker.html", 800, 500, windowId);
 
-    return Promise.race([
+    const result = await Promise.race([
         new Promise<{ gamePath: string; user: string }>((resolve) => { fileSelectedResolver = resolve; }),
         HTMLWindow.waitForAnyClose().then(() => null)
     ]);
+
+    // Close just the file picker, not other windows (e.g. Event Log)
+    const pickerWindow = HTMLWindow.instances.find(w => w.windowId === windowId);
+    if (pickerWindow) await pickerWindow.close();
+
+    return result;
 }
 
 /**
@@ -1547,7 +1559,7 @@ async function main(): Promise<void> {
         } catch {
             // Already exited
         }
-        await HTMLWindow.shutdown();
+        await HTMLWindow.shutdown(true);
         Deno.exit(0);
     });
 
@@ -1557,14 +1569,11 @@ async function main(): Promise<void> {
 
         // User closed file picker without selecting → exit
         if (!pickerResult) {
-            await HTMLWindow.shutdown();
+            await HTMLWindow.shutdown(true);
             Deno.exit(0);
         }
 
         const { gamePath, user } = pickerResult;
-
-        // Close file picker window
-        await HTMLWindow.shutdown();
 
         // Resolve the game path (handle relative paths)
         let resolvedGamePath = gamePath;
@@ -1618,6 +1627,9 @@ async function main(): Promise<void> {
             flashPort: FLASH_PORT,
             gameDomain: sitelockDomain,
             gameFilePath: resolvedGamePath,
+            onRequest: (method, url, status) => {
+                emitLog("network", "info", `${status} ${method} ${url}`);
+            },
         });
 
         // Switch to game running state

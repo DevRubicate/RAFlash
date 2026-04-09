@@ -19,6 +19,8 @@ interface ProxyConfig {
     gameDomain: string | null;
     /** Local path to the game SWF file */
     gameFilePath: string;
+    /** Optional callback for logging proxy requests */
+    onRequest?: (method: string, url: string, status: number) => void;
 }
 
 let listener: Deno.TcpListener | null = null;
@@ -98,6 +100,9 @@ async function handleConnection(conn: Deno.TcpConn) {
         const targetUrl = new URL(match[2]);
         const rawHeaders = lines.slice(1).join('\r\n');
 
+        const method = match[1];
+        const log = config.onRequest;
+
         // Check if this is a request for the game domain (sitelock bypass)
         if (config.gameDomain && (targetUrl.hostname === config.gameDomain || targetUrl.hostname === `www.${config.gameDomain}`)) {
             // Serve the local game SWF
@@ -110,10 +115,12 @@ async function handleConnection(conn: Deno.TcpConn) {
                     'Connection': 'close',
                 }, swfData));
                 writer.releaseLock();
+                log?.(method, match[2], 200);
             } catch {
                 const writer = conn.writable.getWriter();
                 await writer.write(httpResponse(404, 'Not Found', { 'Connection': 'close' }));
                 writer.releaseLock();
+                log?.(method, match[2], 404);
             }
             conn.close();
             return;
@@ -129,10 +136,12 @@ async function handleConnection(conn: Deno.TcpConn) {
                 const writer = conn.writable.getWriter();
                 await writer.write(response);
                 writer.releaseLock();
+                log?.(method, match[2], 200);
             } catch {
                 const writer = conn.writable.getWriter();
                 await writer.write(httpResponse(502, 'Bad Gateway', { 'Connection': 'close' }));
                 writer.releaseLock();
+                log?.(method, match[2], 502);
             }
             conn.close();
             return;
@@ -144,10 +153,12 @@ async function handleConnection(conn: Deno.TcpConn) {
             const writer = conn.writable.getWriter();
             await writer.write(response);
             writer.releaseLock();
+            log?.(method, match[2], 200);
         } catch {
             const writer = conn.writable.getWriter();
             await writer.write(httpResponse(502, 'Bad Gateway', { 'Connection': 'close' }));
             writer.releaseLock();
+            log?.(method, match[2], 502);
         }
         conn.close();
     } catch {

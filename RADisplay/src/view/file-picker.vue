@@ -37,8 +37,7 @@
                 <div class="file-item"
                      v-for="item in sortedItems"
                      :key="item.name"
-                     :class="{ selected: selectedFile === item.name, directory: item.type === 'directory' }"
-                     @click="handleClick(item)"
+                     :class="{ directory: item.type === 'directory' }"
                      @dblclick="handleDoubleClick(item)">
                     <span class="icon">{{ item.type === 'directory' ? '📁' : '📄' }}</span>
                     <span class="name">{{ item.name }}</span>
@@ -49,14 +48,7 @@
             </div>
 
             <footer class="action-bar">
-                <div class="selected-info">
-                    {{ selectedFile ? selectedFile : 'No file selected' }}
-                </div>
-                <button class="btn btn-primary"
-                        :disabled="!selectedFile || !selectedUser"
-                        @click="confirmSelection">
-                    Open
-                </button>
+                <button class="btn btn-secondary" @click="openEventLog">Event Log</button>
             </footer>
         </div>
     </div>
@@ -187,15 +179,6 @@
         background-color: var(--c-surface-alt);
     }
 
-    .file-item.selected {
-        background-color: var(--c-primary);
-        color: #ffffff;
-    }
-
-    .file-item.selected:hover {
-        background-color: var(--c-primary-hover);
-    }
-
     .file-item .icon {
         font-size: 1.125rem;
         flex-shrink: 0;
@@ -230,24 +213,16 @@
         flex-shrink: 0;
     }
 
-    .selected-info {
-        flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        color: var(--c-text-muted);
-        font-size: 0.8125rem;
-    }
 </style>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { Network } from '../js/network.ts';
+import { App } from '../js/app.ts';
 
 const ready = ref(false);
 const pathSegments = ref([]);
 const items = ref([]);
-const selectedFile = ref(null);
 const users = ref([]);
 const selectedUser = ref(null);
 
@@ -277,7 +252,6 @@ async function loadDirectory(path) {
                 item.type === 'directory' ||
                 item.name.toLowerCase().endsWith('.swf')
             );
-            selectedFile.value = null;
         }
     } catch (err) {
         console.error('Failed to load directory:', err);
@@ -334,31 +308,26 @@ function navigateUp() {
     }
 }
 
-// Handle single click on item
-function handleClick(item) {
-    if (item.type === 'directory') {
-        selectedFile.value = null;
-    } else {
-        selectedFile.value = item.name;
-    }
-}
-
 // Handle double click on item
 function handleDoubleClick(item) {
     if (item.type === 'directory') {
         pathSegments.value.push(item.name);
         loadDirectory(currentPath.value);
     } else {
-        selectedFile.value = item.name;
-        confirmSelection();
+        confirmSelection(item.name);
     }
 }
 
-// Confirm file selection and notify server
-async function confirmSelection() {
-    if (!selectedFile.value || !selectedUser.value) return;
+// Open Event Log window
+async function openEventLog() {
+    await Network.send({ command: 'showPopup', params: { url: 'internals/assets/event-log.html', width: 700, height: 500, params: {}, parentWindowId: App.windowId } });
+}
 
-    const fullPath = currentPath.value + '/' + selectedFile.value;
+// Confirm file selection and notify server
+async function confirmSelection(fileName) {
+    if (!fileName || !selectedUser.value) return;
+
+    const fullPath = currentPath.value + '/' + fileName;
 
     try {
         await Network.send({
@@ -372,6 +341,7 @@ async function confirmSelection() {
 
 // Initialize on mount
 onMounted(async () => {
+    App.windowId = Number(new URL(window.location.href).searchParams.get('windowId'));
     Network.connect();
 
     // Load users and directory info in parallel
