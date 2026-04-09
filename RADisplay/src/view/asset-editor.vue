@@ -490,10 +490,6 @@
             if (selectedAsset.value.groups[index].type === 'CORE') {
                 return;
             }
-            if (selectedAsset.value.groups[index].requirements.length !== 0) {
-                // const confirm = await confirmDialog(...);
-                // if (!confirm) return;
-            }
             selectedAsset.value.groups.splice(index, 1);
             selectedGroupId.value = selectedAsset.value.groups[index]?.id ?? selectedAsset.value.groups[index - 1]?.id;
         }

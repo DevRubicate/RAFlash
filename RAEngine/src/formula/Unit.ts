@@ -1,4 +1,3 @@
-import { BytecodeGenerator } from './BytecodeGenerator.ts';
 import { MnemonicGenerator } from './MnemonicGenerator.ts';
 
 export abstract class Unit {
@@ -15,6 +14,5 @@ export abstract class Unit {
         }
         return this;
     }
-    abstract generateBytecode(generator: BytecodeGenerator):any;
     abstract generateMnemonic(generator: MnemonicGenerator):Array<string>;
 }

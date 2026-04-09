@@ -89,21 +89,6 @@ function createDialog(title: string, message: string, buttons: DialogButton[]): 
     return dialog;
 }
 
-function alertDialog(title: string, message: string): Promise<void> {
-    return new Promise((resolve) => {
-        const dialog = createDialog(title, message, [{
-            label: 'OK',
-            style: {
-                backgroundColor: '#6366f1',
-                color: 'white'
-            },
-            callback: resolve,
-        }, ]);
-
-        dialog.showModal();
-    });
-}
-
 function confirmDialog(title: string, message: string): Promise<boolean> {
     return new Promise((resolve) => {
         const dialog = createDialog(title, message, [{
@@ -130,6 +115,5 @@ function confirmDialog(title: string, message: string): Promise<boolean> {
 }
 
 export {
-    alertDialog,
     confirmDialog
 };

@@ -44,7 +44,6 @@ export class Network {
                             // If client-side watchers generated changes, send them back to the server.
                             // (In practice, watchers are typically only on the server side.)
                             if(!JSONDiff.isPointlessDiff(derivedDiff)) {
-                                console.log('editData sending derivedDiff back to server');
                                 await Network.send({command: 'editData', params: derivedDiff});
                             }
                             break;
