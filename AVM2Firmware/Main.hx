@@ -282,7 +282,7 @@ class Main extends MovieClip {
                 var toastTitle:String = params.title != null ? params.title : "";
                 var toastDesc:String = params.description != null ? params.description : "";
                 var toastLabel:String = params.label != null ? params.label : "";
-                var toastAlign:String = params.align != null ? params.align : "right";
+                var toastAlign:String = params.align != null ? params.align : "left";
                 var toastImageUrl:String = params.imageUrl != null ? params.imageUrl : "";
                 Toast.show(toastTitle, toastDesc, toastLabel, toastAlign, toastImageUrl);
                 sendResponse(id, {success: true});

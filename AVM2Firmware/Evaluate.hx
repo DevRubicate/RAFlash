@@ -383,6 +383,10 @@ class Evaluate {
                 output.push({value: "\"" + value + "\""});
             } else if (Std.isOfType(value, Bool)) {
                 output.push({value: value});
+            #if flash
+            } else if (untyped __is__(value, __global__["Date"])) {
+                output.push({value: "[Date \"" + Std.string(value) + "\"]"});
+            #end
             } else if (Std.isOfType(value, Array)) {
                 var arr:Array<Dynamic> = cast value;
                 if (level == 0 && singular) {
@@ -397,6 +401,8 @@ class Evaluate {
                 }
             } else if (value == null) {
                 output.push({value: "null"});
+            } else if (untyped __typeof__(value) == "function") {
+                output.push({value: "[Function]"});
             } else {
                 // Generic object
                 if (level == 0 && singular) {
@@ -469,6 +475,12 @@ class Evaluate {
             if (matchesWildcard(Std.string(target), value.toLowerCase())) {
                 output.push(path);
             }
+        #if flash
+        } else if (untyped __is__(target, __global__["Date"])) {
+            if (matchesWildcard(Std.string(target), value)) {
+                output.push(path);
+            }
+        #end
         } else if (Std.isOfType(target, Array)) {
             var arr:Array<Dynamic> = cast target;
             var j:Int = 0;
@@ -478,6 +490,10 @@ class Evaluate {
             }
         } else if (target == null) {
             if (value == "null") {
+                output.push(path);
+            }
+        } else if (untyped __typeof__(target) == "function") {
+            if ("[function]" == value.toLowerCase()) {
                 output.push(path);
             }
         } else if (untyped __typeof__(target) == "object") {

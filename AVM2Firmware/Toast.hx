@@ -28,6 +28,7 @@ class Toast extends Sprite {
     private static inline var CORNER_RADIUS:Int = 6;
     private static inline var BG_COLOR:Int = 0x1F2937;
     private static inline var BG_ALPHA:Float = 0.95;
+    private static inline var HIDE_OFFSET:Int = 40;
 
     // Text colors
     private static inline var TITLE_COLOR:Int = 0xFFFFFF;
@@ -59,6 +60,9 @@ class Toast extends Sprite {
     private var toastHeight:Float;
     private var toastAlign:String;
     private var displayStartTime:Float;
+    private var targetX:Float;
+    private var hiddenX:Float;
+    private var toastWidth:Float;
 
     /**
      * Show a toast notification
@@ -70,7 +74,7 @@ class Toast extends Sprite {
      */
     public static function show(title:String, description:String, label:String, align:String, imageUrl:String = null):Void {
         if (align == null || align == "") {
-            align = "right";
+            align = "left";
         }
         new Toast(title, description, label, align, imageUrl);
     }
@@ -203,12 +207,16 @@ class Toast extends Sprite {
         var stageWidth = stage.stageWidth;
         stageHeight = stage.stageHeight;
 
-        // Position toast (start below screen)
+        // Calculate X positions for normal and hidden states
+        toastWidth = boxWidth;
         if (isRight) {
-            this.x = stageWidth - boxWidth - MARGIN;
+            targetX = stageWidth - boxWidth - MARGIN;
+            hiddenX = stageWidth + HIDE_OFFSET;
         } else {
-            this.x = MARGIN;
+            targetX = MARGIN;
+            hiddenX = -boxWidth - HIDE_OFFSET;
         }
+        this.x = targetX;
         this.y = stageHeight; // Start below screen
 
         // Calculate target Y
@@ -252,6 +260,20 @@ class Toast extends Sprite {
      * Animation frame handler
      */
     private function onEnterFrame(e:Event):Void {
+        // Check if mouse is in the toast's zone (use targetX, not current x)
+        var stg = flash.Lib.current.stage;
+        var mouseInZone = (stg.mouseX >= targetX && stg.mouseX <= targetX + toastWidth &&
+                           stg.mouseY >= targetY && stg.mouseY <= targetY + toastHeight);
+
+        // Animate X position based on hover
+        var destX:Float = mouseInZone ? hiddenX : targetX;
+        var dx = destX - this.x;
+        if (Math.abs(dx) > 1) {
+            this.x += dx * 0.3;
+        } else {
+            this.x = destX;
+        }
+
         var dy = targetY - this.y;
 
         switch (state) {
