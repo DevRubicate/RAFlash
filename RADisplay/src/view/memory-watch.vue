@@ -61,7 +61,7 @@
     .formula-input { flex-grow: 1; }
 
     .watch-button {
-        background-color: #6366f1;
+        background-color: var(--c-primary);
         color: #ffffff;
         font-family: var(--font-sans);
         font-weight: 550;
@@ -75,7 +75,7 @@
     }
 
     .watch-button:hover {
-        background-color: var(--c-primary);
+        background-color: var(--c-primary-hover);
     }
 
     .watch-button.active {

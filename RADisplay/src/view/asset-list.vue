@@ -182,8 +182,8 @@
     }
 
     .left-actions, .right-actions { display: flex; gap: 0.375rem; }
-    .btn-new { background-color: #6366f1; color: #ffffff; }
-    .btn-new:hover:not(:disabled) { background-color: var(--c-primary); }
+    .btn-new { background-color: var(--c-primary); color: #ffffff; }
+    .btn-new:hover:not(:disabled) { background-color: var(--c-primary-hover); }
 
     .btn-activate { min-width: 6.5rem; text-align: center; }
 </style>

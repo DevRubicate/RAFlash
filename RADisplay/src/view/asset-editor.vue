@@ -323,8 +323,8 @@
         gap: 1rem;
     }
 
-    .btn-new { background-color: #6366f1; color: #ffffff; }
-    .btn-new:hover:not(:disabled) { background-color: var(--c-primary); }
+    .btn-new { background-color: var(--c-primary); color: #ffffff; }
+    .btn-new:hover:not(:disabled) { background-color: var(--c-primary-hover); }
     .btn-remove { background-color: var(--c-surface); color: var(--c-danger); border-color: var(--c-danger); }
     .btn-remove:hover:not(:disabled) { background-color: var(--c-danger); color: #ffffff; }
 </style>

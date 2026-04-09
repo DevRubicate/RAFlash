@@ -100,7 +100,7 @@
     }
 
     .search-button {
-        background-color: #6366f1;
+        background-color: var(--c-primary);
         color: #ffffff;
         font-family: var(--font-sans);
         font-weight: 550;
@@ -114,7 +114,7 @@
     }
 
     .search-button:hover:not(:disabled) {
-        background-color: var(--c-primary);
+        background-color: var(--c-primary-hover);
     }
 
     .search-button:disabled {

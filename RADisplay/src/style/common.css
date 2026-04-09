@@ -14,8 +14,8 @@
     --c-text-secondary:  #57534e;
     --c-text-muted:      #a8a29e;
 
-    --c-primary:         #4f46e5;
-    --c-primary-hover:   #4338ca;
+    --c-primary:         #6366f1;
+    --c-primary-hover:   #4f46e5;
     --c-primary-soft:    #eef2ff;
     --c-primary-text:    #3730a3;
 
@@ -101,11 +101,11 @@ html, body {
 }
 
 .btn-primary {
-    background-color: #6366f1;
+    background-color: var(--c-primary);
     color: #ffffff;
 }
 .btn-primary:hover:not(:disabled) {
-    background-color: var(--c-primary);
+    background-color: var(--c-primary-hover);
     box-shadow: var(--shadow-sm);
 }
 

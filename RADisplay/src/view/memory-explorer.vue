@@ -152,7 +152,7 @@
     }
 
     .split-main {
-        background-color: #6366f1;
+        background-color: var(--c-primary);
         color: #ffffff;
         font-weight: 550;
         font-size: 0.8125rem;
@@ -165,11 +165,11 @@
     }
 
     .split-main:hover {
-        background-color: var(--c-primary);
+        background-color: var(--c-primary-hover);
     }
 
     .split-toggle {
-        background-color: #6366f1;
+        background-color: var(--c-primary);
         color: #ffffff;
         font-size: 0.6875rem;
         border: none;
@@ -181,7 +181,7 @@
     }
 
     .split-toggle:hover {
-        background-color: var(--c-primary);
+        background-color: var(--c-primary-hover);
     }
 
     .split-dropdown {
