@@ -111,6 +111,7 @@ const SITELOCK_URL: string | null = null;
 // AVM mode configuration - set after game SWF is selected and version detected
 interface AVMConfig {
     mode: "AVM1" | "AVM2";
+    firmwareUrl: string; // URL path Flash Player loads (e.g. "/avm1-wrapper.swf")
     firmwareSwf: string;
     innerFirmwareSwf?: string; // AVM1 firmware loaded by AVM2 wrapper
     messageTerminator: string;
@@ -634,7 +635,7 @@ function startHttpServer() {
             // Serve files
             try {
                 // Special handling for firmware SWF - optionally patch with game settings
-                if ((url.pathname === "/firmware.swf") && selectedGamePath && avmConfig) {
+                if (avmConfig && url.pathname === avmConfig.firmwareUrl && selectedGamePath) {
                     if (avmConfig.patchFirmware) {
                         const gameSwfBuffer = await Deno.readFile(selectedGamePath);
                         const gameMetadata = parseSwfMetadata(gameSwfBuffer);
@@ -690,7 +691,7 @@ function startHttpServer() {
 
                 let filePath = "";
 
-                if (url.pathname === "/firmware.swf" && avmConfig) {
+                if (avmConfig && url.pathname === avmConfig.firmwareUrl) {
                     filePath = avmConfig.firmwareSwf;
                 } else if (url.pathname === "/game.swf" && selectedGamePath) {
                     filePath = selectedGamePath;
@@ -1126,7 +1127,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
 
         httpBuffer = decoder.decode(value);
         // HTTP request for firmware SWF
-        if (httpBuffer.startsWith("GET /firmware.swf")) {
+        if (httpBuffer.startsWith(`GET ${avmConfig.firmwareUrl}`)) {
             let swfData: Uint8Array;
             if (avmConfig.patchFirmware) {
                 const gameSwfBuffer = await Deno.readFile(selectedGamePath!);
@@ -1517,7 +1518,7 @@ function handleFirmwareData(data: string): void {
 function launchFlashPlayer(): Deno.ChildProcess {
     const fpPath = `${Deno.cwd()}/vendor/adobe/fp-32.0.0.380.exe`;
     // Note: cwd is .build/ during development (make run) and the exe's directory when distributed
-    const firmwareUrl = `http://${RAFLASH_DOMAIN}/firmware.swf`;
+    const firmwareUrl = `http://${RAFLASH_DOMAIN}${avmConfig.firmwareUrl}`;
 
     const command = new Deno.Command(fpPath, {
         args: [firmwareUrl],
@@ -1601,8 +1602,8 @@ async function main(): Promise<void> {
 
         const swfVersion = gameSwfBuffer[3];
         avmConfig = swfVersion >= 9
-            ? { mode: "AVM2", firmwareSwf: "firmware/AVM2.swf", messageTerminator: "\n", patchFirmware: true, convertPngToJpeg: false }
-            : { mode: "AVM1", firmwareSwf: "firmware/AVM1Wrapper.swf", innerFirmwareSwf: "firmware/AVM1.swf", messageTerminator: "\0", patchFirmware: true, convertPngToJpeg: true };
+            ? { mode: "AVM2", firmwareUrl: "/avm2-firmware.swf", firmwareSwf: "firmware/AVM2.swf", messageTerminator: "\n", patchFirmware: true, convertPngToJpeg: false }
+            : { mode: "AVM1", firmwareUrl: "/avm1-wrapper.swf", firmwareSwf: "firmware/AVM1Wrapper.swf", innerFirmwareSwf: "firmware/AVM1.swf", messageTerminator: "\0", patchFirmware: true, convertPngToJpeg: true };
 
         // Load game-specific state (identified by MD5 hash of SWF)
         await AppData.setGamePath(resolvedGamePath);
