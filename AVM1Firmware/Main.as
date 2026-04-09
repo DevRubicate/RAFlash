@@ -23,6 +23,7 @@ class Main {
 
     // Configuration
     private static var PORT:Number = 18081;
+    private static var fixTextFieldBindings:Boolean = true;
 
     // Profiling
     private static var profilingData:Object = {};
@@ -87,6 +88,7 @@ class Main {
         var cm:ContextMenu = new ContextMenu();
         cm.hideBuiltInItems();
         _root.menu = cm;
+
         connectToServer();
     }
 
@@ -212,8 +214,49 @@ class Main {
         if (!gameLoaded) {
             checkLoadProgress();
         } else {
+            if (fixTextFieldBindings) syncTextFieldBindings(gameContainer.gameLoader);
             checkAchievements();
             processWatchers();
+        }
+    }
+
+    /**
+     * COMPATIBILITY HACK: Fix TextField variable bindings broken by loadMovie().
+     *
+     * In AS2, TextFields can have a `variable` property (set at authoring time in the
+     * Flash IDE) that creates a two-way binding between the TextField's visual text and
+     * an AS2 variable. For example, a TextField with variable="playername" on the root
+     * timeline will sync its displayed text with _root.playername.
+     *
+     * This binding works correctly when the SWF runs as the root movie (_level0).
+     * However, when a SWF is loaded via loadMovie() into a MovieClip — as our firmware
+     * does to host the game — the binding breaks. The TextField still DISPLAYS user input
+     * correctly (typing works visually), but the bound variable is never updated. It stays
+     * at its initial value (typically empty string "").
+     *
+     * This means any game code that reads the variable (e.g. `if (_root.playername != "")`)
+     * will see the stale value and fail, even though the user has typed text into the field.
+     * The _lockroot property does NOT fix this — it only affects _root resolution in
+     * ActionScript code, not the internal TextField variable binding mechanism.
+     *
+     * This function works around the issue by recursively walking the game's display tree
+     * each frame, finding TextFields with variable bindings, and manually copying their
+     * .text property to the bound variable location.
+     *
+     * Can be disabled in Settings > Compatibility if it causes issues with specific games.
+     */
+    private static function syncTextFieldBindings(clip:MovieClip):Void {
+        for (var name:String in clip) {
+            var child = clip[name];
+            if (child instanceof TextField) {
+                var tf:TextField = TextField(child);
+                if (tf.variable != undefined && tf.variable != "") {
+                    // Simple variable name (no path) — resolve relative to parent
+                    tf._parent[tf.variable] = tf.text;
+                }
+            } else if (child instanceof MovieClip) {
+                syncTextFieldBindings(MovieClip(child));
+            }
         }
     }
 
@@ -301,6 +344,9 @@ class Main {
                     // First connect: accept Deno's data and load game
                     AppData.data = params.data;
                     AppData.originalData = JSON.parse(JSON.stringify(params.data));
+                    if (params.settings != undefined) {
+                        fixTextFieldBindings = (params.settings.fixTextFieldBindings != false);
+                    }
                     initialSetupDone = true;
                     sendResponse(id, { success: true });
                     loadGame(params.gameUrl);

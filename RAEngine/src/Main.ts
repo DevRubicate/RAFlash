@@ -103,6 +103,28 @@ const FLASH_PORT = 18081;
 const PROXY_PORT = 18082;
 const RAFLASH_DOMAIN = "raflash.local"; // Fake domain for proxy routing (127.0.0.1 bypasses WinInet proxy)
 
+// Global settings (persisted to RACache/settings.json)
+interface Settings {
+    fixTextFieldBindings: boolean;
+}
+const defaultSettings: Settings = { fixTextFieldBindings: true };
+let settings: Settings = { ...defaultSettings };
+
+async function loadSettings(): Promise<void> {
+    try {
+        const text = await Deno.readTextFile("RACache/settings.json");
+        const saved = JSON.parse(text);
+        settings = { ...defaultSettings, ...saved };
+    } catch {
+        // File doesn't exist or invalid — use defaults
+    }
+}
+
+async function saveSettings(newSettings: Settings): Promise<void> {
+    settings = { ...defaultSettings, ...newSettings };
+    await Deno.mkdir("RACache", { recursive: true });
+    await Deno.writeTextFile("RACache/settings.json", JSON.stringify(settings, null, 2));
+}
 
 // AVM mode configuration - set after game SWF is selected and version detected
 interface AVMConfig {
@@ -771,6 +793,13 @@ async function handleApiRequest(
             await UserProfile.createUser(name);
             return { success: true };
         }
+        case "getSettings": {
+            return { success: true, params: { ...settings } };
+        }
+        case "saveSettings": {
+            await saveSettings(input.params.settings as Settings);
+            return { success: true };
+        }
 
         // Devtools commands - forward to firmware
         case "evaluate": {
@@ -876,7 +905,7 @@ async function handleApiRequest(
             // Send current app data to firmware
             const originUrl = AppData.data.gameConfig.originUrl;
             const gameUrl = originUrl ? originUrl + "/game.swf" : null;
-            const response = await sendToFirmware("setup", { data: AppData.data, gameUrl });
+            const response = await sendToFirmware("setup", { data: AppData.data, gameUrl, settings });
             return response;
         }
         case "getData": {
@@ -1339,7 +1368,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
         // Send app data to firmware (don't await - would deadlock before read loop starts)
         const originUrl = AppData.data.gameConfig.originUrl;
         const gameUrl = originUrl ? originUrl + "/game.swf" : null;
-        sendToFirmware("setup", { data: AppData.data, gameUrl }).catch(() => {});
+        sendToFirmware("setup", { data: AppData.data, gameUrl, settings }).catch(() => {});
 
         // Process initial data
         if (httpBuffer.trim()) {
@@ -1544,6 +1573,9 @@ async function main(): Promise<void> {
             Deno.exit(1);
         }
     }
+
+    // Load persistent settings
+    await loadSettings();
 
     // 1. Start HTTP server (persists across game sessions)
     startHttpServer();

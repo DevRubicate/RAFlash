@@ -49,6 +49,7 @@
 
             <footer class="action-bar">
                 <button class="btn btn-secondary" @click="openEventLog">Event Log</button>
+                <button class="btn btn-secondary" @click="openSettings">Settings</button>
             </footer>
         </div>
     </div>
@@ -321,6 +322,11 @@ function handleDoubleClick(item) {
 // Open Event Log window
 async function openEventLog() {
     await Network.send({ command: 'showPopup', params: { url: 'internals/assets/event-log.html', width: 700, height: 500, params: {}, parentWindowId: App.windowId } });
+}
+
+// Open Settings window
+async function openSettings() {
+    await Network.send({ command: 'showPopup', params: { url: 'internals/assets/settings.html', width: 500, height: 400, params: {}, parentWindowId: App.windowId } });
 }
 
 // Confirm file selection and notify server
