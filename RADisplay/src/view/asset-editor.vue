@@ -509,7 +509,7 @@
                 flag: null,
                 typeA: 'VALUE',
                 addressA: '',
-                cmp: '=',
+                cmp: '==',
                 typeB: 'VALUE',
                 addressB: '0',
                 maxHits: 0
@@ -607,9 +607,9 @@
             const newReq = {
                 id: App.getFakeId(),
                 flag: data.flag ?? null,
-                typeA: data.typeA ?? 'MEM',
+                typeA: data.typeA ?? 'VALUE',
                 addressA: data.addressA ?? '',
-                cmp: data.cmp ?? '=',
+                cmp: data.cmp ?? '==',
                 typeB: data.typeB ?? 'VALUE',
                 addressB: data.addressB ?? '0',
                 maxHits: data.maxHits ?? 0
