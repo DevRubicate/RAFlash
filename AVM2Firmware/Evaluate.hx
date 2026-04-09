@@ -646,21 +646,25 @@ class Evaluate {
 
         // 2. Display children (if DisplayObjectContainer)
         #if flash
-        if (Std.isOfType(target, DisplayObjectContainer)) {
-            var container:DisplayObjectContainer = cast target;
-            var numChildren:Int = container.numChildren;
-            var c:Int = 0;
-            while (c < numChildren) {
-                var child:DisplayObject = container.getChildAt(c);
-                var childName:String = child.name;
-                // Skip auto-generated names and duplicates
-                if (!seen.exists(childName)) {
-                    propKeys.push(childName);
-                    propValues.push(child);
-                    seen.set(childName, true);
+        try {
+            if (Std.isOfType(target, DisplayObjectContainer)) {
+                var container:DisplayObjectContainer = cast target;
+                var numChildren:Int = container.numChildren;
+                var c:Int = 0;
+                while (c < numChildren) {
+                    var child:DisplayObject = container.getChildAt(c);
+                    var childName:String = child.name;
+                    // Skip duplicates (already found as dynamic property)
+                    if (!seen.exists(childName)) {
+                        propKeys.push(childName);
+                        propValues.push(child);
+                        seen.set(childName, true);
+                    }
+                    c++;
                 }
-                c++;
             }
+        } catch (e:Dynamic) {
+            // Security sandbox or other restriction on display children
         }
         #end
 

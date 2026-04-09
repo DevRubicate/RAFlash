@@ -113,7 +113,6 @@ class Main extends MovieClip {
         hideDisconnectOverlay();
 
         if (!gameLoaded) {
-            log("Connected to Deno server");
             sendMessage("ready", {});
         } else {
             log("Reconnected to Deno server");
@@ -231,6 +230,20 @@ class Main extends MovieClip {
     // === Request Handling ===
 
     private function handleRequest(id:Int, command:String, params:Dynamic):Void {
+        try {
+            handleRequestInner(id, command, params);
+        } catch (e:Dynamic) {
+            log("Error handling command '" + command + "': " + Std.string(e));
+            try {
+                sendResponse(id, {success: false, error: Std.string(e)});
+            } catch (e2:Dynamic) {
+                // Last resort — can't even send error response
+                trace("[AS3] Fatal: failed to send error response: " + Std.string(e2));
+            }
+        }
+    }
+
+    private function handleRequestInner(id:Int, command:String, params:Dynamic):Void {
         switch (command) {
             case "ping":
                 sendResponse(id, {success: true, pong: true});

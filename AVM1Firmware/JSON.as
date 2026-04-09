@@ -31,7 +31,19 @@ class JSON {
             s = s.split('\n').join('\\n');   // Escape newlines
             s = s.split('\r').join('\\r');   // Escape carriage returns
             s = s.split('\t').join('\\t');   // Escape tabs
-            return '"' + s + '"';
+            // Escape any remaining control characters (0x00-0x1F)
+            var clean:String = "";
+            for (var ci:Number = 0; ci < s.length; ci++) {
+                var code:Number = s.charCodeAt(ci);
+                if (code < 32) {
+                    var hex:String = code.toString(16);
+                    while (hex.length < 4) hex = "0" + hex;
+                    clean += "\\u" + hex;
+                } else {
+                    clean += s.charAt(ci);
+                }
+            }
+            return '"' + clean + '"';
         }
         
         if (type == "number" || type == "boolean") {

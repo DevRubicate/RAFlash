@@ -434,6 +434,7 @@ let httpServer: Deno.HttpServer | null = null;
 // Flash socket connection and communication
 let firmwareWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
 let firmwareConnected = false;
+let firmwareMessageBuffer = "";
 const pendingRequests = new Map<string, (response: Record<string, unknown>) => void>();
 let requestIdCounter = 0;
 
@@ -776,10 +777,9 @@ async function handleApiRequest(
 
         // Devtools commands - forward to firmware
         case "evaluate": {
-            // Compile the input string to bytecode
-            const compiled = compileFormula(String(input.params.input || ""));
+            const rawInput = String(input.params.input || "");
+            const compiled = compileFormula(rawInput);
             const response = await sendToFirmware("evaluate", { formula: compiled });
-            // Wrap firmware response in params to match frontend expectations
             return { success: response.success, params: response };
         }
         case "evaluateMultiple": {
@@ -1349,6 +1349,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
             emitLog("engine", "warn", "Firmware disconnected");
             firmwareConnected = false;
             firmwareWriter = null;
+            firmwareMessageBuffer = "";
         }
         try {
             writer.releaseLock();
@@ -1364,7 +1365,9 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
  * Handle incoming data from firmware
  */
 function handleFirmwareData(data: string): void {
-    const messages = data.split(avmConfig.messageTerminator);
+    firmwareMessageBuffer += data;
+    const messages = firmwareMessageBuffer.split(avmConfig.messageTerminator);
+    firmwareMessageBuffer = messages.pop()!; // Keep incomplete trailing data for next read
     for (const msg of messages) {
         if (!msg.trim()) continue;
         try {
@@ -1490,8 +1493,8 @@ function handleFirmwareData(data: string): void {
                 console.log("");
             }
             // Other message types ignored
-        } catch {
-            // Parse error, ignore malformed messages
+        } catch (e) {
+            emitLog("engine", "error", `Failed to parse firmware message: ${e} (starts: ${msg.substring(0, 80)})`);
         }
     }
 }

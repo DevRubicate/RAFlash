@@ -120,6 +120,7 @@
         border-bottom: 1px solid var(--c-border-subtle);
         vertical-align: top;
         line-height: 1.5;
+        user-select: text;
     }
 
     .log-table tbody tr:last-child td {
