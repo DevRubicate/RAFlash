@@ -22,6 +22,7 @@ export default defineConfig({
         'menu': resolve(__dirname, 'src/html/menu.html'),
         'file-picker': resolve(__dirname, 'src/html/file-picker.html'),
         'game-behavior': resolve(__dirname, 'src/html/game-behavior.html'),
+        'documentation': resolve(__dirname, 'src/html/documentation.html'),
       },
     },
   },
