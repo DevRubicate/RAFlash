@@ -96,7 +96,9 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="(res, index) in filteredResults">
+                            <tr v-for="(res, index) in filteredResults"
+                                :class="{ expandable: isExpandable(res.value) }"
+                                @dblclick="drillInto(res.value)">
                                 <td>{{ res.value }}</td>
                             </tr>
                         </tbody>
@@ -333,6 +335,18 @@
     .results-table tbody tr.row-added:hover td { color: var(--c-success); }
     .results-table tbody tr.row-removed:hover td { color: var(--c-danger); }
 
+    .results-table tbody tr.expandable {
+        cursor: pointer;
+    }
+
+    .results-table tbody tr.expandable td {
+        color: var(--c-primary-hover);
+    }
+
+    .results-table tbody tr.expandable:hover td {
+        color: var(--c-primary);
+    }
+
     .no-results {
         text-align: center;
         padding: 2.5rem 1.5rem;
@@ -455,6 +469,30 @@
     const extractKey = (str) => {
         const idx = str.indexOf(': ');
         return idx !== -1 ? str.substring(0, idx) : null;
+    };
+
+    const expandablePattern = /^\[(?:MovieClip|Object|Array) \.\.\.\d+\]$/;
+
+    const isExpandable = (rowValue) => {
+        const str = String(rowValue);
+        const key = extractKey(str);
+        if (key === null) return false;
+        const value = str.substring(str.indexOf(': ') + 2);
+        return expandablePattern.test(value);
+    };
+
+    const drillInto = (rowValue) => {
+        const str = String(rowValue);
+        if (!isExpandable(str)) return;
+        const key = extractKey(str);
+        const currentInput = memoryInput.value.trim();
+        // Numeric keys get array access syntax, others get dot access
+        if (/^\d+$/.test(key)) {
+            memoryInput.value = currentInput + '[' + key + ']';
+        } else {
+            memoryInput.value = currentInput + '.' + key;
+        }
+        evaluate();
     };
 
     const buildFrequencyMap = (results) => {
