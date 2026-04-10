@@ -99,7 +99,10 @@
                             <tr v-for="(res, index) in filteredResults"
                                 :class="{ expandable: isExpandable(res.value) }"
                                 @dblclick="drillInto(res.value)">
-                                <td>{{ res.value }}</td>
+                                <td>
+                                    {{ res.value }}
+                                    <button v-if="isEditable(res.value)" class="edit-btn" @click.stop="openEdit(res.value)" title="Edit value">&#9998;</button>
+                                </td>
                             </tr>
                         </tbody>
                     </table>
@@ -114,6 +117,25 @@
             spellcheck="false"
             v-if="memoryResult.length > 0 || isCompareMode || isRemainsMode || isLeavesMode"
         />
+
+        <!-- Edit value popup -->
+        <div v-if="editState" class="edit-overlay" @click.self="editState = null">
+            <div class="edit-popup">
+                <div class="edit-label">{{ editState.key }}</div>
+                <input
+                    class="edit-input"
+                    v-model="editValue"
+                    @keydown.enter="submitEdit"
+                    @keydown.escape="editState = null"
+                    ref="editInputRef"
+                    spellcheck="false"
+                />
+                <div class="edit-actions">
+                    <button class="edit-save" @click="submitEdit">Save</button>
+                    <button class="edit-cancel" @click="editState = null">Cancel</button>
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -353,12 +375,111 @@
         color: var(--c-text-muted);
         font-size: 0.8125rem;
     }
+
+    /* === Edit Button === */
+    .edit-btn {
+        float: right;
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 0.8125rem;
+        color: var(--c-text-muted);
+        padding: 0 0.25rem;
+        opacity: 0;
+        transition: opacity var(--duration) var(--ease);
+    }
+
+    tr:hover .edit-btn { opacity: 1; }
+    .edit-btn:hover { color: var(--c-primary); }
+
+    /* === Edit Popup === */
+    .edit-overlay {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+    }
+
+    .edit-popup {
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-md);
+        padding: 1rem;
+        min-width: 280px;
+        max-width: 400px;
+    }
+
+    .edit-label {
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--c-text-muted);
+        margin-bottom: 0.5rem;
+    }
+
+    .edit-input {
+        width: 100%;
+        background: var(--c-surface-alt);
+        color: var(--c-text);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-md);
+        padding: 0.5rem 0.75rem;
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+        box-sizing: border-box;
+    }
+
+    .edit-input:focus {
+        outline: none;
+        border-color: var(--c-primary);
+        box-shadow: var(--shadow-ring);
+    }
+
+    .edit-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+        justify-content: flex-end;
+    }
+
+    .edit-save, .edit-cancel {
+        font-family: var(--font-sans);
+        font-size: 0.8125rem;
+        font-weight: 550;
+        padding: 0.375rem 0.75rem;
+        border-radius: var(--radius-md);
+        cursor: pointer;
+        border: none;
+    }
+
+    .edit-save {
+        background: var(--c-primary);
+        color: #fff;
+    }
+
+    .edit-save:hover { background: var(--c-primary-hover); }
+
+    .edit-cancel {
+        background: var(--c-surface-alt);
+        color: var(--c-text);
+        border: 1px solid var(--c-border);
+    }
+
+    .edit-cancel:hover { background: var(--c-surface); }
 </style>
 
 <script setup>
-    import { ref, computed, onMounted, onUnmounted } from 'vue';
+    import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue';
     import { Network } from '../js/network.ts';
     import { App }          from '../js/app.ts';
+
+    const editState = ref(null);  // { key, fullPath } or null
+    const editValue = ref('');
+    const editInputRef = ref(null);
 
     const memoryInput = ref('');
     const memoryResult = ref([]);
@@ -492,6 +613,50 @@
         } else {
             memoryInput.value = currentInput + '.' + key;
         }
+        evaluate();
+    };
+
+    const specialPattern = /^\[(?:Function|TextField|Date|MovieClip|Object|Array)\b/;
+
+    const isEditable = (rowValue) => {
+        const str = String(rowValue);
+        const key = extractKey(str);
+        if (key === null) return false;
+        const value = str.substring(str.indexOf(': ') + 2);
+        return !specialPattern.test(value);
+    };
+
+    const extractValue = (rowValue) => {
+        const str = String(rowValue);
+        const raw = str.substring(str.indexOf(': ') + 2);
+        // Strip surrounding quotes for strings
+        if (raw.startsWith('"') && raw.endsWith('"')) return raw.slice(1, -1);
+        return raw;
+    };
+
+    const openEdit = async (rowValue) => {
+        const str = String(rowValue);
+        const key = extractKey(str);
+        const currentInput = memoryInput.value.trim();
+        const fullPath = /^\d+$/.test(key)
+            ? currentInput + '[' + key + ']'
+            : currentInput + '.' + key;
+        editState.value = { key, fullPath };
+        editValue.value = extractValue(str);
+        await nextTick();
+        if (editInputRef.value) {
+            editInputRef.value.focus();
+            editInputRef.value.select();
+        }
+    };
+
+    const submitEdit = async () => {
+        if (!editState.value) return;
+        await Network.send({
+            command: 'setValue',
+            params: { path: editState.value.fullPath, value: editValue.value }
+        });
+        editState.value = null;
         evaluate();
     };
 

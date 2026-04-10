@@ -1331,6 +1331,32 @@ async function handleApiRequest(
             return { success: true };
         }
 
+        case "setValue": {
+            const fullPath = String(input.params.path || "");
+            const value = String(input.params.value ?? "");
+            // Split path into parent path + property name
+            const lastDot = fullPath.lastIndexOf(".");
+            const lastBracket = fullPath.lastIndexOf("[");
+            const splitPos = Math.max(lastDot, lastBracket);
+            if (splitPos < 0) return { success: false, error: "Invalid path" };
+            let parentPath: string;
+            let property: string;
+            if (lastBracket > lastDot) {
+                parentPath = fullPath.substring(0, lastBracket);
+                property = fullPath.substring(lastBracket + 1, fullPath.length - 1);
+            } else {
+                parentPath = fullPath.substring(0, lastDot);
+                property = fullPath.substring(lastDot + 1);
+            }
+            // Empty parent path = implicit stage root (e.g. ".dayNow" → set on stage)
+            if (parentPath === "") parentPath = "stage";
+            const compiled = compileFormula(parentPath);
+            const response = await sendToFirmware("setValue", {
+                pathFormula: compiled, property, value
+            });
+            return response;
+        }
+
         case "resetGame": {
             const originUrl = AppData.data.gameConfig.originUrl;
             const gameUrl = originUrl ? originUrl + "/game.swf" : null;

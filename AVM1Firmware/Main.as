@@ -632,6 +632,32 @@ class Main {
                 loadGame(params.gameUrl);
                 break;
 
+            case "setValue":
+                _stageContext[0] = gameContainer.gameLoader._root;
+                var svFormula:Array = params.pathFormula;
+                var svResult:Array = evaluate(svFormula, 1, svFormula.length, _stageContext, _stageKeys);
+                if (svResult != null && svResult.length > 0) {
+                    var svTarget:Object = svResult[0];
+                    var svProp:String = params.property;
+                    var svRaw:String = params.value;
+                    var svNum:Number = Number(svRaw);
+                    if (!isNaN(svNum) && svRaw != "") {
+                        svTarget[svProp] = svNum;
+                    } else if (svRaw == "true") {
+                        svTarget[svProp] = true;
+                    } else if (svRaw == "false") {
+                        svTarget[svProp] = false;
+                    } else if (svRaw == "null") {
+                        svTarget[svProp] = null;
+                    } else {
+                        svTarget[svProp] = svRaw;
+                    }
+                    sendResponse(id, { success: true });
+                } else {
+                    sendResponse(id, { success: false, error: "Path not found" });
+                }
+                break;
+
             default:
                 sendResponse(id, { success: false, error: "Unknown command: " + command });
         }
