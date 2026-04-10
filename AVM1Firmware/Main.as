@@ -608,6 +608,30 @@ class Main {
                 sendResponse(id, { success: true });
                 break;
 
+            case "resetGame":
+                // Unload game and reset all runtime state
+                gameContainer.gameLoader.unloadMovie();
+                gameContainer.removeMovieClip();
+                gameLoaded = false;
+                _soundFixState = 0;
+                _soundFixDeadline = 0;
+                deltaValues = {};
+                rememberedValues = {};
+                memoryWatchers = {};
+                memoryWatchFrameCount = 0;
+                badgeImageCache = {};
+                preloadQueue = [];
+                currentPreloadId = 0;
+                if (preloadContainer != null) {
+                    preloadContainer.removeMovieClip();
+                    preloadContainer = null;
+                }
+                lastRichPresenceTime = 0;
+                // Reload game
+                sendResponse(id, { success: true });
+                loadGame(params.gameUrl);
+                break;
+
             default:
                 sendResponse(id, { success: false, error: "Unknown command: " + command });
         }

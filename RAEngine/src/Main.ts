@@ -1331,6 +1331,15 @@ async function handleApiRequest(
             return { success: true };
         }
 
+        case "resetGame": {
+            const originUrl = AppData.data.gameConfig.originUrl;
+            const gameUrl = originUrl ? originUrl + "/game.swf" : null;
+            emitLog("engine", "info", "Resetting game...");
+            const response = await sendToFirmware("resetGame", { gameUrl });
+            emitLog("engine", "info", "Game reset complete");
+            return response;
+        }
+
         // Memory Watch commands
         case "startWatch": {
             const watcherId = String(input.params.watcherId);
