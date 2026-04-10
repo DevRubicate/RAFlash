@@ -2175,6 +2175,65 @@ class Main {
     // ========================================================================
 
     /**
+     * Get built-in properties for a target object that don't appear in for...in iteration.
+     * Returns an array of {name, value} pairs for properties that exist on the target.
+     */
+    private static function getBuiltinProperties(target):Array {
+        var result:Array = [];
+        var t:String = typeof(target);
+        if (t == "movieclip") {
+            // Per AS2 MovieClip reference
+            var mcProps:Array = [
+                "_x", "_y", "_width", "_height", "_xscale", "_yscale",
+                "_alpha", "_visible", "_rotation",
+                "_currentframe", "_totalframes", "_framesloaded",
+                "_name", "_target", "_url", "_parent",
+                "_xmouse", "_ymouse",
+                "_droptarget", "_focusrect", "_quality", "_highquality", "_lockroot"
+            ];
+            for (var i:Number = 0; i < mcProps.length; i++) {
+                var mcName:String = mcProps[i];
+                var mcValue = target[mcName];
+                if (mcValue !== undefined) {
+                    result.push({name: mcName, value: mcValue});
+                }
+            }
+        } else if (target instanceof TextField) {
+            // Per AS2 TextField reference
+            var tfProps:Array = [
+                // Text content
+                "text", "htmlText", "length", "textHeight", "textWidth",
+                // Text properties
+                "type", "variable", "multiline", "wordWrap", "password",
+                "selectable", "maxChars", "restrict", "html", "condenseWhite",
+                "embedFonts", "autoSize",
+                // Visual styling
+                "border", "borderColor", "background", "backgroundColor",
+                "textColor", "antiAliasType", "gridFitType", "sharpness", "thickness",
+                "filters", "styleSheet",
+                // Scrolling
+                "scroll", "maxscroll", "hscroll", "maxhscroll", "bottomScroll",
+                // Interactivity
+                "tabEnabled", "tabIndex", "mouseWheelEnabled", "menu",
+                // Display object
+                "_x", "_y", "_width", "_height", "_xscale", "_yscale",
+                "_alpha", "_visible", "_rotation",
+                "_name", "_target", "_url", "_parent",
+                "_xmouse", "_ymouse",
+                "_quality", "_highquality", "_soundbuftime"
+            ];
+            for (var j:Number = 0; j < tfProps.length; j++) {
+                var tfName:String = tfProps[j];
+                var tfValue = target[tfName];
+                if (tfValue !== undefined) {
+                    result.push({name: tfName, value: tfValue});
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
      * Format evaluation results for display in devtools
      */
     private static function formatOutput(input:Array, level:Number):Object {
@@ -2187,6 +2246,10 @@ class Main {
                     for (var key:String in value) {
                         output.push({value: key + ": " + formatOutput([value[key]], level + 1).output[0].value});
                     }
+                    var mcBuiltins:Array = getBuiltinProperties(value);
+                    for (var mb:Number = 0; mb < mcBuiltins.length; mb++) {
+                        output.push({value: mcBuiltins[mb].name + ": " + formatOutput([mcBuiltins[mb].value], level + 1).output[0].value});
+                    }
                 } else {
                     var count:Number = 0;
                     for (var key:String in value) {
@@ -2195,7 +2258,14 @@ class Main {
                     output.push({value: "[MovieClip ..." + count + "]"});
                 }
             } else if (value instanceof TextField) {
-                output.push({value: "[TextField \"" + createLabelString(value.text) + "\"]"});
+                if (level == 0 && singular) {
+                    var tfBuiltins:Array = getBuiltinProperties(value);
+                    for (var tb:Number = 0; tb < tfBuiltins.length; tb++) {
+                        output.push({value: tfBuiltins[tb].name + ": " + formatOutput([tfBuiltins[tb].value], level + 1).output[0].value});
+                    }
+                } else {
+                    output.push({value: "[TextField \"" + createLabelString(value.text) + "\"]"});
+                }
             } else if (typeof(value) == "number") {
                 output.push({value: value});
             } else if (typeof(value) == "string") {
