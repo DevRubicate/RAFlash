@@ -102,44 +102,63 @@ class Main {
         connectToServer();
     }
 
+    /**
+     * Centralized error logger for the bulletproof try/catch wrappers.
+     * Catches its own errors so the firmware never dies from a logging failure.
+     */
+    public static function logError(context:String, e:Error):Void {
+        try {
+            sendMessage("log", { message: "[firmware error] " + context + ": " + e.message });
+        } catch (e2:Error) {
+            // Last resort — trace if even sendMessage fails
+            trace("[firmware error] " + context + ": " + e.message);
+        }
+    }
+
     private static function connectToServer():Void {
         socket = new XMLSocket();
         receiveBuffer = "";
 
         socket.onConnect = function(success:Boolean):Void {
-            if (success) {
-                Main.connected = true;
-                Main.reconnectAttempts = 0;
-                if (Main.reconnectTimer != -1) {
-                    clearInterval(Main.reconnectTimer);
-                    Main.reconnectTimer = -1;
-                }
-                Main.hideDisconnectOverlay();
+            try {
+                if (success) {
+                    Main.connected = true;
+                    Main.reconnectAttempts = 0;
+                    if (Main.reconnectTimer != -1) {
+                        clearInterval(Main.reconnectTimer);
+                        Main.reconnectTimer = -1;
+                    }
+                    Main.hideDisconnectOverlay();
 
-                if (!Main.gameLoaded) {
-                    Main.sendMessage("ready", {});
+                    if (!Main.gameLoaded) {
+                        Main.sendMessage("ready", {});
+                    } else {
+                        trace("[AS2] Reconnected to Deno server");
+                    }
                 } else {
-                    trace("[AS2] Reconnected to Deno server");
+                    if (Main.gameLoaded) {
+                        Main.scheduleReconnect();
+                    }
                 }
-            } else {
-                if (Main.gameLoaded) {
-                    Main.scheduleReconnect();
-                }
-            }
+            } catch (e:Error) { Main.logError("socket.onConnect", e); }
         };
 
         socket.onData = function(data:String):Void {
-            Main.handleData(data);
+            try {
+                Main.handleData(data);
+            } catch (e:Error) { Main.logError("socket.onData", e); }
         };
 
         socket.onClose = function():Void {
-            Main.connected = false;
-            if (Main.gameLoaded) {
-                Main.showDisconnectOverlay(false);
-                Main.scheduleReconnect();
-            }
-            // Before game loads, let Flash handle connection lifecycle naturally
-            // (policy file handshake causes a close/reconnect cycle)
+            try {
+                Main.connected = false;
+                if (Main.gameLoaded) {
+                    Main.showDisconnectOverlay(false);
+                    Main.scheduleReconnect();
+                }
+                // Before game loads, let Flash handle connection lifecycle naturally
+                // (policy file handshake causes a close/reconnect cycle)
+            } catch (e:Error) { Main.logError("socket.onClose", e); }
         };
 
         socket.connect("127.0.0.1", PORT);
@@ -148,14 +167,16 @@ class Main {
     private static function scheduleReconnect():Void {
         if (reconnectTimer != -1) return;
         reconnectTimer = setInterval(function():Void {
-            Main.reconnectAttempts++;
-            if (Main.reconnectAttempts > Main.MAX_RECONNECT_ATTEMPTS) {
-                clearInterval(Main.reconnectTimer);
-                Main.reconnectTimer = -1;
-                Main.showDisconnectOverlay(true);
-                return;
-            }
-            Main.connectToServer();
+            try {
+                Main.reconnectAttempts++;
+                if (Main.reconnectAttempts > Main.MAX_RECONNECT_ATTEMPTS) {
+                    clearInterval(Main.reconnectTimer);
+                    Main.reconnectTimer = -1;
+                    Main.showDisconnectOverlay(true);
+                    return;
+                }
+                Main.connectToServer();
+            } catch (e:Error) { Main.logError("reconnectTimer", e); }
         }, 1000);
     }
 
@@ -225,7 +246,9 @@ class Main {
 
         // Monitor loading progress and check achievements
         _root.onEnterFrame = function():Void {
-            Main.onFrame();
+            try {
+                Main.onFrame();
+            } catch (e:Error) { Main.logError("onEnterFrame", e); }
         };
     }
 
@@ -236,58 +259,67 @@ class Main {
     private static var _soundFixDeadline:Number = 0;
     private static function onFrame():Void {
         if (!gameLoaded) {
-            checkLoadProgress();
+            try { checkLoadProgress(); } catch (e:Error) { logError("checkLoadProgress", e); }
         } else {
             // Fix Sound objects whose attachSound failed due to wrong library scope.
             // When a game creates new Sound() without a target, attachSound looks in the
             // firmware's library instead of the game's. The patched attachSound records
             // the linkage ID on each Sound, so we can create correctly-targeted replacements.
             // Retries for 3 seconds after game load since game init may take a few frames.
-            if (_soundFixState == 0 && fixSoundAttach) {
-                if (_soundFixDeadline == 0) _soundFixDeadline = getTimer() + 3000;
-                var gr:MovieClip = gameContainer.gameLoader;
-                var fixed:Number = 0;
-                for (var name:String in gr) {
-                    if (gr[name] instanceof Sound) {
-                        var sndObj:Object = gr[name];
-                        var snd:Sound = Sound(sndObj);
-                        var linkage:String = sndObj.__raflash_linkage;
-                        if (!(snd.duration > 0) && linkage != undefined) {
-                            var replacement:Sound = new Sound(gr);
-                            replacement.attachSound(linkage);
-                            if (replacement.duration > 0) {
-                                replacement.onSoundComplete = snd.onSoundComplete;
-                                Object(replacement).__raflash_linkage = linkage;
-                                gr[name] = replacement;
-                                fixed++;
+            try {
+                if (_soundFixState == 0 && fixSoundAttach) {
+                    if (_soundFixDeadline == 0) _soundFixDeadline = getTimer() + 3000;
+                    var gr:MovieClip = gameContainer.gameLoader;
+                    var fixed:Number = 0;
+                    for (var name:String in gr) {
+                        if (gr[name] instanceof Sound) {
+                            var sndObj:Object = gr[name];
+                            var snd:Sound = Sound(sndObj);
+                            var linkage:String = sndObj.__raflash_linkage;
+                            if (!(snd.duration > 0) && linkage != undefined) {
+                                var replacement:Sound = new Sound(gr);
+                                replacement.attachSound(linkage);
+                                if (replacement.duration > 0) {
+                                    replacement.onSoundComplete = snd.onSoundComplete;
+                                    Object(replacement).__raflash_linkage = linkage;
+                                    gr[name] = replacement;
+                                    fixed++;
+                                }
                             }
                         }
                     }
+                    if (fixed > 0) {
+                        sendMessage("log", {message: "Fixed " + fixed + " Sound objects with wrong library scope"});
+                        _soundFixState = 1;
+                    } else if (getTimer() > _soundFixDeadline) {
+                        _soundFixState = 1;
+                    }
                 }
-                if (fixed > 0) {
-                    sendMessage("log", {message: "Fixed " + fixed + " Sound objects with wrong library scope"});
-                    _soundFixState = 1;
-                } else if (getTimer() > _soundFixDeadline) {
-                    _soundFixState = 1;
+            } catch (e:Error) { logError("soundFixScan", e); }
+
+            try {
+                if (fixTextFieldBindings) {
+                    if (benchmarkingActive) {
+                        var tfStart:Number = getTimer();
+                        syncTextFieldBindings(gameContainer.gameLoader);
+                        sendMessage("benchmark", {kind: "TextField Sync", ms: getTimer() - tfStart});
+                    } else {
+                        syncTextFieldBindings(gameContainer.gameLoader);
+                    }
                 }
-            }
-            if (fixTextFieldBindings) {
+            } catch (e:Error) { logError("syncTextFieldBindings", e); }
+
+            try { checkAchievements(); } catch (e:Error) { logError("checkAchievements", e); }
+
+            try {
                 if (benchmarkingActive) {
-                    var tfStart:Number = getTimer();
-                    syncTextFieldBindings(gameContainer.gameLoader);
-                    sendMessage("benchmark", {kind: "TextField Sync", ms: getTimer() - tfStart});
+                    var wStart:Number = getTimer();
+                    processWatchers();
+                    sendMessage("benchmark", {kind: "Watchers", ms: getTimer() - wStart});
                 } else {
-                    syncTextFieldBindings(gameContainer.gameLoader);
+                    processWatchers();
                 }
-            }
-            checkAchievements();
-            if (benchmarkingActive) {
-                var wStart:Number = getTimer();
-                processWatchers();
-                sendMessage("benchmark", {kind: "Watchers", ms: getTimer() - wStart});
-            } else {
-                processWatchers();
-            }
+            } catch (e:Error) { logError("processWatchers", e); }
         }
     }
 
@@ -348,39 +380,41 @@ class Main {
 
     private static function syncTextFieldBindings(clip:MovieClip):Void {
         for (var name:String in clip) {
-            var child = clip[name];
-            if (child instanceof TextField) {
-                var tf:TextField = TextField(child);
-                if (tf.variable != undefined && tf.variable != "") {
-                    var resolved:Object = resolveTextFieldVariable(tf);
-                    if (resolved == null) continue;
+            try {
+                var child = clip[name];
+                if (child instanceof TextField) {
+                    var tf:TextField = TextField(child);
+                    if (tf.variable != undefined && tf.variable != "") {
+                        var resolved:Object = resolveTextFieldVariable(tf);
+                        if (resolved == null) continue;
 
-                    var varValue = resolved.target[resolved.prop];
-                    var textValue:String = tf.text;
-                    var lastSync = tf.__raflash_sync;
+                        var varValue = resolved.target[resolved.prop];
+                        var textValue:String = tf.text;
+                        var lastSync = tf.__raflash_sync;
 
-                    if (lastSync == undefined) {
-                        // First encounter: variable is source of truth (text may be design-time placeholder)
-                        if (varValue != undefined) {
+                        if (lastSync == undefined) {
+                            // First encounter: variable is source of truth (text may be design-time placeholder)
+                            if (varValue != undefined) {
+                                tf.text = String(varValue);
+                                tf.__raflash_sync = String(varValue);
+                            } else {
+                                // Variable not set yet — just start tracking, don't overwrite
+                                tf.__raflash_sync = textValue;
+                            }
+                        } else if (textValue != lastSync) {
+                            // User typed → sync text to variable
+                            resolved.target[resolved.prop] = textValue;
+                            tf.__raflash_sync = textValue;
+                        } else if (varValue != undefined && String(varValue) != lastSync) {
+                            // Game code set variable → sync variable to text
                             tf.text = String(varValue);
                             tf.__raflash_sync = String(varValue);
-                        } else {
-                            // Variable not set yet — just start tracking, don't overwrite
-                            tf.__raflash_sync = textValue;
                         }
-                    } else if (textValue != lastSync) {
-                        // User typed → sync text to variable
-                        resolved.target[resolved.prop] = textValue;
-                        tf.__raflash_sync = textValue;
-                    } else if (varValue != undefined && String(varValue) != lastSync) {
-                        // Game code set variable → sync variable to text
-                        tf.text = String(varValue);
-                        tf.__raflash_sync = String(varValue);
                     }
+                } else if (child instanceof MovieClip) {
+                    syncTextFieldBindings(MovieClip(child));
                 }
-            } else if (child instanceof MovieClip) {
-                syncTextFieldBindings(MovieClip(child));
-            }
+            } catch (e:Error) { /* skip this child, keep processing siblings */ }
         }
     }
 
@@ -399,9 +433,11 @@ class Main {
             // Set up F12 key listener after game loads
             var keyListener:Object = {};
             keyListener.onKeyDown = function():Void {
-                if (Key.getCode() == 123) { // F12
-                    Main.sendMessage("keypress", { keyCode: 123 });
-                }
+                try {
+                    if (Key.getCode() == 123) { // F12
+                        Main.sendMessage("keypress", { keyCode: 123 });
+                    }
+                } catch (e:Error) { Main.logError("onKeyDown", e); }
             };
             Key.addListener(keyListener);
 
@@ -454,6 +490,7 @@ class Main {
         var command:String = String(payload.command);
         var params:Object = payload.params || {};
 
+        try {
         switch (command) {
             case "ping":
                 sendResponse(id, { success: true, result: "pong" });
@@ -661,6 +698,10 @@ class Main {
             default:
                 sendResponse(id, { success: false, error: "Unknown command: " + command });
         }
+        } catch (e:Error) {
+            logError("command:" + command, e);
+            try { sendResponse(id, { success: false, error: e.message }); } catch (e2:Error) {}
+        }
     }
 
     /**
@@ -736,13 +777,17 @@ class Main {
         var listener:Object = {};
 
         listener.onLoadInit = function(target:MovieClip):Void {
-            Main.badgeImageCache[Main.currentPreloadId] = target;
-            Main.preloadNext();
+            try {
+                Main.badgeImageCache[Main.currentPreloadId] = target;
+                Main.preloadNext();
+            } catch (e:Error) { Main.logError("preloadNext.onLoadInit", e); }
         };
 
         listener.onLoadError = function(target:MovieClip, error:String):Void {
-            // Skip failed images, continue preloading
-            Main.preloadNext();
+            try {
+                // Skip failed images, continue preloading
+                Main.preloadNext();
+            } catch (e:Error) { Main.logError("preloadNext.onLoadError", e); }
         };
 
         loader.addListener(listener);
@@ -2030,65 +2075,67 @@ class Main {
      * @param visited Array to track visited objects (prevents infinite loops from circular references)
      */
     private static function searchTargetForValue(target:Object, value:String, path:String, output:Array, visited:Array):Void {
-        // Circular reference protection for objects and movieclips
-        if (typeof(target) == "movieclip" || typeof(target) == "object") {
-            for (var v:Number = 0; v < visited.length; v++) {
-                if (visited[v] === target) {
-                    return; // Already visited, skip to prevent infinite loop
+        try {
+            // Circular reference protection for objects and movieclips
+            if (typeof(target) == "movieclip" || typeof(target) == "object") {
+                for (var v:Number = 0; v < visited.length; v++) {
+                    if (visited[v] === target) {
+                        return; // Already visited, skip to prevent infinite loop
+                    }
+                }
+                visited.push(target);
+            }
+
+            if (typeof(target) == "movieclip") {
+                for (var key:String in target) {
+                    searchTargetForValue(target[key], value, path + "." + key, output, visited);
+                }
+            } else if (target instanceof TextField) {
+                if (matchesWildcard(target.text, value)) {
+                    output.push(path);
+                }
+            } else if (typeof(target) == "number") {
+                if (matchesWildcard(String(target), value)) {
+                    output.push(path);
+                }
+            } else if (typeof(target) == "string") {
+                if (matchesWildcard(String(target), value)) {
+                    output.push(path);
+                }
+            } else if (target instanceof Date) {
+                if (matchesWildcard(String(target), value)) {
+                    output.push(path);
+                }
+            } else if (target instanceof Array) {
+                for (var j:Number = 0, len:Number = target.length; j < len; ++j) {
+                    searchTargetForValue(target[j], value, path + "[" + j + "]", output, visited);
+                }
+            } else if (target == null) {
+                if ("null" == value) {
+                    output.push(path);
+                }
+            } else if (target == undefined) {
+                if ("undefined" == value) {
+                    output.push(path);
+                }
+            } else if (target == NaN) {
+                if ("NaN" == value) {
+                    output.push(path);
+                }
+            } else if (typeof(target) == "object") {
+                for (var key2:String in target) {
+                    searchTargetForValue(target[key2], value, path + "." + key2, output, visited);
+                }
+            } else if (typeof(target) == "boolean") {
+                if (matchesWildcard(String(target), value.toLowerCase())) {
+                    output.push(path);
+                }
+            } else if (typeof(target) == "function") {
+                if ("[function]" == value.toLowerCase()) {
+                    output.push(path);
                 }
             }
-            visited.push(target);
-        }
-
-        if (typeof(target) == "movieclip") {
-            for (var key:String in target) {
-                searchTargetForValue(target[key], value, path + "." + key, output, visited);
-            }
-        } else if (target instanceof TextField) {
-            if (matchesWildcard(target.text, value)) {
-                output.push(path);
-            }
-        } else if (typeof(target) == "number") {
-            if (matchesWildcard(String(target), value)) {
-                output.push(path);
-            }
-        } else if (typeof(target) == "string") {
-            if (matchesWildcard(String(target), value)) {
-                output.push(path);
-            }
-        } else if (target instanceof Date) {
-            if (matchesWildcard(String(target), value)) {
-                output.push(path);
-            }
-        } else if (target instanceof Array) {
-            for (var j:Number = 0, len:Number = target.length; j < len; ++j) {
-                searchTargetForValue(target[j], value, path + "[" + j + "]", output, visited);
-            }
-        } else if (target == null) {
-            if ("null" == value) {
-                output.push(path);
-            }
-        } else if (target == undefined) {
-            if ("undefined" == value) {
-                output.push(path);
-            }
-        } else if (target == NaN) {
-            if ("NaN" == value) {
-                output.push(path);
-            }
-        } else if (typeof(target) == "object") {
-            for (var key:String in target) {
-                searchTargetForValue(target[key], value, path + "." + key, output, visited);
-            }
-        } else if (typeof(target) == "boolean") {
-            if (matchesWildcard(String(target), value.toLowerCase())) {
-                output.push(path);
-            }
-        } else if (typeof(target) == "function") {
-            if ("[function]" == value.toLowerCase()) {
-                output.push(path);
-            }
-        }
+        } catch (e:Error) { /* skip this subtree */ }
     }
 
     /**
@@ -2096,29 +2143,31 @@ class Main {
      * @param visited Array to track visited objects (prevents infinite loops from circular references)
      */
     private static function searchTargetForName(target:Object, nameLower:String, path:String, output:Array, visited:Array):Void {
-        // Circular reference protection for objects and movieclips
-        if (typeof(target) == "movieclip" || typeof(target) == "object") {
-            for (var v:Number = 0; v < visited.length; v++) {
-                if (visited[v] === target) {
-                    return;
+        try {
+            // Circular reference protection for objects and movieclips
+            if (typeof(target) == "movieclip" || typeof(target) == "object") {
+                for (var v:Number = 0; v < visited.length; v++) {
+                    if (visited[v] === target) {
+                        return;
+                    }
                 }
+                visited.push(target);
             }
-            visited.push(target);
-        }
 
-        if (typeof(target) == "movieclip" || typeof(target) == "object") {
-            for (var key:String in target) {
-                var childPath:String = path + "." + key;
-                if (key.toLowerCase().indexOf(nameLower) >= 0) {
-                    output.push(childPath);
+            if (typeof(target) == "movieclip" || typeof(target) == "object") {
+                for (var key:String in target) {
+                    var childPath:String = path + "." + key;
+                    if (key.toLowerCase().indexOf(nameLower) >= 0) {
+                        output.push(childPath);
+                    }
+                    searchTargetForName(target[key], nameLower, childPath, output, visited);
                 }
-                searchTargetForName(target[key], nameLower, childPath, output, visited);
+            } else if (target instanceof Array) {
+                for (var j:Number = 0, len:Number = target.length; j < len; ++j) {
+                    searchTargetForName(target[j], nameLower, path + "[" + j + "]", output, visited);
+                }
             }
-        } else if (target instanceof Array) {
-            for (var j:Number = 0, len:Number = target.length; j < len; ++j) {
-                searchTargetForName(target[j], nameLower, path + "[" + j + "]", output, visited);
-            }
-        }
+        } catch (e:Error) { /* skip this subtree */ }
     }
 
     // ========================================================================
