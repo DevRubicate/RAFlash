@@ -12,6 +12,9 @@ import flash.events.SecurityErrorEvent;
 import flash.events.ProgressEvent;
 import flash.events.KeyboardEvent;
 import flash.ui.Keyboard;
+import flash.system.LoaderContext;
+import flash.system.ApplicationDomain;
+import flash.system.Security;
 import haxe.Timer;
 
 /**
@@ -58,6 +61,10 @@ class Main extends MovieClip {
     public function new() {
         super();
         instance = this;
+
+        // Allow loaded game SWFs to be introspected across security boundaries
+        Security.allowDomain("*");
+        Security.allowInsecureDomain("*");
 
         // Setup stage
         addEventListener(Event.ADDED_TO_STAGE, onAddedToStage);
@@ -386,7 +393,8 @@ class Main extends MovieClip {
         loader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, onGameLoadError);
 
         var gameUrl = (url != null) ? url : "http://raflash.local/game.swf";
-        loader.load(new URLRequest(gameUrl));
+        var context = new LoaderContext(false, ApplicationDomain.currentDomain);
+        loader.load(new URLRequest(gameUrl), context);
 
         addChild(loader);
     }

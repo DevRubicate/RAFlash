@@ -445,12 +445,13 @@ function swfHidesMenuBar(swfBytes: Uint8Array): boolean {
  * Parse SWF header to extract frameRate, backgroundColor, width, and height.
  * Handles both compressed (CWS) and uncompressed (FWS) SWFs.
  */
-function parseSwfMetadata(swfBytes: Uint8Array): { frameRate: number; backgroundColor: string; width: number; height: number } {
+function parseSwfMetadata(swfBytes: Uint8Array): { frameRate: number; backgroundColor: string; width: number; height: number; useAS3: boolean } {
     // Default values
     let frameRate = 30;
     let backgroundColor = "#FFFFFF";
     let width = 800;
     let height = 600;
+    let useAS3 = false;
 
     try {
         // Check signature
@@ -469,7 +470,7 @@ function parseSwfMetadata(swfBytes: Uint8Array): { frameRate: number; background
             data = swfBytes;
         } else {
             console.warn(`Unknown SWF signature: ${signature}`);
-            return { frameRate, backgroundColor, width, height };
+            return { frameRate, backgroundColor, width, height, useAS3 };
         }
 
         // Parse RECT structure (bit-packed)
@@ -528,6 +529,12 @@ function parseSwfMetadata(swfBytes: Uint8Array): { frameRate: number; background
                 headerSize = 6;
             }
 
+            if (tagType === 69 && tagLength >= 4) {
+                // FileAttributes tag: bit 3 of the flags byte = UseAS3
+                const flags = data[offset + headerSize];
+                useAS3 = (flags & 0x08) !== 0;
+            }
+
             if (tagType === 9 && tagLength >= 3) {
                 // SetBackgroundColor: RGB
                 const r = data[offset + headerSize];
@@ -544,7 +551,7 @@ function parseSwfMetadata(swfBytes: Uint8Array): { frameRate: number; background
         console.error(`parseSwfMetadata error: ${err}`);
     }
 
-    return { frameRate, backgroundColor, width, height };
+    return { frameRate, backgroundColor, width, height, useAS3 };
 }
 
 // Application state
@@ -1885,8 +1892,7 @@ async function main(): Promise<void> {
         gameWindowWidth = gameMetadata.width;
         gameWindowHeight = gameMetadata.height;
 
-        const swfVersion = gameSwfBuffer[3];
-        avmConfig = swfVersion >= 9
+        avmConfig = gameMetadata.useAS3
             ? { mode: "AVM2", firmwareUrl: "/avm2-firmware.swf", firmwareSwf: "firmware/AVM2.swf", messageTerminator: "\n", patchFirmware: true, convertPngToJpeg: false }
             : { mode: "AVM1", firmwareUrl: "/avm1-wrapper.swf", firmwareSwf: "firmware/AVM1Wrapper.swf", innerFirmwareSwf: "firmware/AVM1.swf", messageTerminator: "\0", patchFirmware: true, convertPngToJpeg: true };
 
