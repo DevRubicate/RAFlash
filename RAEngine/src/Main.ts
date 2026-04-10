@@ -805,6 +805,9 @@ function startHttpServerInner() {
                             if (data[0] === "REQUEST") {
                                 const [, id, message] = data;
                                 const response = await handleApiRequest(message, socket);
+                                if (response && response.success === false) {
+                                    emitLog("engine", "error", `Command "${message?.command}" failed: ${response.error || "unknown"}`);
+                                }
                                 socket.send(JSON.stringify(["RESPONSE", id, response]) + "\n");
                             }
                         } catch (e) {
