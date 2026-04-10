@@ -26,6 +26,7 @@ function displayError(title: string, message: string, stack: string): void {
     const sanitize = (str: string): string => str.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
     errorContainer.innerHTML = `
+        <style>* { user-select: text !important; }</style>
         <h2>${sanitize(title)}</h2>
         <br />
         <div><strong>Message:</strong> ${sanitize(message)}</div>
