@@ -52,9 +52,14 @@
                     <button class="btn btn-secondary" @click="openEventLog">Event Log</button>
                     <button class="btn btn-secondary" @click="openSettings">Settings</button>
                 </div>
-                <button class="btn btn-secondary" @click="checkForUpdates" :disabled="updateState !== 'idle'">
-                    {{ updateLabel }}
-                </button>
+                <div class="action-bar-right">
+                    <button class="btn btn-secondary" @click="syncAssets" :disabled="assetSyncState !== 'idle'">
+                        {{ assetSyncLabel }}
+                    </button>
+                    <button class="btn btn-secondary" @click="checkForUpdates" :disabled="updateState !== 'idle'">
+                        {{ updateLabel }}
+                    </button>
+                </div>
             </footer>
 
             <!-- Update modal -->
@@ -237,7 +242,7 @@
         flex-shrink: 0;
     }
 
-    .action-bar-left {
+    .action-bar-left, .action-bar-right {
         display: flex;
         gap: 0.5rem;
     }
@@ -310,6 +315,14 @@ const pathSegments = ref([]);
 const items = ref([]);
 const users = ref([]);
 const selectedUser = ref(null);
+
+// Asset sync state
+const assetSyncState = ref('idle'); // 'idle' | 'syncing' | 'done'
+const assetSyncLabel = computed(() => {
+    if (assetSyncState.value === 'syncing') return 'Syncing...';
+    if (assetSyncState.value === 'done') return 'Assets synced!';
+    return 'Sync Assets';
+});
 
 // Update state
 const updateState = ref('idle'); // 'idle' | 'checking' | 'downloading' | 'uptodate'
@@ -421,6 +434,25 @@ async function openEventLog() {
 // Open Settings window
 async function openSettings() {
     await Network.send({ command: 'showPopup', params: { url: 'internals/assets/settings.html', width: 500, height: 400, params: {}, parentWindowId: App.windowId } });
+}
+
+// Check for updates
+// Sync assets from RAFlash-Assets repo
+async function syncAssets() {
+    assetSyncState.value = 'syncing';
+    try {
+        const response = await Network.send({ command: 'syncAssets', params: {} });
+        if (!response.success) {
+            alert(response.error || 'Failed to sync assets');
+            assetSyncState.value = 'idle';
+            return;
+        }
+        assetSyncState.value = 'done';
+        setTimeout(() => { assetSyncState.value = 'idle'; }, 2000);
+    } catch {
+        alert('Failed to sync assets');
+        assetSyncState.value = 'idle';
+    }
 }
 
 // Check for updates

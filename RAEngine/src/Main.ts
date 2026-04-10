@@ -815,6 +815,28 @@ async function handleApiRequest(
             await saveSettings(input.params.settings as Settings);
             return { success: true };
         }
+        case "syncAssets": {
+            try {
+                // List all files in the RAFlash-Assets repo's games/ directory
+                const res = await fetch("https://api.github.com/repos/DevRubicate/RAFlash-Assets/contents/games");
+                if (!res.ok) return { success: false, error: "Failed to fetch asset list" };
+                const files = await res.json() as Array<{ name: string; download_url: string }>;
+                const jsonFiles = files.filter(f => f.name.endsWith(".json"));
+
+                await Deno.mkdir("RACache/games", { recursive: true });
+                let downloaded = 0;
+                for (const file of jsonFiles) {
+                    const dlRes = await fetch(file.download_url);
+                    if (!dlRes.ok) continue;
+                    const content = await dlRes.text();
+                    await Deno.writeTextFile(join("RACache", "games", file.name), content);
+                    downloaded++;
+                }
+                return { success: true, params: { downloaded, total: jsonFiles.length } };
+            } catch {
+                return { success: false, error: "Failed to sync assets" };
+            }
+        }
         case "checkForUpdates": {
             try {
                 const res = await fetch("https://api.github.com/repos/DevRubicate/RAFlash/releases/latest");
