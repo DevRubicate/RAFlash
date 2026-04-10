@@ -2123,6 +2123,79 @@ class Main {
             // Start timing for this achievement (only when benchmarking is active)
             var startTime:Number = benchmarkingActive ? getTimer() : 0;
 
+            // === SIMPLE ACHIEVEMENT FAST-PATH ===
+            // For achievements with 1 CORE group, all requirements having fastReq,
+            // no special flags, and no hit tracking — skip the entire phase pipeline.
+            var simpleEligible:Boolean = (achievement.groups.length == 1 && achievement.groups[0].type == "CORE");
+            if (simpleEligible) {
+                var simpleGroup:Object = achievement.groups[0];
+                var simpleReqs:Array = simpleGroup.requirements;
+                var simpleAllPass:Boolean = true;
+                var simpleValid:Boolean = true;
+
+                for (var sk:Number = 0; sk < simpleReqs.length; ++sk) {
+                    var sr:Object = simpleReqs[sk];
+                    // Bail to full pipeline if any requirement is complex
+                    if (sr.fastReq == null || sr.flag != null && sr.flag != "" || sr.maxHits > 0 ||
+                        sr.typeA == "DELTA" || sr.typeB == "DELTA") {
+                        simpleEligible = false;
+                        break;
+                    }
+                    var sfr:Array = sr.fastReq;
+                    var sRawA;
+                    switch (sfr[1]) {
+                        case 3: sRawA = gameContainer.gameLoader._root[sfr[2]]; break;
+                        case 4: {
+                            var so4 = gameContainer.gameLoader._root[sfr[2]];
+                            sRawA = (so4 !== undefined) ? so4[sfr[3]] : undefined;
+                            break;
+                        }
+                        case 5: {
+                            var so5 = gameContainer.gameLoader._root[sfr[2]];
+                            if (so5 !== undefined) so5 = so5[sfr[3]];
+                            sRawA = (so5 !== undefined) ? so5[sfr[4]] : undefined;
+                            break;
+                        }
+                    }
+                    var sRawB = sfr[sfr.length - 1];
+                    var sPassed:Boolean = false;
+                    switch (sfr[0]) {
+                        case 0: sPassed = (sRawA == sRawB); break;
+                        case 1: sPassed = (sRawA != sRawB); break;
+                        case 2: sPassed = (sRawA > sRawB); break;
+                        case 3: sPassed = (sRawA >= sRawB); break;
+                        case 4: sPassed = (sRawA < sRawB); break;
+                        case 5: sPassed = (sRawA <= sRawB); break;
+                    }
+                    if (!sPassed) {
+                        simpleAllPass = false;
+                        break;
+                    }
+                }
+
+                if (simpleEligible) {
+                    // All requirements passed — trigger the achievement
+                    if (simpleAllPass && simpleReqs.length > 0) {
+                        var imageUrl:String = "http://raflash.local/asset-image/" + achievement.id;
+                        Toast.show("Achievement Unlocked", achievement.name, achievement.description || "", "left", imageUrl);
+                        clearAssetDeltaValues(achievement);
+                        diffSet(achievement, "state", "TRIGGERED", "assets/" + i + "/state");
+                    }
+
+                    // Record timing
+                    if (benchmarkingActive) {
+                        var elapsed:Number = getTimer() - startTime;
+                        var achievementId:String = String(achievement.id);
+                        if (profilingData[achievementId] == null) {
+                            profilingData[achievementId] = {name: achievement.name, totalMs: 0, evalCount: 0};
+                        }
+                        profilingData[achievementId].totalMs += elapsed;
+                        profilingData[achievementId].evalCount += 1;
+                    }
+                    continue; // Skip full phase pipeline
+                }
+            }
+
             // Track if all requirements pass for this asset
             var assetTriggered:Boolean = true;
             var hasRequirements:Boolean = false;
