@@ -20,6 +20,13 @@
                             <span class="setting-desc">Restores two-way AS2 TextField variable bindings that break under loadMovie(). Syncs variable changes to text display and user input back to variables each frame.</span>
                         </div>
                     </label>
+                    <label class="setting-row">
+                        <input type="checkbox" v-model="settings.fixSoundAttach" @change="save">
+                        <div class="setting-info">
+                            <span class="setting-name">Fix Sound attachSound scope</span>
+                            <span class="setting-desc">Fixes sounds that fail to play because attachSound looks in the firmware's library instead of the game's. Replaces broken Sound objects with correctly-targeted ones after game load.</span>
+                        </div>
+                    </label>
                 </div>
             </div>
 
@@ -150,6 +157,7 @@ const tabs = [
 
 const settings = ref({
     fixTextFieldBindings: true,
+    fixSoundAttach: true,
     benchmarkingEnabled: false,
 });
 

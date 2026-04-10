@@ -24,6 +24,7 @@ class Main {
     // Configuration
     private static var PORT:Number = 18081;
     private static var fixTextFieldBindings:Boolean = true;
+    private static var fixSoundAttach:Boolean = true;
 
     // Profiling
     private static var profilingData:Object = {};
@@ -206,6 +207,18 @@ class Main {
         var gameLoader:MovieClip = gameContainer.createEmptyMovieClip("gameLoader", 1);
         gameLoader._lockroot = true;
 
+        // Patch Sound.attachSound to record linkage IDs (only if fix enabled).
+        // Native methods on built-in prototypes are write-protected; ASSetPropFlags
+        // clears the protection so our override takes effect.
+        if (fixSoundAttach) {
+            _global.ASSetPropFlags(Sound.prototype, "attachSound", 0, 7);
+            var _origAttach:Function = Sound.prototype.attachSound;
+            Sound.prototype.attachSound = function(id:String):Void {
+                this.__raflash_linkage = id;
+                _origAttach.call(this, id);
+            };
+        }
+
         // Load game from server (or spoofed domain URL for sitelock bypass)
         var gameUrl:String = (url != undefined && url != null) ? url : "http://raflash.local/game.swf";
         gameLoader.loadMovie(gameUrl);
@@ -219,10 +232,45 @@ class Main {
     /**
      * Per-frame handler for loading progress and achievements
      */
+    private static var _soundFixState:Number = 0; // 0=scanning, 1=done
+    private static var _soundFixDeadline:Number = 0;
     private static function onFrame():Void {
         if (!gameLoaded) {
             checkLoadProgress();
         } else {
+            // Fix Sound objects whose attachSound failed due to wrong library scope.
+            // When a game creates new Sound() without a target, attachSound looks in the
+            // firmware's library instead of the game's. The patched attachSound records
+            // the linkage ID on each Sound, so we can create correctly-targeted replacements.
+            // Retries for 3 seconds after game load since game init may take a few frames.
+            if (_soundFixState == 0 && fixSoundAttach) {
+                if (_soundFixDeadline == 0) _soundFixDeadline = getTimer() + 3000;
+                var gr:MovieClip = gameContainer.gameLoader;
+                var fixed:Number = 0;
+                for (var name:String in gr) {
+                    if (gr[name] instanceof Sound) {
+                        var sndObj:Object = gr[name];
+                        var snd:Sound = Sound(sndObj);
+                        var linkage:String = sndObj.__raflash_linkage;
+                        if (!(snd.duration > 0) && linkage != undefined) {
+                            var replacement:Sound = new Sound(gr);
+                            replacement.attachSound(linkage);
+                            if (replacement.duration > 0) {
+                                replacement.onSoundComplete = snd.onSoundComplete;
+                                Object(replacement).__raflash_linkage = linkage;
+                                gr[name] = replacement;
+                                fixed++;
+                            }
+                        }
+                    }
+                }
+                if (fixed > 0) {
+                    sendMessage("log", {message: "Fixed " + fixed + " Sound objects with wrong library scope"});
+                    _soundFixState = 1;
+                } else if (getTimer() > _soundFixDeadline) {
+                    _soundFixState = 1;
+                }
+            }
             if (fixTextFieldBindings) {
                 if (benchmarkingActive) {
                     var tfStart:Number = getTimer();
@@ -422,6 +470,7 @@ class Main {
                     AppData.originalData = JSON.parse(JSON.stringify(params.data));
                     if (params.settings != undefined) {
                         fixTextFieldBindings = (params.settings.fixTextFieldBindings != false);
+                        fixSoundAttach = (params.settings.fixSoundAttach != false);
                         benchmarkingActive = (params.settings.benchmarkingEnabled == true);
                     }
                     initialSetupDone = true;

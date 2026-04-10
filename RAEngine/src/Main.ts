@@ -216,9 +216,10 @@ const RAFLASH_DOMAIN = "raflash.local"; // Fake domain for proxy routing (127.0.
 // Global settings (persisted to RACache/settings.json)
 interface Settings {
     fixTextFieldBindings: boolean;
+    fixSoundAttach: boolean;
     benchmarkingEnabled: boolean;
 }
-const defaultSettings: Settings = { fixTextFieldBindings: true, benchmarkingEnabled: false };
+const defaultSettings: Settings = { fixTextFieldBindings: true, fixSoundAttach: true, benchmarkingEnabled: false };
 let settings: Settings = { ...defaultSettings };
 
 async function loadSettings(): Promise<void> {
@@ -445,13 +446,14 @@ function swfHidesMenuBar(swfBytes: Uint8Array): boolean {
  * Parse SWF header to extract frameRate, backgroundColor, width, and height.
  * Handles both compressed (CWS) and uncompressed (FWS) SWFs.
  */
-function parseSwfMetadata(swfBytes: Uint8Array): { frameRate: number; backgroundColor: string; width: number; height: number; useAS3: boolean } {
+function parseSwfMetadata(swfBytes: Uint8Array): { frameRate: number; backgroundColor: string; width: number; height: number; useAS3: boolean; exportedSounds: string[] } {
     // Default values
     let frameRate = 30;
     let backgroundColor = "#FFFFFF";
     let width = 800;
     let height = 600;
     let useAS3 = false;
+    const exportedSounds: string[] = [];
 
     try {
         // Check signature
@@ -470,7 +472,7 @@ function parseSwfMetadata(swfBytes: Uint8Array): { frameRate: number; background
             data = swfBytes;
         } else {
             console.warn(`Unknown SWF signature: ${signature}`);
-            return { frameRate, backgroundColor, width, height, useAS3 };
+            return { frameRate, backgroundColor, width, height, useAS3, exportedSounds };
         }
 
         // Parse RECT structure (bit-packed)
@@ -513,9 +515,11 @@ function parseSwfMetadata(swfBytes: Uint8Array): { frameRate: number; background
         // Low byte = fraction, high byte = integer
         frameRate = data[frameRateOffset + 1]; // Just use integer part
 
-        // Search for SetBackgroundColor tag (type 9)
+        // Parse SWF tags for metadata, sound exports, etc.
         const tagsOffset = frameRateOffset + 4; // +2 frameRate, +2 frameCount
         let offset = tagsOffset;
+        const soundCharacterIds = new Set<number>();
+        const exportAssets: { charId: number; name: string }[] = [];
 
         while (offset < data.length - 2) {
             const tagCodeAndLength = data[offset] | (data[offset + 1] << 8);
@@ -541,17 +545,49 @@ function parseSwfMetadata(swfBytes: Uint8Array): { frameRate: number; background
                 const g = data[offset + headerSize + 1];
                 const b = data[offset + headerSize + 2];
                 backgroundColor = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
-                break;
+            }
+
+            if (tagType === 14) {
+                // DefineSound: character ID at first 2 bytes of tag data
+                const soundId = data[offset + headerSize] | (data[offset + headerSize + 1] << 8);
+                soundCharacterIds.add(soundId);
+            }
+
+            if (tagType === 56 && tagLength >= 2) {
+                // ExportAssets: count (UI16), then pairs of (UI16 charId, string name)
+                let eaOffset = offset + headerSize;
+                const count = data[eaOffset] | (data[eaOffset + 1] << 8);
+                eaOffset += 2;
+                for (let ei = 0; ei < count; ei++) {
+                    if (eaOffset + 2 > offset + headerSize + tagLength) break;
+                    const charId = data[eaOffset] | (data[eaOffset + 1] << 8);
+                    eaOffset += 2;
+                    // Read null-terminated string
+                    let name = "";
+                    while (eaOffset < offset + headerSize + tagLength && data[eaOffset] !== 0) {
+                        name += String.fromCharCode(data[eaOffset]);
+                        eaOffset++;
+                    }
+                    eaOffset++; // skip null terminator
+                    exportAssets.push({ charId, name });
+                }
             }
 
             if (tagType === 0) break; // End tag
             offset += headerSize + tagLength;
         }
+
+        // Build exported sounds list: ExportAssets entries whose charId is a DefineSound
+        for (const ea of exportAssets) {
+            if (soundCharacterIds.has(ea.charId)) {
+                exportedSounds.push(ea.name);
+            }
+        }
     } catch (err) {
         console.error(`parseSwfMetadata error: ${err}`);
     }
 
-    return { frameRate, backgroundColor, width, height, useAS3 };
+    return { frameRate, backgroundColor, width, height, useAS3, exportedSounds };
 }
 
 // Application state
