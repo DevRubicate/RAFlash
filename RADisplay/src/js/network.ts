@@ -134,11 +134,12 @@ export class Network {
                             const handlers = Network.eventHandlers.get(id);
                             if (handlers && handlers.size > 0) {
                                 handlers.forEach(handler => handler(message));
-                            } else if(Network.onMessageCallback !== null) {
-                                // Fallback: route unhandled events through the message callback
-                                // (e.g., editData broadcasts use the same handler as requests)
+                            } else if(id === 'editData' && Network.onMessageCallback !== null) {
+                                // Route editData events through the message callback
+                                // (editData broadcasts use the same handler as requests)
                                 Network.onMessageCallback({command: id, params: message});
                             }
+                            // Other event types silently ignored if no handler registered
                         } else {
                             throw new Error(`Network.onmessage: Invalid message type: ${type}`);
                         }

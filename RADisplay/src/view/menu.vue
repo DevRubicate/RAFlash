@@ -33,6 +33,10 @@
         </div>
 
         <div class="menu-footer">
+            <button class="menu-button" v-if="benchmarkingEnabled" @click="openBenchmark()">
+                <svg fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                Benchmarking
+            </button>
             <button class="menu-button" @click="openEventLog()">
                 <svg fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                 Event Log
@@ -126,8 +130,11 @@
 </style>
 
 <script setup>
+    import { ref }          from 'vue';
     import { Network }      from '../js/network.ts';
     import { App }          from '../js/app.ts';
+
+    const benchmarkingEnabled = ref(false);
 
     const openGameBehavior = async () => {
         await Network.send({ command: 'showPopup', params: { url: 'internals/assets/game-behavior.html', width: 450, height: 300, params: {}, parentWindowId: App.windowId } });
@@ -153,6 +160,10 @@
         await Network.send({ command: 'showPopup', params: { url: 'internals/assets/memory-watch.html', width: 600, height: 500, params: {}, parentWindowId: App.windowId } });
     };
 
+    const openBenchmark = async () => {
+        await Network.send({ command: 'showPopup', params: { url: 'internals/assets/benchmark.html', width: 800, height: 500, params: {}, parentWindowId: App.windowId } });
+    };
+
     const openEventLog = async () => {
         await Network.send({ command: 'showPopup', params: { url: 'internals/assets/event-log.html', width: 700, height: 500, params: {}, parentWindowId: App.windowId } });
     };
@@ -161,7 +172,13 @@
         await Network.send({ command: 'showPopup', params: { url: 'internals/assets/documentation.html', width: 700, height: 650, params: {}, parentWindowId: App.windowId } });
     };
 
-    App.initialize().then(() => App.ready = true);
+    App.initialize().then(async () => {
+        App.ready = true;
+        const response = await Network.send({ command: 'getSettings', params: {} });
+        if (response.success) {
+            benchmarkingEnabled.value = !!response.params.benchmarkingEnabled;
+        }
+    });
 </script>
 
 

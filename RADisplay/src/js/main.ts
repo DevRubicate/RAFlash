@@ -19,6 +19,7 @@ function displayError(title: string, message: string, stack: string): void {
         z-index: 9999;
         overflow: auto;
         box-sizing: border-box;
+        user-select: text;
     `;
 
     // Sanitize HTML to prevent rendering issues

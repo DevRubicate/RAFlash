@@ -50,6 +50,8 @@ class Main {
 
     // Runtime settings (from UI checkboxes)
     private static var processingActive:Boolean = true;
+    private static var benchmarkingActive:Boolean = false;
+
 
     // Delta values storage - keyed by requirement ID
     // Format: { reqId: { prevA: value, prevB: value } }
@@ -221,9 +223,23 @@ class Main {
         if (!gameLoaded) {
             checkLoadProgress();
         } else {
-            if (fixTextFieldBindings) syncTextFieldBindings(gameContainer.gameLoader);
+            if (fixTextFieldBindings) {
+                if (benchmarkingActive) {
+                    var tfStart:Number = getTimer();
+                    syncTextFieldBindings(gameContainer.gameLoader);
+                    sendMessage("benchmark", {kind: "TextField Sync", ms: getTimer() - tfStart});
+                } else {
+                    syncTextFieldBindings(gameContainer.gameLoader);
+                }
+            }
             checkAchievements();
-            processWatchers();
+            if (benchmarkingActive) {
+                var wStart:Number = getTimer();
+                processWatchers();
+                sendMessage("benchmark", {kind: "Watchers", ms: getTimer() - wStart});
+            } else {
+                processWatchers();
+            }
         }
     }
 
@@ -353,6 +369,7 @@ class Main {
                     AppData.originalData = JSON.parse(JSON.stringify(params.data));
                     if (params.settings != undefined) {
                         fixTextFieldBindings = (params.settings.fixTextFieldBindings != false);
+                        benchmarkingActive = (params.settings.benchmarkingEnabled == true);
                     }
                     initialSetupDone = true;
                     sendResponse(id, { success: true });
@@ -467,6 +484,8 @@ class Main {
             case "setRuntimeSetting":
                 if (params.key == "processingActive") {
                     processingActive = (params.value == true);
+                } else if (params.key == "benchmarkingEnabled") {
+                    benchmarkingActive = (params.value == true);
                 }
                 sendResponse(id, { success: true });
                 break;
@@ -2010,8 +2029,8 @@ class Main {
                 continue; // Skip achievement-specific processing
             }
 
-            // Start timing for this achievement (only when profiling is enabled)
-            // var startTime:Number = getTimer();
+            // Start timing for this achievement (only when benchmarking is active)
+            var startTime:Number = benchmarkingActive ? getTimer() : 0;
 
             // Track if all requirements pass for this asset
             var assetTriggered:Boolean = true;
@@ -2886,14 +2905,16 @@ class Main {
                 diffSet(achievement, "state", "TRIGGERED", "assets/" + i + "/state");
             }
 
-            // Record timing for this achievement (disabled for performance)
-            // var elapsed:Number = getTimer() - startTime;
-            // var achievementId:String = String(achievement.id);
-            // if (profilingData[achievementId] == null) {
-            //     profilingData[achievementId] = {name: achievement.name, totalMs: 0, evalCount: 0};
-            // }
-            // profilingData[achievementId].totalMs += elapsed;
-            // profilingData[achievementId].evalCount += 1;
+            // Record timing for this achievement (only when benchmarking is active)
+            if (benchmarkingActive) {
+                var elapsed:Number = getTimer() - startTime;
+                var achievementId:String = String(achievement.id);
+                if (profilingData[achievementId] == null) {
+                    profilingData[achievementId] = {name: achievement.name, totalMs: 0, evalCount: 0};
+                }
+                profilingData[achievementId].totalMs += elapsed;
+                profilingData[achievementId].evalCount += 1;
+            }
         }
 
         // Send any pending changes (lightweight - no full diff scan)
@@ -2901,11 +2922,20 @@ class Main {
         if (diffHasPending()) {
             sendEditData(diffFlush());
         }
-        diffOpsTimeMs += getTimer() - diffStartTime;
+        var diffMs:Number = getTimer() - diffStartTime;
+        diffOpsTimeMs += diffMs;
 
         // Track frame timing
-        totalFrameTimeMs += getTimer() - frameStartTime;
+        var frameTotalMs:Number = getTimer() - frameStartTime;
+        totalFrameTimeMs += frameTotalMs;
         frameCount++;
+
+        // Emit per-frame benchmark data (use-it-or-lose-it: lost if no listener)
+        if (benchmarkingActive) {
+            sendMessage("benchmark", {kind: "Achievements", ms: frameTotalMs - diffMs});
+            sendMessage("benchmark", {kind: "Diff Ops", ms: diffMs});
+            sendMessage("benchmark", {kind: "Frame Total", ms: frameTotalMs});
+        }
 
         // Send profiling data every PROFILING_INTERVAL ms
         // DISABLED: Uncomment to re-enable profiling reports

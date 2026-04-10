@@ -22,6 +22,18 @@
                     </label>
                 </div>
             </div>
+
+            <div v-if="activeTab === 'developer'">
+                <div class="setting-group">
+                    <label class="setting-row">
+                        <input type="checkbox" v-model="settings.benchmarkingEnabled" @change="save">
+                        <div class="setting-info">
+                            <span class="setting-name">Enable Benchmarking</span>
+                            <span class="setting-desc">Profiles firmware execution time per frame. A Benchmarking window becomes available in devtools. Has a minor performance cost when active.</span>
+                        </div>
+                    </label>
+                </div>
+            </div>
         </div>
     </div>
     <div class="loading" v-else>Loading...</div>
@@ -133,10 +145,12 @@ const activeTab = ref('compatibility');
 
 const tabs = [
     { id: 'compatibility', label: 'Compatibility' },
+    { id: 'developer', label: 'Developer' },
 ];
 
 const settings = ref({
     fixTextFieldBindings: true,
+    benchmarkingEnabled: false,
 });
 
 async function save() {

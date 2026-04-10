@@ -109,8 +109,9 @@ const RAFLASH_DOMAIN = "raflash.local"; // Fake domain for proxy routing (127.0.
 // Global settings (persisted to RACache/settings.json)
 interface Settings {
     fixTextFieldBindings: boolean;
+    benchmarkingEnabled: boolean;
 }
-const defaultSettings: Settings = { fixTextFieldBindings: true };
+const defaultSettings: Settings = { fixTextFieldBindings: true, benchmarkingEnabled: false };
 let settings: Settings = { ...defaultSettings };
 
 async function loadSettings(): Promise<void> {
@@ -812,7 +813,14 @@ async function handleApiRequest(
             return { success: true, params: { ...settings, version: VERSION } };
         }
         case "saveSettings": {
+            const oldBenchmarking = settings.benchmarkingEnabled;
             await saveSettings(input.params.settings as Settings);
+            if (settings.benchmarkingEnabled !== oldBenchmarking) {
+                sendToFirmware("setRuntimeSetting", {
+                    key: "benchmarkingEnabled",
+                    value: settings.benchmarkingEnabled
+                }).catch(() => {});
+            }
             return { success: true };
         }
         case "syncAssets": {
@@ -1657,6 +1665,8 @@ function handleFirmwareData(data: string): void {
                     console.log(`  ${info.name}: ${info.totalMs.toFixed(1)}ms total, ${info.evalCount} evals, ${avgMs.toFixed(2)}ms avg`);
                 }
                 console.log("");
+            } else if (parsed.type === "benchmark") {
+                broadcastToDevtools("benchmark", parsed.data as Record<string, unknown>);
             }
             // Other message types ignored
         } catch (e) {
