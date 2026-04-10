@@ -516,21 +516,25 @@ class TestFlags {
      * ResetNextIf skips over Pause If requirements when finding the next target
      */
     private static function testResetNextIfSkipsPauseIf():Void {
-        TestRunner.test("ResetNextIf skips Pause If");
+        TestRunner.test("ResetNextIf targets Pause If directly");
         setupTest();
 
-        // Create: ResetNextIf + Pause If (should skip) + normal req (gets reset)
+        // Create: ResetNextIf + Pause If (targeted) + normal req (unaffected)
+        // Per RA docs, ResetNextIf targets the immediately next condition.
+        // Only combining modifiers (AddSource, SubSource, AddAddress) are skipped.
+        // PauseIf is a regular flag, so it IS the target — not skipped over.
         var resetNextReq:Object = createReq({alwaysTrue: true, flag: "RESET_NEXT_IF", maxHits: 0});
-        var pauseReq:Object = createReq({alwaysTrue: false, flag: "PAUSE_IF", maxHits: 0});  // Not triggering
+        var pauseReq:Object = createReq({alwaysTrue: true, flag: "PAUSE_IF", maxHits: 5});
         var targetReq:Object = createReq({alwaysTrue: true, maxHits: 10});
 
         AppData.data = {
             assets: [createAchievement([createGroup("CORE", [resetNextReq, pauseReq, targetReq])])]
         };
 
-        // Frame 1: ResetNextIf fires, skips Pause If, resets targetReq
+        // Frame 1: ResetNextIf fires and resets PauseIf's hits, not targetReq's
         Main.testRunFrame();
-        TestRunner.assertEqual(targetReq.hits, 0, "target req hits=0 (reset, Pause If skipped)");
+        TestRunner.assertEqual(pauseReq.hits, 0, "pause req hits=0 (reset by ResetNextIf)");
+        TestRunner.assertEqual(targetReq.hits, 1, "target req hits=1 (unaffected, not the ResetNextIf target)");
 
         TestRunner.endTest();
     }
@@ -1242,14 +1246,17 @@ class TestFlags {
      * MeasuredIf - only contributes when condition is true
      */
     private static function testMeasuredIfFiltering():Void {
-        TestRunner.test("MeasuredIf - only measures when condition true");
+        TestRunner.test("MeasuredIf - false zeros entire group measurement");
         setupTest();
 
-        // MeasuredIf that is FALSE - should not contribute
+        // MeasuredIf that is FALSE - gates the entire group's measured value
+        // Per RA docs: "A MeasuredIf condition must be true for the Measured value
+        // to be non-zero" — when any MeasuredIf in a group is false, the group's
+        // measured value is automatically 0.
         var measuredIfFalse:Object = createMeasuredValueReq(99, 100, "MEASURED_IF");
         measuredIfFalse.compiledB = ["VERSION_1", "VALUE", "0"];  // Make condition false (99 != 0)
 
-        // Normal Measured that is TRUE
+        // Normal Measured that would be 5/10, but gated by MeasuredIf
         var measuredTrue:Object = createMeasuredValueReq(5, 10, "MEASURED");
 
         // Blocker req
@@ -1259,11 +1266,10 @@ class TestFlags {
             assets: [createAchievement([createGroup("CORE", [measuredIfFalse, measuredTrue, blockerReq])])]
         };
 
-        // Frame 1: Only measuredTrue should contribute (measuredIfFalse condition is false)
+        // Frame 1: MeasuredIf is false, so entire group's measured value is 0
         Main.testRunFrame();
         var achievement:Object = AppData.data.assets[0];
-        TestRunner.assertEqual(achievement._measuredValue, 5, "measured value should be 5 (from measuredTrue)");
-        TestRunner.assertEqual(achievement._measuredTarget, 10, "measured target should be 10");
+        TestRunner.assertEqual(achievement._measuredValue, 0, "measured value should be 0 (MeasuredIf is false)");
 
         TestRunner.endTest();
     }

@@ -2116,24 +2116,7 @@ class Main {
 
                     pauseIfResults.push({req: requirement, passed: passed, valid: true, basePath: basePath, reqIndex: k});
 
-                    // Check for ResetNextIf targeting this PauseIf
-                    // Per RA docs: ResetNextIf followed by PauseIf is evaluated even while paused,
-                    // allowing it to unlock a PauseLock without needing an alt group.
-                    var prevK:Number = k - 1;
-                    while (prevK >= 0 && group.requirements[prevK].flag == "RESET_NEXT_IF") {
-                        rnifHandledInPhase0[prevK] = true;
-                        var rnifReq:Object = group.requirements[prevK];
-                        var rnifResult:Object = evaluateRequirementCondition(rnifReq, frameCache, 0);
-                        if (rnifResult.valid && rnifResult.passed) {
-                            // Reset the PauseIf's hit count
-                            if ((requirement.hits || 0) > 0) {
-                                diffSet(requirement, "hits", 0, basePath + "/hits");
-                            }
-                        }
-                        prevK--;
-                    }
-
-                    // Check if this triggers pause
+                    // Check if this triggers pause (increment hits first)
                     var maxHits:Number = requirement.maxHits || 0;
                     var currentHits:Number = requirement.hits || 0;
 
@@ -2155,6 +2138,28 @@ class Main {
                                 isPaused = true;
                             }
                         }
+                    }
+
+                    // Check for ResetNextIf targeting this PauseIf (AFTER hits increment)
+                    // Per RA docs: ResetNextIf followed by PauseIf is evaluated even while paused,
+                    // allowing it to unlock a PauseLock without needing an alt group.
+                    // Must happen after hits increment so the reset takes effect.
+                    var prevK:Number = k - 1;
+                    while (prevK >= 0 && group.requirements[prevK].flag == "RESET_NEXT_IF") {
+                        rnifHandledInPhase0[prevK] = true;
+                        var rnifReq:Object = group.requirements[prevK];
+                        var rnifResult:Object = evaluateRequirementCondition(rnifReq, frameCache, 0);
+                        if (rnifResult.valid && rnifResult.passed) {
+                            // Reset the PauseIf's hit count
+                            if ((requirement.hits || 0) > 0) {
+                                diffSet(requirement, "hits", 0, basePath + "/hits");
+                                // Undo pause if the reset brought hits below threshold
+                                if (maxHits > 0) {
+                                    isPaused = false;
+                                }
+                            }
+                        }
+                        prevK--;
                     }
                 }
 
