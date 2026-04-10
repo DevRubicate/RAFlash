@@ -7,7 +7,7 @@ DENO=deno
 MTASC_HEADER=800:575:60
 
 # Dummy target to force rebuild
-.PHONY: all check clean run assets test test-avm1 test-engine test-display test-avm2 avm1-build avm1-wrapper-build avm2-build compile dist stage FORCE
+.PHONY: all check clean run assets test test-avm1 test-engine test-display test-avm2 avm1-build avm1-wrapper-build avm2-build compile dist release stage FORCE
 
 # Default target - full build including standalone executable
 all: compile
@@ -92,6 +92,16 @@ dist: compile
 	@mv .dist/RAFlash-windows.zip .build/RAFlash-windows.zip
 	@rm -rf .dist
 	@echo "Created .build/RAFlash-windows.zip"
+
+# Build, tag, and publish a GitHub release
+release: dist
+	$(eval VERSION := $(shell grep 'const VERSION' RAEngine/src/Main.ts | sed 's/.*"\(.*\)".*/\1/'))
+	@if git rev-parse "v$(VERSION)" >/dev/null 2>&1; then echo "Error: tag v$(VERSION) already exists. Bump VERSION in RAEngine/src/Main.ts first."; exit 1; fi
+	@echo "Releasing v$(VERSION)..."
+	@git tag -a "v$(VERSION)" -m "v$(VERSION)"
+	@git push origin master --tags
+	@gh release create "v$(VERSION)" .build/RAFlash-windows.zip --title "RAFlash v$(VERSION)" --notes "Release v$(VERSION)"
+	@echo "Released v$(VERSION)"
 
 # === Testing ===
 

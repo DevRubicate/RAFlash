@@ -5,6 +5,7 @@
     "npm:@gizeta/swf-reader@*": "1.0.0",
     "npm:@types/node@*": "22.13.10",
     "npm:@types/pako@*": "2.0.4",
+    "npm:fflate@*": "0.8.2",
     "npm:jpeg-js@*": "0.4.4",
     "npm:pako@*": "2.1.0",
     "npm:pngjs@*": "7.0.0"
@@ -35,6 +36,9 @@
     },
     "commander@2.0.0": {
       "integrity": "sha512-qebjpyeaA/nJ4w3EO2cV2++/zEkccPnjWogzA2rff+Lk8ILI75vULeTmyd4wPxWdKwtP3J+G39IXVZadh0UHyw=="
+    },
+    "fflate@0.8.2": {
+      "integrity": "sha512-cPJU47OaAoCbg0pBvzsgpTPhmhqI5eJjh/JIu8tPj5q+T7iLvW/JAYUqmE7KOB4R1ZyEhzBaIQpQpardBF5z8A=="
     },
     "jpeg-js@0.4.4": {
       "integrity": "sha512-WZzeDOEtTOBK4Mdsar0IqEU5sMr3vSV2RqkAIzUEV2BHnUfKGyswWFPFwK5EeDo93K3FohSHbLAjj0s1Wzd+dg=="
