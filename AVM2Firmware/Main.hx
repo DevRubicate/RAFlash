@@ -157,7 +157,7 @@ class Main extends MovieClip {
                 }
 
             case "REQUEST":
-                var id:Int = data[1];
+                var id:Dynamic = data[1];
                 var payload:{command:String, params:Dynamic} = data[2];
                 handleRequest(id, payload.command, payload.params);
 
@@ -205,7 +205,7 @@ class Main extends MovieClip {
         socket.flush();
     }
 
-    private function sendResponse(id:Int, result:Dynamic):Void {
+    private function sendResponse(id:Dynamic, result:Dynamic):Void {
         if (!connected || socket == null) return;
 
         var msg = haxe.Json.stringify(["RESPONSE", id, result]) + "\n";
@@ -229,7 +229,7 @@ class Main extends MovieClip {
 
     // === Request Handling ===
 
-    private function handleRequest(id:Int, command:String, params:Dynamic):Void {
+    private function handleRequest(id:Dynamic, command:String, params:Dynamic):Void {
         try {
             handleRequestInner(id, command, params);
         } catch (e:Dynamic) {
@@ -243,7 +243,7 @@ class Main extends MovieClip {
         }
     }
 
-    private function handleRequestInner(id:Int, command:String, params:Dynamic):Void {
+    private function handleRequestInner(id:Dynamic, command:String, params:Dynamic):Void {
         switch (command) {
             case "ping":
                 sendResponse(id, {success: true, pong: true});
@@ -381,14 +381,11 @@ class Main extends MovieClip {
     // === Game Loading ===
 
     private function loadGame(?url:String):Void {
-        log("Loading game SWF...");
-
         var loader = new Loader();
         loader.contentLoaderInfo.addEventListener(Event.COMPLETE, onGameLoaded);
         loader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, onGameLoadError);
 
         var gameUrl = (url != null) ? url : "http://raflash.local/game.swf";
-        log("Loading from: " + gameUrl);
         loader.load(new URLRequest(gameUrl));
 
         addChild(loader);
@@ -401,7 +398,6 @@ class Main extends MovieClip {
         gameRoot = loader.content;
         var bytes = loader.contentLoaderInfo.bytesTotal;
 
-        log("Game loaded successfully! (" + bytes + " bytes)");
         sendMessage("gameLoaded", {bytes: bytes});
 
         // Setup F12 key listener and frame loop after game loads
