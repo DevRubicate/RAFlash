@@ -28,7 +28,10 @@ import { PNG } from "npm:pngjs";
 import jpeg from "npm:jpeg-js";
 // @deno-types="npm:@types/pako"
 import * as pako from "npm:pako";
+import { unzipSync } from "npm:fflate";
 import { startSitelockProxy, stopSitelockProxy } from "./SitelockProxy.ts";
+
+const VERSION = "0.0.1";
 
 // Compile a formula and emit an error log if compilation fails
 function compileFormula(input: string): unknown[] {
@@ -596,9 +599,21 @@ function updateFlashPlayerTitle(richPresence: string): void {
 }
 
 /**
- * Start the HTTP server for file picker, devtools UI, and WebSocket
+ * Start the HTTP server for file picker, devtools UI, and WebSocket.
+ * Retries on port conflict (e.g. after self-update, old instance may still be releasing ports).
  */
-function startHttpServer() {
+async function startHttpServer() {
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return startHttpServerInner();
+        } catch (e) {
+            if (attempt >= 10) throw e;
+            await new Promise(r => setTimeout(r, 500));
+        }
+    }
+}
+
+function startHttpServerInner() {
     httpServer = Deno.serve(
         {
             port: HTTP_PORT,
@@ -794,11 +809,98 @@ async function handleApiRequest(
             return { success: true };
         }
         case "getSettings": {
-            return { success: true, params: { ...settings } };
+            return { success: true, params: { ...settings, version: VERSION } };
         }
         case "saveSettings": {
             await saveSettings(input.params.settings as Settings);
             return { success: true };
+        }
+        case "checkForUpdates": {
+            try {
+                const res = await fetch("https://api.github.com/repos/DevRubicate/RAFlash/releases/latest");
+                if (!res.ok) return { success: false, error: "Failed to check for updates" };
+                const release = await res.json();
+                const latest = release.tag_name.replace(/^v/, "");
+                const isNewer = latest !== VERSION;
+                const asset = release.assets?.find((a: Record<string, unknown>) => (a.name as string).endsWith(".zip"));
+                return {
+                    success: true,
+                    params: {
+                        currentVersion: VERSION,
+                        latestVersion: latest,
+                        updateAvailable: isNewer,
+                        downloadUrl: asset?.browser_download_url || null,
+                        releaseNotes: release.body || "",
+                        releaseName: release.name || "",
+                    }
+                };
+            } catch {
+                return { success: false, error: "Failed to check for updates" };
+            }
+        }
+        case "applyUpdate": {
+            try {
+                const url = String(input.params.downloadUrl);
+                const res = await fetch(url);
+                if (!res.ok) return { success: false, error: "Download failed" };
+                const zipData = new Uint8Array(await res.arrayBuffer());
+                const exePath = Deno.execPath();
+                const installDir = exePath.replace(/[/\\][^/\\]+$/, "");
+
+                // Extract zip in memory
+                const files = unzipSync(zipData);
+
+                // Known app paths to update (everything else is left untouched)
+                const appPaths = ["vendor/", "firmware/", "internals/", "assets/"];
+
+                for (const [rawPath, content] of Object.entries(files)) {
+                    // Normalize backslashes and strip the top-level "RAFlash/" folder
+                    const normalized = rawPath.replace(/\\/g, "/");
+                    const relative = normalized.replace(/^RAFlash\//, "");
+                    if (!relative) continue;
+
+                    // Only copy known app paths
+                    const isAppFile = relative === "RAFlash.exe" || appPaths.some(p => relative.startsWith(p));
+                    if (!isAppFile) continue;
+
+                    const destPath = join(installDir, relative);
+
+                    // Directory entries end with /
+                    if (normalized.endsWith("/")) {
+                        await Deno.mkdir(destPath, { recursive: true });
+                        continue;
+                    }
+
+                    // For the exe: can't overwrite while running, so rename current one out
+                    if (relative === "RAFlash.exe") {
+                        try { await Deno.remove(join(installDir, "RAFlash.exe.old")); } catch { /* */ }
+                        await Deno.rename(exePath, join(installDir, "RAFlash.exe.old"));
+                    }
+
+                    await Deno.mkdir(destPath.replace(/[/\\][^/\\]+$/, ""), { recursive: true });
+                    await Deno.writeFile(destPath, content);
+                }
+
+                // Relaunch via bat — cmd window flashes briefly, but this is the most reliable approach
+                const newExe = join(installDir, "RAFlash.exe");
+                const batPath = join(installDir, "relaunch.bat");
+                await Deno.writeTextFile(batPath, `@echo off\r\ncd /d "${installDir}"\r\nstart "" "${newExe}"\r\ndel "%~f0"\r\n`);
+                new Deno.Command("cmd.exe", {
+                    args: ["/c", batPath],
+                    cwd: installDir,
+                    stdout: "null", stderr: "null", stdin: "null",
+                }).spawn();
+
+                // Close all browser windows immediately so the user isn't staring at a stale UI
+                for (const client of devtoolsClients) {
+                    try { client.close(); } catch { /* */ }
+                }
+
+                setTimeout(() => Deno.exit(0), 3000);
+                return { success: true };
+            } catch (e) {
+                return { success: false, error: `Update failed: ${e}` };
+            }
         }
 
         // Devtools commands - forward to firmware
@@ -1574,11 +1676,21 @@ async function main(): Promise<void> {
         }
     }
 
+    // Clean up leftover from self-update (delay to let old process fully exit)
+    const oldExe = Deno.execPath() + ".old";
+    try {
+        await Deno.stat(oldExe);
+        // File exists — retry deletion a few times in case old process is still exiting
+        for (let i = 0; i < 10; i++) {
+            try { await Deno.remove(oldExe); break; } catch { await new Promise(r => setTimeout(r, 500)); }
+        }
+    } catch { /* no .old file, nothing to clean */ }
+
     // Load persistent settings
     await loadSettings();
 
-    // 1. Start HTTP server (persists across game sessions)
-    startHttpServer();
+    // 1. Start HTTP server (persists across game sessions, retries port on startup after self-update)
+    await startHttpServer();
 
     // 2. Start Flash socket server in background (persists across game sessions)
     startFlashServer();

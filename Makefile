@@ -7,7 +7,7 @@ DENO=deno
 MTASC_HEADER=800:575:60
 
 # Dummy target to force rebuild
-.PHONY: all check clean run assets test test-avm1 test-engine test-display test-avm2 avm1-build avm1-wrapper-build avm2-build compile stage FORCE
+.PHONY: all check clean run assets test test-avm1 test-engine test-display test-avm2 avm1-build avm1-wrapper-build avm2-build compile dist stage FORCE
 
 # Default target - full build including standalone executable
 all: compile
@@ -78,6 +78,20 @@ compile: avm1-build avm1-wrapper-build avm2-build assets stage
 	@rm -f .build/RAFlash .build/RAFlash.exe
 	@$(DENO) compile -q $(DENO_PERMISSIONS) --no-terminal --icon=assets/icon.ico $(DENO_INCLUDES) --output=.build/RAFlash RAEngine/src/Main.ts 2>&1 | cat
 	@test -f .build/RAFlash.exe || test -f .build/RAFlash
+
+# Package distribution zip (Windows)
+dist: compile
+	@rm -rf .dist
+	@mkdir -p .dist/RAFlash
+	@cp .build/RAFlash.exe .dist/RAFlash/
+	@cp -r .build/vendor .dist/RAFlash/vendor
+	@cp -r .build/firmware .dist/RAFlash/firmware
+	@cp -r .build/internals .dist/RAFlash/internals
+	@cp -r .build/assets .dist/RAFlash/assets
+	@cd .dist && powershell -NoProfile -Command "Compress-Archive -Path RAFlash -DestinationPath RAFlash-windows.zip -Force"
+	@mv .dist/RAFlash-windows.zip .build/RAFlash-windows.zip
+	@rm -rf .dist
+	@echo "Created .build/RAFlash-windows.zip"
 
 # === Testing ===
 

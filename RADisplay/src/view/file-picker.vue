@@ -48,9 +48,32 @@
             </div>
 
             <footer class="action-bar">
-                <button class="btn btn-secondary" @click="openEventLog">Event Log</button>
-                <button class="btn btn-secondary" @click="openSettings">Settings</button>
+                <div class="action-bar-left">
+                    <button class="btn btn-secondary" @click="openEventLog">Event Log</button>
+                    <button class="btn btn-secondary" @click="openSettings">Settings</button>
+                </div>
+                <button class="btn btn-secondary" @click="checkForUpdates" :disabled="updateState !== 'idle'">
+                    {{ updateLabel }}
+                </button>
             </footer>
+
+            <!-- Update modal -->
+            <div class="update-overlay" v-if="updateInfo" @click.self="updateInfo = null">
+                <div class="update-modal">
+                    <div class="update-header">Update Available</div>
+                    <div class="update-versions">
+                        v{{ updateInfo.currentVersion }} &rarr; v{{ updateInfo.latestVersion }}
+                    </div>
+                    <div class="update-name" v-if="updateInfo.releaseName">{{ updateInfo.releaseName }}</div>
+                    <div class="update-notes" v-if="updateInfo.releaseNotes">{{ updateInfo.releaseNotes }}</div>
+                    <div class="update-actions">
+                        <button class="btn btn-secondary" @click="updateInfo = null">Cancel</button>
+                        <button class="btn btn-primary" @click="applyUpdate" :disabled="updateState === 'downloading'">
+                            {{ updateState === 'downloading' ? 'Downloading...' : 'Update and Restart' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     <div class="loading" v-else>
@@ -214,6 +237,67 @@
         flex-shrink: 0;
     }
 
+    .action-bar-left {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    /* Update modal */
+    .update-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+    }
+
+    .update-modal {
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-lg, 8px);
+        padding: 1.25rem;
+        max-width: 420px;
+        width: 90%;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .update-header {
+        font-size: 0.9375rem;
+        font-weight: 600;
+        color: var(--c-text);
+    }
+
+    .update-versions {
+        font-size: 0.8125rem;
+        color: var(--c-text-secondary);
+    }
+
+    .update-name {
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--c-text);
+    }
+
+    .update-notes {
+        font-size: 0.75rem;
+        color: var(--c-text-muted);
+        line-height: 1.5;
+        max-height: 150px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+    }
+
+    .update-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        margin-top: 0.25rem;
+    }
+
 </style>
 
 <script setup>
@@ -226,6 +310,16 @@ const pathSegments = ref([]);
 const items = ref([]);
 const users = ref([]);
 const selectedUser = ref(null);
+
+// Update state
+const updateState = ref('idle'); // 'idle' | 'checking' | 'downloading' | 'uptodate'
+const updateInfo = ref(null);
+const updateLabel = computed(() => {
+    if (updateState.value === 'checking') return 'Checking...';
+    if (updateState.value === 'downloading') return 'Downloading...';
+    if (updateState.value === 'uptodate') return 'Up to date!';
+    return 'Check for Updates';
+});
 
 // Sort items: directories first, then files, alphabetically
 const sortedItems = computed(() => {
@@ -327,6 +421,52 @@ async function openEventLog() {
 // Open Settings window
 async function openSettings() {
     await Network.send({ command: 'showPopup', params: { url: 'internals/assets/settings.html', width: 500, height: 400, params: {}, parentWindowId: App.windowId } });
+}
+
+// Check for updates
+async function checkForUpdates() {
+    updateState.value = 'checking';
+    try {
+        const response = await Network.send({ command: 'checkForUpdates', params: {} });
+        if (!response.success) {
+            alert(response.error || 'Failed to check for updates');
+            return;
+        }
+        if (response.params.updateAvailable) {
+            updateInfo.value = response.params;
+        } else {
+            updateState.value = 'uptodate';
+            setTimeout(() => { updateState.value = 'idle'; }, 2000);
+            return;
+        }
+    } catch {
+        alert('Failed to check for updates');
+    } finally {
+        if (updateState.value === 'checking') updateState.value = 'idle';
+    }
+}
+
+// Apply update
+async function applyUpdate() {
+    if (!updateInfo.value?.downloadUrl) {
+        alert('No download URL available');
+        return;
+    }
+    updateState.value = 'downloading';
+    try {
+        const response = await Network.send({
+            command: 'applyUpdate',
+            params: { downloadUrl: updateInfo.value.downloadUrl }
+        });
+        if (!response.success) {
+            alert(response.error || 'Update failed');
+            updateState.value = 'idle';
+        }
+        // If successful, the app will restart — connection will drop
+    } catch {
+        alert('Update failed');
+        updateState.value = 'idle';
+    }
 }
 
 // Confirm file selection and notify server
