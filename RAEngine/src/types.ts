@@ -18,6 +18,9 @@ export interface Requirement {
     // Computed fields (added by watchers at runtime)
     compiledA?: unknown[];
     compiledB?: unknown[];
+    fastA?: unknown[] | null;
+    fastB?: unknown[] | null;
+    fastReq?: unknown[] | null;
     // Runtime state (managed by achievement engine)
     hits?: number;
     [key: string]: unknown;

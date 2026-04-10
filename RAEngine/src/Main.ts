@@ -42,6 +42,94 @@ function compileFormula(input: string): unknown[] {
     return compiled;
 }
 
+// Detect common formula patterns and return a compact fast-path descriptor,
+// or null if the bytecode doesn't match any known pattern.
+// Pattern IDs: 0=literal num, 1=literal str, 2=null, 3=prop1, 4=prop2, 5=prop3, 6=array filter eq
+function detectPattern(bytecode: unknown[]): unknown[] | null {
+    const len = bytecode.length;
+    const b = bytecode as string[];
+
+    // Pattern 0: Literal number — VERSION_1, VALUE, <n>
+    if (len === 3 && b[1] === 'VALUE')
+        return [0, parseInt(b[2], 10)];
+
+    // Pattern 1: Literal string — VERSION_1, STRING, <s>
+    if (len === 3 && b[1] === 'STRING')
+        return [1, b[2]];
+
+    // Pattern 2: Literal null — VERSION_1, NULL
+    if (len === 2 && b[1] === 'NULL')
+        return [2];
+
+    // Helper: check for simple OBJECT_ACCESS pattern at offset
+    // Pattern: OBJECT_ACCESS, 6, IDENTIFIER, key, READ_GLOBAL, IDENTIFIER, <prop>, EQUAL
+    function isSimpleObjAccess(offset: number): string | null {
+        if (b[offset] === 'OBJECT_ACCESS' && b[offset + 1] === '6' &&
+            b[offset + 2] === 'IDENTIFIER' && b[offset + 3] === 'key' &&
+            b[offset + 4] === 'READ_GLOBAL' && b[offset + 5] === 'IDENTIFIER' &&
+            b[offset + 7] === 'EQUAL')
+            return b[offset + 6];
+        return null;
+    }
+
+    // All remaining patterns start with: IDENTIFIER, this|stage, READ_GLOBAL
+    if (len >= 12 && b[1] === 'IDENTIFIER' && (b[2] === 'this' || b[2] === 'stage') && b[3] === 'READ_GLOBAL') {
+        const p1 = isSimpleObjAccess(4);
+        if (p1 === null) return null;
+
+        // Pattern 3: 1-deep property — len 12
+        if (len === 12) return [3, p1];
+
+        if (len >= 20) {
+            const p2 = isSimpleObjAccess(12);
+            if (p2 !== null) {
+                // Pattern 4: 2-deep property — len 20
+                if (len === 20) return [4, p1, p2];
+
+                // Pattern 5: 3-deep property — len 28
+                if (len === 28) {
+                    const p3 = isSimpleObjAccess(20);
+                    if (p3 !== null) return [5, p1, p2, p3];
+                }
+            }
+
+            // Pattern 6: 1-deep prop + array filter eq — len 20
+            // ARRAY_ACCESS, 6, IDENTIFIER, this, READ_GLOBAL, STRING, <match>, EQUAL
+            if (len === 20 && b[12] === 'ARRAY_ACCESS' && b[13] === '6' &&
+                b[14] === 'IDENTIFIER' && b[15] === 'this' &&
+                b[16] === 'READ_GLOBAL' && b[17] === 'STRING' &&
+                b[19] === 'EQUAL')
+                return [6, p1, b[18]];
+        }
+    }
+
+    return null;
+}
+
+// Stamp a whole-requirement fast-path when both sides have known patterns,
+// neither side is DELTA, and A is a property lookup (3-5) with B a literal (0-2).
+// Format: [cmpId, aType, ...aParams, bValue]
+const CMP_IDS: Record<string, number> = { '==': 0, '!=': 1, '>': 2, '>=': 3, '<': 4, '<=': 5 };
+
+function stampFastReq(req: Requirement): void {
+    req.fastReq = null;
+    const fa = req.fastA, fb = req.fastB;
+    if (!fa || !fb) return;
+    if (req.typeA === 'DELTA' || req.typeB === 'DELTA') return;
+    const cmpId = CMP_IDS[req.cmp];
+    if (cmpId === undefined) return;
+
+    const aType = fa[0] as number;
+    if (aType < 3 || aType > 5) return; // A must be property pattern
+    const bType = fb[0] as number;
+    if (bType > 2) return; // B must be literal
+
+    const bValue = bType === 2 ? null : fb[1];
+    if (aType === 3) req.fastReq = [cmpId, 3, fa[1], bValue];
+    else if (aType === 4) req.fastReq = [cmpId, 4, fa[1], fa[2], bValue];
+    else if (aType === 5) req.fastReq = [cmpId, 5, fa[1], fa[2], fa[3], bValue];
+}
+
 // Helper to compile a requirement field based on its type
 function compileRequirementField(req: Requirement, field: 'A' | 'B'): unknown[] {
     const address = (field === 'A' ? req.addressA : req.addressB) || '';
@@ -51,7 +139,17 @@ function compileRequirementField(req: Requirement, field: 'A' | 'B'): unknown[] 
     // - String literals like '"hello"' → compiles to STRING bytecode
     // - Formula expressions like "stage.player.health" → compiles to formula bytecode
     // Use '0' for empty to avoid unbalanced formula
-    return compileFormula(address || '0');
+    const compiled = compileFormula(address || '0');
+
+    // Detect and store fast-path pattern
+    const fast = detectPattern(compiled);
+    if (field === 'A') req.fastA = fast;
+    else req.fastB = fast;
+
+    // Re-evaluate whole-requirement fast-path
+    stampFastReq(req);
+
+    return compiled;
 }
 
 // Register watchers to compile formulas when addressA/addressB or typeA/typeB change
@@ -84,6 +182,15 @@ JSONDiff.watch(
     (segments) => {
         const req = segments[segments.length - 2] as Requirement;
         req.compiledB = compileRequirementField(req, 'B');
+    }
+);
+
+// Re-stamp whole-requirement fast-path when comparison operator changes
+JSONDiff.watch(
+    'assets/*/groups/*/requirements/*/cmp',
+    (segments) => {
+        const req = segments[segments.length - 2] as Requirement;
+        stampFastReq(req);
     }
 );
 

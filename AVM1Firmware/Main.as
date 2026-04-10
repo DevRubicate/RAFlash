@@ -665,6 +665,54 @@ class Main {
     }
 
     // ========================================================================
+    // Fast-Path Formula Evaluator
+    // ========================================================================
+
+    /**
+     * Evaluate a formula using a pre-detected pattern, bypassing the bytecode interpreter.
+     * Pattern IDs: 0=literal num, 1=literal str, 2=null, 3=prop1, 4=prop2, 5=prop3, 6=array filter eq
+     */
+    private static function evaluateFast(fast:Array):Array {
+        switch (fast[0]) {
+            case 0: // LITERAL_NUM
+                return [fast[1]];
+            case 1: // LITERAL_STR
+                return [fast[1]];
+            case 2: // LITERAL_NULL
+                return [null];
+            case 3: { // PROP1: gameRoot[prop]
+                var v3 = gameContainer.gameLoader._root[fast[1]];
+                return (v3 !== undefined) ? [v3] : [];
+            }
+            case 4: { // PROP2: gameRoot[a][b]
+                var o4 = gameContainer.gameLoader._root[fast[1]];
+                if (o4 === undefined) return [];
+                var v4 = o4[fast[2]];
+                return (v4 !== undefined) ? [v4] : [];
+            }
+            case 5: { // PROP3: gameRoot[a][b][c]
+                var o5 = gameContainer.gameLoader._root[fast[1]];
+                if (o5 === undefined) return [];
+                var o5b = o5[fast[2]];
+                if (o5b === undefined) return [];
+                var v5 = o5b[fast[3]];
+                return (v5 !== undefined) ? [v5] : [];
+            }
+            case 6: { // PROP + ARRAY_FILTER_EQ: gameRoot[prop].filter(==match)
+                var arr6 = gameContainer.gameLoader._root[fast[1]];
+                if (!(arr6 instanceof Array)) return [];
+                var match6 = fast[2];
+                var result6:Array = [];
+                for (var i6:Number = 0; i6 < arr6.length; i6++) {
+                    if (arr6[i6] == match6) result6.push(arr6[i6]);
+                }
+                return result6;
+            }
+        }
+        return null;
+    }
+
+    // ========================================================================
     // Requirement Condition Evaluation Helper
     // ========================================================================
 
@@ -677,6 +725,43 @@ class Main {
      * @param frameCache Cache object for formula results this frame
      */
     private static function evaluateRequirementCondition(requirement:Object, frameCache:Object, accumulator:Number):Object {
+        // Whole-requirement fast-path: property lookup + literal comparison in one shot.
+        // No arrays, no frame cache, no delta handling — just a direct property access and compare.
+        if (requirement.fastReq != null && accumulator == 0) {
+            var fr:Array = requirement.fastReq;
+            var rawA;
+            switch (fr[1]) {
+                case 3:
+                    rawA = gameContainer.gameLoader._root[fr[2]];
+                    break;
+                case 4: {
+                    var _o4 = gameContainer.gameLoader._root[fr[2]];
+                    rawA = (_o4 !== undefined) ? _o4[fr[3]] : undefined;
+                    break;
+                }
+                case 5: {
+                    var _o5 = gameContainer.gameLoader._root[fr[2]];
+                    if (_o5 !== undefined) _o5 = _o5[fr[3]];
+                    rawA = (_o5 !== undefined) ? _o5[fr[4]] : undefined;
+                    break;
+                }
+            }
+            var rawB = fr[fr.length - 1];
+            var passed:Boolean = false;
+            switch (fr[0]) {
+                case 0: passed = (rawA == rawB); break;
+                case 1: passed = (rawA != rawB); break;
+                case 2: passed = (rawA > rawB); break;
+                case 3: passed = (rawA >= rawB); break;
+                case 4: passed = (rawA < rawB); break;
+                case 5: passed = (rawA <= rawB); break;
+            }
+            _evalResult.passed = passed;
+            _evalResult.valid = true;
+            _evalResult.valueA = (rawA !== undefined) ? rawA : 0;
+            return _evalResult;
+        }
+
         // Check if compiled formulas exist
         if (requirement.compiledA == null || requirement.compiledB == null) {
             _evalResult.passed = false;
@@ -689,16 +774,20 @@ class Main {
         var cacheKeyA:String = requirement.addressA;
         var cacheKeyB:String = requirement.addressB;
 
-        // Evaluate current values (with caching)
+        // Evaluate current values (with caching, fast-path preferred)
         var currentA:Array = frameCache[cacheKeyA];
         if (currentA == null) {
-            currentA = evaluate(requirement.compiledA, 1, requirement.compiledA.length, _stageContext, _stageKeys);
+            currentA = requirement.fastA != null
+                ? evaluateFast(requirement.fastA)
+                : evaluate(requirement.compiledA, 1, requirement.compiledA.length, _stageContext, _stageKeys);
             frameCache[cacheKeyA] = currentA;
         }
 
         var currentB:Array = frameCache[cacheKeyB];
         if (currentB == null) {
-            currentB = evaluate(requirement.compiledB, 1, requirement.compiledB.length, _stageContext, _stageKeys);
+            currentB = requirement.fastB != null
+                ? evaluateFast(requirement.fastB)
+                : evaluate(requirement.compiledB, 1, requirement.compiledB.length, _stageContext, _stageKeys);
             frameCache[cacheKeyB] = currentB;
         }
 
@@ -808,7 +897,9 @@ class Main {
         var cacheKeyA:String = requirement.addressA;
         var currentA:Array = frameCache[cacheKeyA];
         if (currentA == null) {
-            currentA = evaluate(requirement.compiledA, 1, requirement.compiledA.length, _stageContext, _stageKeys);
+            currentA = requirement.fastA != null
+                ? evaluateFast(requirement.fastA)
+                : evaluate(requirement.compiledA, 1, requirement.compiledA.length, _stageContext, _stageKeys);
             frameCache[cacheKeyA] = currentA;
         }
 
@@ -2208,7 +2299,9 @@ class Main {
                         var cacheKeyA:String = requirement.addressA;
                         var currentA:Array = frameCache[cacheKeyA];
                         if (currentA == null) {
-                            currentA = evaluate(requirement.compiledA, 1, requirement.compiledA.length, _stageContext, _stageKeys);
+                            currentA = requirement.fastA != null
+                                ? evaluateFast(requirement.fastA)
+                                : evaluate(requirement.compiledA, 1, requirement.compiledA.length, _stageContext, _stageKeys);
                             frameCache[cacheKeyA] = currentA;
                         }
                         if (currentA != null && currentA.length == 1) {
@@ -2219,7 +2312,9 @@ class Main {
                         var cacheKeyB:String = requirement.addressB;
                         var currentB:Array = frameCache[cacheKeyB];
                         if (currentB == null) {
-                            currentB = evaluate(requirement.compiledB, 1, requirement.compiledB.length, _stageContext, _stageKeys);
+                            currentB = requirement.fastB != null
+                                ? evaluateFast(requirement.fastB)
+                                : evaluate(requirement.compiledB, 1, requirement.compiledB.length, _stageContext, _stageKeys);
                             frameCache[cacheKeyB] = currentB;
                         }
                         if (currentB != null && currentB.length == 1) {
