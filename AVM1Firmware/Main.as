@@ -67,6 +67,13 @@ class Main {
     private static var lastRichPresenceTime:Number = 0;
     private static var RICH_PRESENCE_INTERVAL:Number = 1000; // 1 second
 
+    // Reusable result object for evaluateRequirementCondition (avoids allocation per call)
+    private static var _evalResult:Object = {passed: false, valid: false, valueA: 0};
+
+    // Reusable context arrays for evaluate() calls (avoids allocating per call)
+    private static var _stageContext:Array = [null];
+    private static var _stageKeys:Array = ["stage"];
+
     // Socket receive buffer for fragmented messages
     private static var receiveBuffer:String = "";
 
@@ -354,18 +361,20 @@ class Main {
                 break;
 
             case "evaluate":
+                _stageContext[0] = gameContainer.gameLoader._root;
                 var formula:Array = params.formula;
-                var result:Array = evaluate(formula, 1, formula.length, [gameContainer.gameLoader._root], ["stage"]);
+                var result:Array = evaluate(formula, 1, formula.length, _stageContext, _stageKeys);
                 var formatted:Object = formatOutput(result, 0);
                 sendResponse(id, { success: true, result: formatted });
                 break;
 
             case "evaluateMultiple":
+                _stageContext[0] = gameContainer.gameLoader._root;
                 var formulas:Array = params.formulas;
                 var results:Array = [];
                 for (var f:Number = 0; f < formulas.length; f++) {
                     var formulaItem:Array = formulas[f];
-                    var resultItem:Array = evaluate(formulaItem, 1, formulaItem.length, [gameContainer.gameLoader._root], ["stage"]);
+                    var resultItem:Array = evaluate(formulaItem, 1, formulaItem.length, _stageContext, _stageKeys);
                     var formattedItem:Object = formatOutput(resultItem, 0);
                     results.push(formattedItem);
                 }
@@ -397,7 +406,7 @@ class Main {
 
                 if (params.pathFormula != null && params.pathFormula.length > 0) {
                     // Evaluate the path formula to get starting target
-                    var pathResult:Array = evaluate(params.pathFormula, 1, params.pathFormula.length, [gameContainer.gameLoader._root], ["stage"]);
+                    var pathResult:Array = evaluate(params.pathFormula, 1, params.pathFormula.length, _stageContext, _stageKeys);
                     if (pathResult != null && pathResult.length > 0) {
                         startTarget = pathResult[0];
                         pathPrefix = String(params.pathString);
@@ -651,7 +660,10 @@ class Main {
     private static function evaluateRequirementCondition(requirement:Object, frameCache:Object, accumulator:Number):Object {
         // Check if compiled formulas exist
         if (requirement.compiledA == null || requirement.compiledB == null) {
-            return {passed: false, valid: false};
+            _evalResult.passed = false;
+            _evalResult.valid = false;
+            _evalResult.valueA = 0;
+            return _evalResult;
         }
 
         // Use addressA/addressB as cache keys
@@ -661,24 +673,30 @@ class Main {
         // Evaluate current values (with caching)
         var currentA:Array = frameCache[cacheKeyA];
         if (currentA == null) {
-            currentA = evaluate(requirement.compiledA, 1, requirement.compiledA.length, [gameContainer.gameLoader._root], ["stage"]);
+            currentA = evaluate(requirement.compiledA, 1, requirement.compiledA.length, _stageContext, _stageKeys);
             frameCache[cacheKeyA] = currentA;
         }
 
         var currentB:Array = frameCache[cacheKeyB];
         if (currentB == null) {
-            currentB = evaluate(requirement.compiledB, 1, requirement.compiledB.length, [gameContainer.gameLoader._root], ["stage"]);
+            currentB = evaluate(requirement.compiledB, 1, requirement.compiledB.length, _stageContext, _stageKeys);
             frameCache[cacheKeyB] = currentB;
         }
 
         // Evaluate failed
         if (currentA == null || currentB == null) {
-            return {passed: false, valid: false};
+            _evalResult.passed = false;
+            _evalResult.valid = false;
+            _evalResult.valueA = 0;
+            return _evalResult;
         }
 
         // Only allow single-value results (empty array is valid for null comparison)
         if (currentA.length > 1 || currentB.length > 1) {
-            return {passed: false, valid: false};
+            _evalResult.passed = false;
+            _evalResult.valid = false;
+            _evalResult.valueA = 0;
+            return _evalResult;
         }
 
         // Handle Delta type for A side
@@ -687,7 +705,10 @@ class Main {
             var deltaData:Object = deltaValues[requirement.id];
             if (deltaData == null || !deltaData.hasA) {
                 storeDeltaValue(requirement.id, "A", currentA.length == 1 ? currentA[0] : undefined);
-                return {passed: false, valid: false};
+                _evalResult.passed = false;
+                _evalResult.valid = false;
+                _evalResult.valueA = 0;
+                return _evalResult;
             }
             resultA = (deltaData.prevA === undefined) ? [] : [deltaData.prevA];
             storeDeltaValue(requirement.id, "A", currentA.length == 1 ? currentA[0] : undefined);
@@ -701,7 +722,10 @@ class Main {
             var deltaBData:Object = deltaValues[requirement.id];
             if (deltaBData == null || !deltaBData.hasB) {
                 storeDeltaValue(requirement.id, "B", currentB.length == 1 ? currentB[0] : undefined);
-                return {passed: false, valid: false};
+                _evalResult.passed = false;
+                _evalResult.valid = false;
+                _evalResult.valueA = 0;
+                return _evalResult;
             }
             resultB = (deltaBData.prevB === undefined) ? [] : [deltaBData.prevB];
             storeDeltaValue(requirement.id, "B", currentB.length == 1 ? currentB[0] : undefined);
@@ -724,7 +748,10 @@ class Main {
                 case "!=": passed = !bothNull; break;
                 default:   passed = false; break;
             }
-            return {passed: passed, valid: true, valueA: 0};
+            _evalResult.passed = passed;
+            _evalResult.valid = true;
+            _evalResult.valueA = 0;
+            return _evalResult;
         }
 
         var rawA = resultA[0];
@@ -746,7 +773,10 @@ class Main {
             case "<=": passed = (rawA <= rawB); break;
         }
 
-        return {passed: passed, valid: true, valueA: rawA};
+        _evalResult.passed = passed;
+        _evalResult.valid = true;
+        _evalResult.valueA = rawA;
+        return _evalResult;
     }
 
     /**
@@ -759,7 +789,7 @@ class Main {
         var cacheKeyA:String = requirement.addressA;
         var currentA:Array = frameCache[cacheKeyA];
         if (currentA == null) {
-            currentA = evaluate(requirement.compiledA, 1, requirement.compiledA.length, [gameContainer.gameLoader._root], ["stage"]);
+            currentA = evaluate(requirement.compiledA, 1, requirement.compiledA.length, _stageContext, _stageKeys);
             frameCache[cacheKeyA] = currentA;
         }
 
@@ -852,6 +882,43 @@ class Main {
     // ========================================================================
 
     /**
+     * Pre-process a compiled formula array in-place.
+     * Converts numeric string operands to actual numbers so parseInt isn't called every frame.
+     * Marks the formula as preprocessed by setting index 0 to the number 1 (was "VERSION_1").
+     */
+    private static function preprocessFormula(formula:Array):Void {
+        formula[0] = 1; // Mark as preprocessed
+        for (var i:Number = 1; i < formula.length; i++) {
+            switch (formula[i]) {
+                case "VALUE":
+                    i++;
+                    formula[i] = parseInt(formula[i], 10);
+                    break;
+                case "OBJECT_ACCESS":
+                case "ARRAY_ACCESS":
+                case "REMEMBER":
+                    i++;
+                    formula[i] = parseInt(formula[i], 10);
+                    break;
+                case "TERNARY":
+                    i++;
+                    var thenLen:Number = parseInt(formula[i], 10);
+                    formula[i] = thenLen;
+                    // Pre-parse elseLen which sits right after the then-block
+                    var elseLenPos:Number = i + 1 + thenLen;
+                    if (elseLenPos < formula.length) {
+                        formula[elseLenPos] = parseInt(formula[elseLenPos], 10);
+                    }
+                    break;
+                case "STRING":
+                case "IDENTIFIER":
+                    i++; // skip operand value
+                    break;
+            }
+        }
+    }
+
+    /**
      * Evaluate a compiled formula expression
      * This is a stack-based bytecode interpreter supporting:
      * - Arithmetic: ADD, SUB, MUL, DIV, MOD, POW
@@ -860,12 +927,16 @@ class Main {
      * - Access: READ_GLOBAL, OBJECT_ACCESS, ARRAY_ACCESS
      */
     private static function evaluate(formula:Array, start:Number, end:Number, context:Array, keys:Array):Array {
+        // Lazy preprocessing: convert string operands to numbers once
+        if (formula[0] == "VERSION_1") {
+            preprocessFormula(formula);
+        }
         var stack:Array = [];
         for (var i:Number = start; i < end; ++i) {
             var token:String = formula[i];
             switch (token) {
                 case "VALUE": {
-                    stack.push([parseInt(formula[++i], 10)]);
+                    stack.push([formula[++i]]);
                     break;
                 }
                 case "STRING": {
@@ -884,6 +955,19 @@ class Main {
                 case "ADD": {
                     var b = stack.pop();
                     var a = stack.pop();
+
+                    // Scalar fast-path (most common case)
+                    if (a.length == 1 && b.length == 1) {
+                        var av = a[0], bv = b[0];
+                        if (typeof(av) == "string" || typeof(bv) == "string") {
+                            stack.push([String(av) + String(bv)]);
+                        } else if (typeof(av) == "number" && typeof(bv) == "number") {
+                            stack.push([av + bv]);
+                        } else {
+                            stack.push([NaN]);
+                        }
+                        break;
+                    }
 
                     var length = Math.max(a.length, b.length);
 
@@ -919,6 +1003,10 @@ class Main {
                 case "SUB": {
                     var b = stack.pop();
                     var a = stack.pop();
+                    if (a.length == 1 && b.length == 1) {
+                        stack.push([a[0] - b[0]]);
+                        break;
+                    }
                     if (a.length == 1) {
                         var result = [];
                         for (var j = 0; j < b.length; ++j) {
@@ -946,6 +1034,10 @@ class Main {
                 case "MUL": {
                     var b = stack.pop();
                     var a = stack.pop();
+                    if (a.length == 1 && b.length == 1) {
+                        stack.push([a[0] * b[0]]);
+                        break;
+                    }
                     if (a.length == 1) {
                         var result = [];
                         for (var j = 0; j < b.length; ++j) {
@@ -973,6 +1065,10 @@ class Main {
                 case "DIV": {
                     var b = stack.pop();
                     var a = stack.pop();
+                    if (a.length == 1 && b.length == 1) {
+                        stack.push([a[0] / b[0]]);
+                        break;
+                    }
                     if (a.length == 1) {
                         var result = [];
                         for (var j = 0; j < b.length; ++j) {
@@ -1000,6 +1096,10 @@ class Main {
                 case "MOD": {
                     var b = stack.pop();
                     var a = stack.pop();
+                    if (a.length == 1 && b.length == 1) {
+                        stack.push([a[0] % b[0]]);
+                        break;
+                    }
                     if (a.length == 1) {
                         var result = [];
                         for (var j = 0; j < b.length; ++j) {
@@ -1027,6 +1127,10 @@ class Main {
                 case "POW": {
                     var b = stack.pop();
                     var a = stack.pop();
+                    if (a.length == 1 && b.length == 1) {
+                        stack.push([Math.pow(a[0], b[0])]);
+                        break;
+                    }
                     if (a.length == 1) {
                         var result = [];
                         for (var j = 0; j < b.length; ++j) {
@@ -1061,6 +1165,10 @@ class Main {
                     }
                     if (a.length == 1 && a[0] === null) {
                         stack.push([b.length == 0 ? 1 : 0]);
+                        break;
+                    }
+                    if (a.length == 1 && b.length == 1) {
+                        stack.push([a[0] == b[0] ? 1 : 0]);
                         break;
                     }
                     if (a.length == 1) {
@@ -1099,6 +1207,10 @@ class Main {
                         stack.push([b.length > 0 ? 1 : 0]);
                         break;
                     }
+                    if (a.length == 1 && b.length == 1) {
+                        stack.push([a[0] != b[0] ? 1 : 0]);
+                        break;
+                    }
                     if (a.length == 1) {
                         var result = [];
                         for (var j = 0; j < b.length; ++j) {
@@ -1126,6 +1238,10 @@ class Main {
                 case "GREATER": {
                     var b = stack.pop();
                     var a = stack.pop();
+                    if (a.length == 1 && b.length == 1) {
+                        stack.push([a[0] > b[0] ? 1 : 0]);
+                        break;
+                    }
                     if (a.length == 1) {
                         var result = [];
                         for (var j = 0; j < b.length; ++j) {
@@ -1153,6 +1269,10 @@ class Main {
                 case "GREATER_EQUAL": {
                     var b = stack.pop();
                     var a = stack.pop();
+                    if (a.length == 1 && b.length == 1) {
+                        stack.push([a[0] >= b[0] ? 1 : 0]);
+                        break;
+                    }
                     if (a.length == 1) {
                         var result = [];
                         for (var j = 0; j < b.length; ++j) {
@@ -1180,6 +1300,10 @@ class Main {
                 case "LESSER": {
                     var b = stack.pop();
                     var a = stack.pop();
+                    if (a.length == 1 && b.length == 1) {
+                        stack.push([a[0] < b[0] ? 1 : 0]);
+                        break;
+                    }
                     if (a.length == 1) {
                         var result = [];
                         for (var j = 0; j < b.length; ++j) {
@@ -1207,6 +1331,10 @@ class Main {
                 case "LESSER_EQUAL": {
                     var b = stack.pop();
                     var a = stack.pop();
+                    if (a.length == 1 && b.length == 1) {
+                        stack.push([a[0] <= b[0] ? 1 : 0]);
+                        break;
+                    }
                     if (a.length == 1) {
                         var result = [];
                         for (var j = 0; j < b.length; ++j) {
@@ -1234,6 +1362,10 @@ class Main {
                 case "AND": {
                     var b = stack.pop();
                     var a = stack.pop();
+                    if (a.length == 1 && b.length == 1) {
+                        stack.push([a[0] && b[0] ? 1 : 0]);
+                        break;
+                    }
                     if (a.length == 1) {
                         var result = [];
                         for (var j = 0; j < b.length; ++j) {
@@ -1261,6 +1393,10 @@ class Main {
                 case "OR": {
                     var b = stack.pop();
                     var a = stack.pop();
+                    if (a.length == 1 && b.length == 1) {
+                        stack.push([a[0] || b[0] ? 1 : 0]);
+                        break;
+                    }
                     if (a.length == 1) {
                         var result = [];
                         for (var j = 0; j < b.length; ++j) {
@@ -1288,6 +1424,10 @@ class Main {
                 case "XOR": {
                     var b = stack.pop();
                     var a = stack.pop();
+                    if (a.length == 1 && b.length == 1) {
+                        stack.push([(a[0] ^ b[0]) ? 1 : 0]);
+                        break;
+                    }
                     if (a.length == 1) {
                         var result = [];
                         for (var j = 0; j < b.length; ++j) {
@@ -1353,22 +1493,32 @@ class Main {
                 }
                 case "OBJECT_ACCESS": {
                     var targets = stack.pop();
-                    var amount = parseInt(formula[i + 1], 10);
+                    var amount = formula[i + 1];
 
                     // Flatten Array targets so .prop maps over array elements
                     // e.g. stage.allTitles.charTitle → allTitles is an Array,
                     // so expand its elements as individual targets
-                    var flatTargets = [];
+                    // Optimization: only allocate flatTargets if arrays are present
+                    var needsFlatten:Boolean = false;
                     for (var j = 0; j < targets.length; ++j) {
                         if (targets[j] instanceof Array) {
-                            for (var k = 0; k < targets[j].length; ++k) {
-                                flatTargets.push(targets[j][k]);
-                            }
-                        } else {
-                            flatTargets.push(targets[j]);
+                            needsFlatten = true;
+                            break;
                         }
                     }
-                    targets = flatTargets;
+                    if (needsFlatten) {
+                        var flatTargets = [];
+                        for (var j = 0; j < targets.length; ++j) {
+                            if (targets[j] instanceof Array) {
+                                for (var k = 0; k < targets[j].length; ++k) {
+                                    flatTargets.push(targets[j][k]);
+                                }
+                            } else {
+                                flatTargets.push(targets[j]);
+                            }
+                        }
+                        targets = flatTargets;
+                    }
 
                     var result = [];
 
@@ -1422,14 +1572,14 @@ class Main {
                 }
                 case "ARRAY_ACCESS": {
                     var targets = stack.pop();
-                    var amount = parseInt(formula[i + 1], 10);
+                    var amount = formula[i + 1];
 
                     var result = [];
 
                     // OPTIMIZATION: Detect simple numeric index pattern
                     // Pattern: VALUE <n> (length 2)
                     if (amount == 2 && formula[i + 2] == "VALUE") {
-                        var idx:Number = parseInt(formula[i + 3], 10);
+                        var idx:Number = formula[i + 3];
                         for (var j = 0; j < targets.length; ++j) {
                             var value = targets[j][idx];
                             if (value !== undefined) {
@@ -1471,7 +1621,7 @@ class Main {
                     break;
                 }
                 case "REMEMBER": {
-                    var remLen:Number = parseInt(formula[++i], 10);
+                    var remLen:Number = formula[++i];
                     var remStart:Number = i + 1;
                     var remEnd:Number = remStart + remLen;
                     i = remEnd - 1; // -1 because loop will ++i
@@ -1498,12 +1648,12 @@ class Main {
                     break;
                 }
                 case "TERNARY": {
-                    // Parse embedded bytecode lengths
-                    var thenLen:Number = parseInt(formula[++i], 10);
+                    // Parse embedded bytecode lengths (pre-parsed by preprocessFormula)
+                    var thenLen:Number = formula[++i];
                     var thenStart:Number = i + 1;
                     var thenEnd:Number = thenStart + thenLen;
 
-                    var elseLen:Number = parseInt(formula[thenEnd], 10);
+                    var elseLen:Number = formula[thenEnd];
                     var elseStart:Number = thenEnd + 1;
                     var elseEnd:Number = elseStart + elseLen;
                     i = elseEnd - 1; // -1 because loop will ++i
@@ -1820,6 +1970,9 @@ class Main {
 
         var frameStartTime:Number = getTimer();
 
+        // Update reusable stage context for this frame
+        _stageContext[0] = gameContainer.gameLoader._root;
+
         // Frame-local cache for formula results (cleared each frame)
         var frameCache:Object = {};
 
@@ -1840,7 +1993,7 @@ class Main {
                     if (achievement.compiledFormula != null && achievement.compiledFormula.length > 1) {
                         var rpFormulaResult:Array = evaluate(
                             achievement.compiledFormula, 1, achievement.compiledFormula.length,
-                            [gameContainer.gameLoader._root], ["stage"]
+                            _stageContext, _stageKeys
                         );
                         // Store first result as the Rich Presence string
                         var rpString:String;
@@ -1857,8 +2010,8 @@ class Main {
                 continue; // Skip achievement-specific processing
             }
 
-            // Start timing for this achievement
-            var startTime:Number = getTimer();
+            // Start timing for this achievement (only when profiling is enabled)
+            // var startTime:Number = getTimer();
 
             // Track if all requirements pass for this asset
             var assetTriggered:Boolean = true;
@@ -2031,7 +2184,7 @@ class Main {
                         var cacheKeyA:String = requirement.addressA;
                         var currentA:Array = frameCache[cacheKeyA];
                         if (currentA == null) {
-                            currentA = evaluate(requirement.compiledA, 1, requirement.compiledA.length, [gameContainer.gameLoader._root], ["stage"]);
+                            currentA = evaluate(requirement.compiledA, 1, requirement.compiledA.length, _stageContext, _stageKeys);
                             frameCache[cacheKeyA] = currentA;
                         }
                         if (currentA != null && currentA.length == 1) {
@@ -2042,7 +2195,7 @@ class Main {
                         var cacheKeyB:String = requirement.addressB;
                         var currentB:Array = frameCache[cacheKeyB];
                         if (currentB == null) {
-                            currentB = evaluate(requirement.compiledB, 1, requirement.compiledB.length, [gameContainer.gameLoader._root], ["stage"]);
+                            currentB = evaluate(requirement.compiledB, 1, requirement.compiledB.length, _stageContext, _stageKeys);
                             frameCache[cacheKeyB] = currentB;
                         }
                         if (currentB != null && currentB.length == 1) {
@@ -2562,7 +2715,7 @@ class Main {
                             var mCacheKeyB:String = mReq.addressB;
                             var mResultB:Array = frameCache[mCacheKeyB];
                             if (mResultB == null) {
-                                mResultB = evaluate(mReq.compiledB, 1, mReq.compiledB.length, [gameContainer.gameLoader._root], ["stage"]);
+                                mResultB = evaluate(mReq.compiledB, 1, mReq.compiledB.length, _stageContext, _stageKeys);
                                 frameCache[mCacheKeyB] = mResultB;
                             }
                             mTarget = (mResultB != null && mResultB.length == 1) ? Number(mResultB[0]) : 0;
@@ -2624,13 +2777,13 @@ class Main {
 
                         var mResultA:Array = frameCache[mCacheKeyA];
                         if (mResultA == null) {
-                            mResultA = evaluate(mReq.compiledA, 1, mReq.compiledA.length, [gameContainer.gameLoader._root], ["stage"]);
+                            mResultA = evaluate(mReq.compiledA, 1, mReq.compiledA.length, _stageContext, _stageKeys);
                             frameCache[mCacheKeyA] = mResultA;
                         }
 
                         var mResultB2:Array = frameCache[mCacheKeyB2];
                         if (mResultB2 == null) {
-                            mResultB2 = evaluate(mReq.compiledB, 1, mReq.compiledB.length, [gameContainer.gameLoader._root], ["stage"]);
+                            mResultB2 = evaluate(mReq.compiledB, 1, mReq.compiledB.length, _stageContext, _stageKeys);
                             frameCache[mCacheKeyB2] = mResultB2;
                         }
 
@@ -2728,14 +2881,14 @@ class Main {
                 diffSet(achievement, "state", "TRIGGERED", "assets/" + i + "/state");
             }
 
-            // Record timing for this achievement
-            var elapsed:Number = getTimer() - startTime;
-            var achievementId:String = String(achievement.id);
-            if (profilingData[achievementId] == null) {
-                profilingData[achievementId] = {name: achievement.name, totalMs: 0, evalCount: 0};
-            }
-            profilingData[achievementId].totalMs += elapsed;
-            profilingData[achievementId].evalCount += 1;
+            // Record timing for this achievement (disabled for performance)
+            // var elapsed:Number = getTimer() - startTime;
+            // var achievementId:String = String(achievement.id);
+            // if (profilingData[achievementId] == null) {
+            //     profilingData[achievementId] = {name: achievement.name, totalMs: 0, evalCount: 0};
+            // }
+            // profilingData[achievementId].totalMs += elapsed;
+            // profilingData[achievementId].evalCount += 1;
         }
 
         // Send any pending changes (lightweight - no full diff scan)
@@ -2836,7 +2989,7 @@ class Main {
             var value:Object;
             try {
                 var result:Array = evaluate(watcher.bytecode, 1, watcher.bytecode.length,
-                                            [gameContainer.gameLoader._root], ["stage"]);
+                                            _stageContext, _stageKeys);
                 value = (result != null && result.length > 0) ? result[0] : null;
             } catch (e:Error) {
                 value = "ERROR";
