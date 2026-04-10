@@ -17,7 +17,7 @@
                         <input type="checkbox" v-model="settings.fixTextFieldBindings" @change="save">
                         <div class="setting-info">
                             <span class="setting-name">Fix TextField variable bindings</span>
-                            <span class="setting-desc">Syncs AS2 TextField input values to their bound variables each frame. Fixes games where text input fields don't work when loaded inside the firmware (e.g. DJ Maniax login screen).</span>
+                            <span class="setting-desc">Restores two-way AS2 TextField variable bindings that break under loadMovie(). Syncs variable changes to text display and user input back to variables each frame.</span>
                         </div>
                     </label>
                 </div>

@@ -268,14 +268,67 @@ class Main {
      *
      * Can be disabled in Settings > Compatibility if it causes issues with specific games.
      */
+    /**
+     * Resolve a TextField variable path like "_root.cash", "_parent.score", or "name"
+     * into {target, prop} where target[prop] is the bound variable.
+     */
+    private static function resolveTextFieldVariable(tf:TextField):Object {
+        var varPath:String = tf.variable;
+        var parts:Array = varPath.split(".");
+        var prop:String = parts[parts.length - 1];
+        var target:Object;
+
+        if (parts[0] == "_root") {
+            target = gameContainer.gameLoader;
+        } else if (parts[0] == "_parent") {
+            target = tf._parent._parent;
+        } else if (parts.length == 1) {
+            return {target: tf._parent, prop: parts[0]};
+        } else {
+            target = tf._parent;
+        }
+
+        // Walk intermediate path segments (skip first and last)
+        var start:Number = (parts[0] == "_root" || parts[0] == "_parent") ? 1 : 0;
+        for (var i:Number = start; i < parts.length - 1; i++) {
+            target = target[parts[i]];
+            if (target == undefined) return null;
+        }
+
+        return {target: target, prop: prop};
+    }
+
     private static function syncTextFieldBindings(clip:MovieClip):Void {
         for (var name:String in clip) {
             var child = clip[name];
             if (child instanceof TextField) {
                 var tf:TextField = TextField(child);
                 if (tf.variable != undefined && tf.variable != "") {
-                    // Simple variable name (no path) — resolve relative to parent
-                    tf._parent[tf.variable] = tf.text;
+                    var resolved:Object = resolveTextFieldVariable(tf);
+                    if (resolved == null) continue;
+
+                    var varValue = resolved.target[resolved.prop];
+                    var textValue:String = tf.text;
+                    var lastSync = tf.__raflash_sync;
+
+                    if (lastSync == undefined) {
+                        // First encounter: variable is source of truth (text may be design-time placeholder)
+                        if (varValue != undefined) {
+                            tf.text = String(varValue);
+                            tf.__raflash_sync = String(varValue);
+                        } else {
+                            // Variable not set yet — just start tracking, don't overwrite
+                            tf.__raflash_sync = textValue;
+                        }
+                    } else if (textValue != lastSync) {
+                        // User typed → sync text to variable
+                        resolved.target[resolved.prop] = textValue;
+                        tf.__raflash_sync = textValue;
+                    } else if (varValue != undefined && String(varValue) != lastSync) {
+                        // Game code set variable → sync variable to text
+                        tf.text = String(varValue);
+                        tf.__raflash_sync = String(varValue);
+                    }
                 }
             } else if (child instanceof MovieClip) {
                 syncTextFieldBindings(MovieClip(child));
