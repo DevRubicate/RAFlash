@@ -1904,6 +1904,9 @@ async function main(): Promise<void> {
 
         const { gamePath, user } = pickerResult;
 
+        // Close non-persistent windows (e.g. Settings) before launching the game
+        await HTMLWindow.shutdown();
+
         // Resolve the game path (handle relative paths)
         let resolvedGamePath = gamePath;
         if (gamePath.startsWith("./") || gamePath.startsWith(".\\")) {
