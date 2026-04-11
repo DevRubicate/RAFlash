@@ -811,7 +811,13 @@ function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8A
     stream.push(0x4E); // GetMember → _root.__raflash (or undefined)
     // ActionIf: opcode + UI16 length=2 + signed UI16 branch offset.
     // Offset is measured from the END of the ActionIf instruction. To skip
-    // the body we branch by exactly body.length bytes.
+    // the body we branch by exactly body.length bytes. The offset is signed,
+    // so anything past 32767 would wrap negative and branch backward into the
+    // prefix instead of forward past the body — fail loudly here rather than
+    // produce silently broken bytecode.
+    if (body.length > 0x7FFF) {
+        throw new Error(`injectFirmwareLoader: body too large for signed branch offset (${body.length} > 32767)`);
+    }
     stream.push(0x9D);
     stream.push(0x02, 0x00);
     stream.push(body.length & 0xFF, (body.length >>> 8) & 0xFF);
