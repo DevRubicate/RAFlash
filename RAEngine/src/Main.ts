@@ -1091,6 +1091,16 @@ function startHttpServerInner() {
         async (req: Request): Promise<Response> => {
             const url = new URL(req.url);
 
+            // Single-instance probe — used by a freshly-launched RAFlash to
+            // detect that an existing instance is already on this port.
+            // Localhost-only by virtue of the bind address; no auth needed.
+            if (url.pathname === "/instance-check") {
+                return new Response(
+                    JSON.stringify({ raflash: true, version: VERSION, pid: Deno.pid }),
+                    { headers: { "Content-Type": "application/json" } }
+                );
+            }
+
             // WebSocket upgrade
             if (url.pathname === "/ws") {
                 const { socket, response } = Deno.upgradeWebSocket(req);
@@ -2341,15 +2351,54 @@ async function main(): Promise<void> {
         }
     }
 
-    // Clean up leftover from self-update (delay to let old process fully exit)
+    // Single-instance check. RAFlash binds three localhost ports and assumes
+    // exclusive ownership; running a second instance collides on those ports
+    // and crashes opaquely. Probe :HTTP_PORT/instance-check — if a RAFlash
+    // signature comes back, another instance is already running, show a
+    // message box and exit cleanly.
+    //
+    // Self-update gating: applyUpdate spawns the new exe while the old one
+    // is still alive on the ports for ~3 seconds. The old exe leaves
+    // RAFlash.exe.old behind as the post-update marker. If .old exists at
+    // startup, we ARE the post-update launch and must skip the probe — the
+    // existing 10-retry loop in startHttpServer handles port-release.
     const oldExe = Deno.execPath() + ".old";
+    let isPostUpdateLaunch = false;
     try {
         await Deno.stat(oldExe);
+        isPostUpdateLaunch = true;
+    } catch { /* not a post-update launch */ }
+
+    if (!isPostUpdateLaunch) {
+        let existingInstance = false;
+        try {
+            const probe = await fetch(`http://127.0.0.1:${HTTP_PORT}/instance-check`, {
+                signal: AbortSignal.timeout(200),
+            });
+            if (probe.ok) {
+                const data = await probe.json();
+                if (data?.raflash === true) existingInstance = true;
+            }
+        } catch { /* refused / timeout / non-JSON — no RAFlash on the port */ }
+
+        if (existingInstance) {
+            if (Deno.build.os === "windows") {
+                WindowManager.showMessageBox(
+                    "RAFlash is already running.\n\nClose the existing window before launching another game.",
+                    "RAFlash"
+                );
+            }
+            Deno.exit(0);
+        }
+    }
+
+    // Clean up leftover from self-update (delay to let old process fully exit)
+    if (isPostUpdateLaunch) {
         // File exists — retry deletion a few times in case old process is still exiting
         for (let i = 0; i < 10; i++) {
             try { await Deno.remove(oldExe); break; } catch { await new Promise(r => setTimeout(r, 500)); }
         }
-    } catch { /* no .old file, nothing to clean */ }
+    }
 
     // Load persistent settings
     await loadSettings();

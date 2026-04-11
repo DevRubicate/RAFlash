@@ -103,6 +103,10 @@ const user32 = isWindows ? Deno.dlopen("user32.dll", {
         parameters: ["buffer", "u32", "i32", "u32"],
         result: "i32",
     },
+    MessageBoxW: {
+        parameters: ["pointer", "buffer", "buffer", "u32"],
+        result: "i32",
+    },
 }) : null;
 
 // FFI bindings to kernel32.dll for GetCurrentThreadId
@@ -683,5 +687,28 @@ export class WindowManager {
                 user32.symbols.AttachThreadInput(currentThreadId, foregroundThreadId, 0);
             }
         }
+    }
+
+    /**
+     * Show a Win32 message box with an OK button. Blocks until the user
+     * clicks OK. No-op on non-Windows. Used for hard-error popups before any
+     * HTML window can be created (e.g. duplicate-instance detection).
+     */
+    static showMessageBox(text: string, title: string): void {
+        if (!user32) return;
+        const MB_OK = 0x00000000;
+        const MB_ICONINFORMATION = 0x00000040;
+        // Win32 wants UTF-16LE, null-terminated. Allocate over a fresh
+        // ArrayBuffer (not ArrayBufferLike) so Deno's FFI buffer typing is happy.
+        const encodeUtf16 = (s: string): Uint8Array<ArrayBuffer> => {
+            const buf = new Uint8Array(new ArrayBuffer((s.length + 1) * 2));
+            for (let i = 0; i < s.length; i++) {
+                const c = s.charCodeAt(i);
+                buf[i * 2] = c & 0xFF;
+                buf[i * 2 + 1] = (c >> 8) & 0xFF;
+            }
+            return buf;
+        };
+        user32.symbols.MessageBoxW(null, encodeUtf16(text), encodeUtf16(title), MB_OK | MB_ICONINFORMATION);
     }
 }
