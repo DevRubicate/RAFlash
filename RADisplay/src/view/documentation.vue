@@ -314,6 +314,38 @@ stage.player.x + 100        // scalar + scalar</pre>
                 </p>
             </section>
 
+            <section id="ref-function-hooks">
+                <h1>Function Hooks</h1>
+                <p>
+                    When a DSL expression accesses a property whose value is a function,
+                    the runtime transparently wraps that function so it can detect when
+                    the game calls it. The function still appears as a function &mdash; what
+                    changes is that it gains a synthetic <code>.triggered</code> property.
+                </p>
+                <pre>stage.menu.gotoMySite           // the function reference (wrapped)
+stage.menu.gotoMySite.triggered // 1 on frames the function fired, else 0</pre>
+                <p>
+                    This makes "achievement when X is called" expressible directly. Pair
+                    it with a hit count to require a specific number of invocations:
+                </p>
+                <pre>stage.menu.gotoMySite.triggered == 1   // with maxHits: 1, fires on first call</pre>
+                <p>
+                    The wrapper takes a snapshot once per frame, so all conditions in a
+                    given evaluation pass see a consistent view: a call lands in the
+                    <em>next</em> frame's snapshot, never mid-evaluation.
+                </p>
+                <p>
+                    <strong>Self-healing:</strong> if the game destroys and recreates the
+                    parent object, the new function instance is unwrapped &mdash; the next
+                    evaluation re-wraps it automatically. No manual reset needed.
+                </p>
+                <p>
+                    <strong>Limitations:</strong> functions stored in read-only or native
+                    slots cannot be wrapped, and their <code>.triggered</code> will read
+                    as 0 forever. Most user-defined game functions are wrappable.
+                </p>
+            </section>
+
             <section id="ref-achievement-states">
                 <h1>Achievement States</h1>
                 <table>
@@ -555,6 +587,7 @@ stage.player.x + 100        // scalar + scalar</pre>
         { id: 'ref-dsl-syntax',          title: 'DSL Syntax' },
         { id: 'ref-globals',             title: 'Globals' },
         { id: 'ref-remembered-values',   title: 'Remembered Values' },
+        { id: 'ref-function-hooks',      title: 'Function Hooks' },
         { id: 'ref-achievement-states',  title: 'Achievement States' },
         { id: 'ref-user-profiles',       title: 'User Profiles' },
     ];
