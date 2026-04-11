@@ -181,8 +181,26 @@ class Main {
         if (childMode) {
             // Child mode: firmware was loaded by injected bytecode into a
             // child clip (e.g. _level0.__raflash) of the game's _root. The
-            // game IS _level0 and is already running. We do NOT own the
-            // player chrome.
+            // game IS _level0 and is already running.
+            //
+            // Reapply player chrome that the engine's sitelock patcher
+            // strips. The patcher kills every window-target ActionGetURL2
+            // (flags=0x00) including legitimate fscommand("showmenu") /
+            // fscommand("allowscale") calls — we can't discriminate them
+            // from fscommand("quit") at the bytecode level since they all
+            // share the same opcode and flags. Without this restoration
+            // the standalone player's menu bar and right-click items stay
+            // visible because the game's chrome-setup calls were silenced.
+            // fscommand calls work from any clip; they go to the player,
+            // not the enclosing scope.
+            Stage.scaleMode = "noScale";
+            Stage.align = "TL";
+            fscommand("showmenu", "false");
+            fscommand("allowscale", "false");
+            var cm:ContextMenu = new ContextMenu();
+            cm.hideBuiltInItems();
+            _level0.menu = cm;
+
             var ourClip:MovieClip = (self != undefined) ? self : MovieClip(_level0.__raflash);
             _self = ourClip;
             gameRoot = resolveChildModeGameRoot(ourClip);
