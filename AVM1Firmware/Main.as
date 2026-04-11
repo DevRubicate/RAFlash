@@ -146,8 +146,18 @@ class Main {
             consider(ourClip._parent);
         }
         consider(_level0);
-        for (var lvl:Number = 1; lvl <= 10; lvl++) {
-            consider(eval("_level" + lvl));
+        // The level scan is the expensive part (10× eval), so skip it entirely
+        // when _parent or _level0 has already given us a non-empty winner. The
+        // disambiguation case the scoring was originally added for — stub
+        // games that loadMovieNum themselves into a higher level — still
+        // works, because in that case _level0 is empty after the stub finishes
+        // and bestCount stays 0, so we fall through into the level scan. Once
+        // any level has children we stop there.
+        if (bestCount < 1) {
+            for (var lvl:Number = 1; lvl <= 10; lvl++) {
+                consider(eval("_level" + lvl));
+                if (bestCount >= 1) break;
+            }
         }
         return bestClip;
     }
