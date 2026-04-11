@@ -17,8 +17,10 @@ class Main {
     private static var socket:XMLSocket;
     private static var connected:Boolean = false;
 
-    // Game container
+    // Game container (parent mode only) and the game's root MovieClip,
+    // resolved by either parent-mode loadGame or child-mode bootstrap.
     private static var gameContainer:MovieClip;
+    private static var gameRoot:MovieClip;
     private static var gameLoaded:Boolean = false;
 
     // Configuration
@@ -227,6 +229,10 @@ class Main {
         gameContainer = _root.createEmptyMovieClip("gameContainer", _root.getNextHighestDepth());
         var gameLoader:MovieClip = gameContainer.createEmptyMovieClip("gameLoader", 1);
         gameLoader._lockroot = true;
+        // Parent mode: the loader clip IS the game's _root (because of _lockroot,
+        // gameLoader._root === gameLoader). All achievement evaluation, watcher,
+        // and memory inspection code reads from Main.gameRoot.
+        gameRoot = gameLoader;
 
         // Patch Sound.attachSound to record linkage IDs (only if fix enabled).
         // Native methods on built-in prototypes are write-protected; ASSetPropFlags
@@ -269,7 +275,7 @@ class Main {
             try {
                 if (_soundFixState == 0 && fixSoundAttach) {
                     if (_soundFixDeadline == 0) _soundFixDeadline = getTimer() + 3000;
-                    var gr:MovieClip = gameContainer.gameLoader;
+                    var gr:MovieClip = gameRoot;
                     var fixed:Number = 0;
                     for (var name:String in gr) {
                         if (gr[name] instanceof Sound) {
@@ -301,10 +307,10 @@ class Main {
                 if (fixTextFieldBindings) {
                     if (benchmarkingActive) {
                         var tfStart:Number = getTimer();
-                        syncTextFieldBindings(gameContainer.gameLoader);
+                        syncTextFieldBindings(gameRoot);
                         sendMessage("benchmark", {kind: "TextField Sync", ms: getTimer() - tfStart});
                     } else {
-                        syncTextFieldBindings(gameContainer.gameLoader);
+                        syncTextFieldBindings(gameRoot);
                     }
                 }
             } catch (e:Error) { logError("syncTextFieldBindings", e); }
@@ -359,7 +365,7 @@ class Main {
         var target:Object;
 
         if (parts[0] == "_root") {
-            target = gameContainer.gameLoader;
+            target = gameRoot;
         } else if (parts[0] == "_parent") {
             target = tf._parent._parent;
         } else if (parts.length == 1) {
@@ -422,7 +428,7 @@ class Main {
      * Check if game has finished loading
      */
     private static function checkLoadProgress():Void {
-        var loader:MovieClip = gameContainer.gameLoader;
+        var loader:MovieClip = gameRoot;
         var bytesLoaded:Number = loader.getBytesLoaded();
         var bytesTotal:Number = loader.getBytesTotal();
 
@@ -517,7 +523,7 @@ class Main {
                 break;
 
             case "evaluate":
-                _stageContext[0] = gameContainer.gameLoader._root;
+                _stageContext[0] = gameRoot;
                 var formula:Array = params.formula;
                 var result:Array = evaluate(formula, 1, formula.length, _stageContext, _stageKeys);
                 var formatted:Object = formatOutput(result, 0);
@@ -525,7 +531,7 @@ class Main {
                 break;
 
             case "evaluateMultiple":
-                _stageContext[0] = gameContainer.gameLoader._root;
+                _stageContext[0] = gameRoot;
                 var formulas:Array = params.formulas;
                 var results:Array = [];
                 for (var f:Number = 0; f < formulas.length; f++) {
@@ -573,7 +579,7 @@ class Main {
                     }
                 } else {
                     // Default: start from stage
-                    startTarget = gameContainer.gameLoader._root;
+                    startTarget = gameRoot;
                     pathPrefix = "stage";
                 }
 
@@ -647,7 +653,7 @@ class Main {
 
             case "resetGame":
                 // Unload game and reset all runtime state
-                gameContainer.gameLoader.unloadMovie();
+                gameRoot.unloadMovie();
                 gameContainer.removeMovieClip();
                 gameLoaded = false;
                 _soundFixState = 0;
@@ -670,7 +676,7 @@ class Main {
                 break;
 
             case "setValue":
-                _stageContext[0] = gameContainer.gameLoader._root;
+                _stageContext[0] = gameRoot;
                 var svFormula:Array = params.pathFormula;
                 var svResult:Array = evaluate(svFormula, 1, svFormula.length, _stageContext, _stageKeys);
                 if (svResult != null && svResult.length > 0) {
@@ -878,17 +884,17 @@ class Main {
             case 2: // LITERAL_NULL
                 return [null];
             case 3: { // PROP1: gameRoot[prop]
-                var v3 = gameContainer.gameLoader._root[fast[1]];
+                var v3 = gameRoot[fast[1]];
                 return (v3 !== undefined) ? [v3] : [];
             }
             case 4: { // PROP2: gameRoot[a][b]
-                var o4 = gameContainer.gameLoader._root[fast[1]];
+                var o4 = gameRoot[fast[1]];
                 if (o4 === undefined) return [];
                 var v4 = o4[fast[2]];
                 return (v4 !== undefined) ? [v4] : [];
             }
             case 5: { // PROP3: gameRoot[a][b][c]
-                var o5 = gameContainer.gameLoader._root[fast[1]];
+                var o5 = gameRoot[fast[1]];
                 if (o5 === undefined) return [];
                 var o5b = o5[fast[2]];
                 if (o5b === undefined) return [];
@@ -896,7 +902,7 @@ class Main {
                 return (v5 !== undefined) ? [v5] : [];
             }
             case 6: { // PROP + ARRAY_FILTER_EQ: gameRoot[prop].filter(==match)
-                var arr6 = gameContainer.gameLoader._root[fast[1]];
+                var arr6 = gameRoot[fast[1]];
                 if (!(arr6 instanceof Array)) return [];
                 var match6 = fast[2];
                 var result6:Array = [];
@@ -929,15 +935,15 @@ class Main {
             var rawA;
             switch (fr[1]) {
                 case 3:
-                    rawA = gameContainer.gameLoader._root[fr[2]];
+                    rawA = gameRoot[fr[2]];
                     break;
                 case 4: {
-                    var _o4 = gameContainer.gameLoader._root[fr[2]];
+                    var _o4 = gameRoot[fr[2]];
                     rawA = (_o4 !== undefined) ? _o4[fr[3]] : undefined;
                     break;
                 }
                 case 5: {
-                    var _o5 = gameContainer.gameLoader._root[fr[2]];
+                    var _o5 = gameRoot[fr[2]];
                     if (_o5 !== undefined) _o5 = _o5[fr[3]];
                     rawA = (_o5 !== undefined) ? _o5[fr[4]] : undefined;
                     break;
@@ -1773,7 +1779,7 @@ class Main {
                     if (identifiers.length == 1) {
                         switch (identifiers[0]) {
                             case "stage": {
-                                stack.push([gameContainer.gameLoader._root]);
+                                stack.push([gameRoot]);
                                 break;
                             }
                             case "this": {
@@ -1785,7 +1791,7 @@ class Main {
                                 break;
                             }
                             case "stage_frame": {
-                                stack.push([gameContainer.gameLoader._root._currentframe]);
+                                stack.push([gameRoot._currentframe]);
                                 break;
                             }
                             default: {
@@ -2352,7 +2358,7 @@ class Main {
         var frameStartTime:Number = getTimer();
 
         // Update reusable stage context for this frame
-        _stageContext[0] = gameContainer.gameLoader._root;
+        _stageContext[0] = gameRoot;
 
         // Frame-local cache for formula results (cleared each frame)
         var frameCache:Object = {};
@@ -2415,14 +2421,14 @@ class Main {
                     var sfr:Array = sr.fastReq;
                     var sRawA;
                     switch (sfr[1]) {
-                        case 3: sRawA = gameContainer.gameLoader._root[sfr[2]]; break;
+                        case 3: sRawA = gameRoot[sfr[2]]; break;
                         case 4: {
-                            var so4 = gameContainer.gameLoader._root[sfr[2]];
+                            var so4 = gameRoot[sfr[2]];
                             sRawA = (so4 !== undefined) ? so4[sfr[3]] : undefined;
                             break;
                         }
                         case 5: {
-                            var so5 = gameContainer.gameLoader._root[sfr[2]];
+                            var so5 = gameRoot[sfr[2]];
                             if (so5 !== undefined) so5 = so5[sfr[3]];
                             sRawA = (so5 !== undefined) ? so5[sfr[4]] : undefined;
                             break;
@@ -3383,7 +3389,7 @@ class Main {
         if (now - lastProfilingReport >= PROFILING_INTERVAL) {
             // Count stage properties for diagnostics
             var stageCountStart:Number = getTimer();
-            var stageStats:Object = countStageProperties(gameContainer.gameLoader._root, 3);
+            var stageStats:Object = countStageProperties(gameRoot, 3);
             stageCountTimeMs += getTimer() - stageCountStart;
             sendMessage("profiling", {
                 achievements: profilingData,
