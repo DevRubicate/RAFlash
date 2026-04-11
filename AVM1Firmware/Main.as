@@ -1340,25 +1340,43 @@ class Main {
     private static function evaluateChain(group:Object, startIndex:Number, frameCache:Object, skipIndices:Object):Object {
         var k:Number = startIndex;
         var req:Object = group.requirements[k];
+        // Per-member info: each entry is {index, currentTrue, valid, locked},
+        // collected so per-member hit counts can be applied later without
+        // re-evaluating (which would corrupt deltas and lose info).
+        var members:Array = [];
 
         // Evaluate the first condition
         var evalResult:Object = evaluateRequirementCondition(req, frameCache, 0);
-        if (!evalResult.valid) {
-            // If first condition is invalid, find terminal and return false
+
+        var firstMaxH:Number = req.maxHits || 0;
+        var firstHts:Number = req.hits || 0;
+        var firstLocked:Boolean = (firstMaxH > 0 && firstHts >= firstMaxH);
+        var firstCurrent:Boolean = evalResult.valid && evalResult.passed;
+        var firstSatisfied:Boolean = firstLocked || firstCurrent;
+
+        members.push({
+            index: k,
+            currentTrue: firstCurrent,
+            valid: evalResult.valid,
+            locked: firstLocked
+        });
+
+        if (!evalResult.valid && !firstLocked) {
+            // If first condition is invalid (and not locked-true), find terminal and return false
             while (k + 1 < group.requirements.length) {
                 k++;
                 // Skip indices we should skip
                 while (k < group.requirements.length && skipIndices[k]) k++;
                 if (k >= group.requirements.length) break;
-                var nextReq:Object = group.requirements[k];
-                if (nextReq.flag != "AND_NEXT" && nextReq.flag != "OR_NEXT") {
-                    return {chainResult: false, terminalIndex: k, valid: false};
+                var nextReq0:Object = group.requirements[k];
+                if (nextReq0.flag != "AND_NEXT" && nextReq0.flag != "OR_NEXT") {
+                    return {chainResult: false, terminalIndex: k, valid: false, members: members};
                 }
             }
-            return {chainResult: false, terminalIndex: k, valid: false};
+            return {chainResult: false, terminalIndex: k, valid: false, members: members};
         }
 
-        var chainResult:Boolean = evalResult.passed;
+        var chainResult:Boolean = firstSatisfied;
         var currentOp:String = req.flag;  // "AND_NEXT" or "OR_NEXT"
 
         // Walk the chain
@@ -1368,22 +1386,37 @@ class Main {
             while (k < group.requirements.length && skipIndices[k]) k++;
             if (k >= group.requirements.length) {
                 // Chain ended without terminal - invalid
-                return {chainResult: false, terminalIndex: k - 1, valid: false};
+                return {chainResult: false, terminalIndex: k - 1, valid: false, members: members};
             }
 
             var nextReq:Object = group.requirements[k];
             var nextEval:Object = evaluateRequirementCondition(nextReq, frameCache, 0);
 
-            // Apply the operator from the previous requirement
+            var nextMaxH:Number = nextReq.maxHits || 0;
+            var nextHts:Number = nextReq.hits || 0;
+            var nextLocked:Boolean = (nextMaxH > 0 && nextHts >= nextMaxH);
+            var nextCurrent:Boolean = nextEval.valid && nextEval.passed;
+            var nextSatisfied:Boolean = nextLocked || nextCurrent;
+
+            // Apply the operator from the previous requirement.
+            // Locked-true members contribute true regardless of current condition;
+            // this matches canonical RA semantics for hit-counted chain members.
             if (currentOp == "AND_NEXT") {
-                chainResult = chainResult && (nextEval.valid && nextEval.passed);
+                chainResult = chainResult && nextSatisfied;
             } else {  // OR_NEXT
-                chainResult = chainResult || (nextEval.valid && nextEval.passed);
+                chainResult = chainResult || nextSatisfied;
             }
+
+            members.push({
+                index: k,
+                currentTrue: nextCurrent,
+                valid: nextEval.valid,
+                locked: nextLocked
+            });
 
             // Check if this is the terminal (not AndNext/OrNext)
             if (nextReq.flag != "AND_NEXT" && nextReq.flag != "OR_NEXT") {
-                return {chainResult: chainResult, terminalIndex: k, valid: true};
+                return {chainResult: chainResult, terminalIndex: k, valid: true, members: members};
             }
 
             // Continue chain - update operator for next iteration
@@ -1391,7 +1424,57 @@ class Main {
         }
 
         // Reached end of requirements without terminal - invalid
-        return {chainResult: false, terminalIndex: k, valid: false};
+        return {chainResult: false, terminalIndex: k, valid: false, members: members};
+    }
+
+    /**
+     * Increment hit counts for AndNext/OrNext chain members based on the
+     * partial chain truth up to and including each member. The chain terminal
+     * is excluded — terminal hits are tracked by the regular Phase 5 path.
+     *
+     * Each member with maxHits > 0 increments by 1 when the partial chain
+     * through that member is currently true (locked-true members contribute
+     * truth without incrementing themselves further).
+     *
+     * @param group       The group containing the requirements
+     * @param members     Per-member info from evaluateChain
+     * @param iAsset      Index of the achievement (for diff path)
+     * @param iGroup      Index of the group (for diff path)
+     */
+    private static function incrementChainMemberHits(group:Object, members:Array, iAsset:Number, iGroup:Number):Void {
+        if (members == null || members.length < 2) return;
+
+        var partialChain:Boolean = false;
+
+        for (var i:Number = 0; i < members.length; i++) {
+            var m:Object = members[i];
+            var req:Object = group.requirements[m.index];
+            var maxH:Number = req.maxHits || 0;
+            var curH:Number = req.hits || 0;
+            var locked:Boolean = (maxH > 0 && curH >= maxH);
+            var satisfied:Boolean = locked || (m.valid && m.currentTrue);
+
+            if (i == 0) {
+                partialChain = satisfied;
+            } else {
+                var prevReq:Object = group.requirements[members[i - 1].index];
+                if (prevReq.flag == "AND_NEXT") {
+                    partialChain = partialChain && satisfied;
+                } else {  // OR_NEXT
+                    partialChain = partialChain || satisfied;
+                }
+            }
+
+            // Skip terminal (last member) — handled by the regular Phase 5 path
+            if (i == members.length - 1) continue;
+
+            // Increment if eligible: this member has a hit cap, isn't already
+            // capped, and the partial chain through this member is true.
+            if (maxH > 0 && curH < maxH && partialChain) {
+                var basePath:String = "assets/" + iAsset + "/groups/" + iGroup + "/requirements/" + m.index + "/hits";
+                diffSet(req, "hits", curH + 1, basePath);
+            }
+        }
     }
 
     // ========================================================================
@@ -2734,32 +2817,44 @@ class Main {
                     }
                 }
 
-                // First pass: identify AndNext/OrNext chains ending in Pause If
+                // First pass: identify AndNext/OrNext chains ending in Pause If.
+                // We must NOT call evaluateChain here unconditionally — DELTA
+                // requirements have a side effect (they overwrite the stored
+                // previous-frame value when evaluated), so a wasted exploratory
+                // evaluation here would corrupt the delta and cause Phase 2 to
+                // see a delta-vs-current comparison as "no change." Walk the
+                // chain structurally first, only evaluate if the terminal is
+                // actually a Pause If.
                 for (var k:Number = 0; k < group.requirements.length; ++k) {
                     var requirement:Object = group.requirements[k];
 
                     if (requirement.flag == "AND_NEXT" || requirement.flag == "OR_NEXT") {
-                        // Evaluate the chain to find terminal
-                        var chainResult:Object = evaluateChain(group, k, frameCache, {});
-
-                        // Check if terminal is Pause If
-                        if (chainResult.terminalIndex < group.requirements.length) {
-                            var terminalReq:Object = group.requirements[chainResult.terminalIndex];
-                            if (terminalReq.flag == "PAUSE_IF") {
-                                // Mark all chain members (from k to terminalIndex-1)
-                                for (var cm:Number = k; cm < chainResult.terminalIndex; ++cm) {
-                                    chainInfo[cm] = {isChainMember: true, terminalIndex: chainResult.terminalIndex};
-                                }
-                                // Mark terminal with chain result
-                                chainInfo[chainResult.terminalIndex] = {
-                                    isTerminal: true,
-                                    chainResult: chainResult.chainResult,
-                                    chainValid: chainResult.valid
-                                };
-                            }
+                        // Walk forward by flag only to find the terminal index.
+                        var terminalIdx:Number = k + 1;
+                        while (terminalIdx < group.requirements.length) {
+                            var nextFlag:String = group.requirements[terminalIdx].flag;
+                            if (nextFlag != "AND_NEXT" && nextFlag != "OR_NEXT") break;
+                            terminalIdx++;
                         }
-                        // Skip ahead (chain will be processed when we hit the terminal)
-                        k = chainResult.terminalIndex;
+
+                        // Only evaluate the chain if the terminal is Pause If;
+                        // otherwise leave evaluation to Phase 2.
+                        if (terminalIdx < group.requirements.length
+                                && group.requirements[terminalIdx].flag == "PAUSE_IF") {
+                            var chainResult:Object = evaluateChain(group, k, frameCache, {});
+                            for (var cm:Number = k; cm < chainResult.terminalIndex; ++cm) {
+                                chainInfo[cm] = {isChainMember: true, terminalIndex: chainResult.terminalIndex};
+                            }
+                            chainInfo[chainResult.terminalIndex] = {
+                                isTerminal: true,
+                                chainResult: chainResult.chainResult,
+                                chainValid: chainResult.valid
+                            };
+                        }
+
+                        // Skip ahead past the chain (chain members are handled
+                        // either via chainInfo above or in Phase 2).
+                        k = terminalIdx;
                     }
                 }
 
@@ -2978,6 +3073,13 @@ class Main {
                     if (requirement.flag == "AND_NEXT" || requirement.flag == "OR_NEXT") {
                         // Evaluate the chain
                         var chainResult:Object = evaluateChain(group, k, frameCache, pauseIfIndices);
+
+                        // Increment per-chain-member hit counts (canonical RA
+                        // semantics: each chain member with maxHits > 0 has its
+                        // own hit accumulator, ticked when the partial chain
+                        // through it is true). The terminal is excluded here —
+                        // it's handled by the regular Phase 5 path below.
+                        incrementChainMemberHits(group, chainResult.members, i, j);
 
                         // Mark chain members
                         for (var cm:Number = k; cm < chainResult.terminalIndex; ++cm) {
