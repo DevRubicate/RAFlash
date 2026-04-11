@@ -215,11 +215,25 @@ const RAFLASH_DOMAIN = "raflash.local"; // Fake domain for proxy routing (127.0.
 
 // Global settings (persisted to RACache/settings.json)
 interface Settings {
-    fixTextFieldBindings: boolean;
-    fixSoundAttach: boolean;
+    // Which AVM1 firmware to use:
+    //   "parent" — Flash Player loads the firmware (via AVM1Wrapper) which
+    //              then loads the game into a child clip. The firmware is
+    //              the host. Default — no behavior change for existing users.
+    //   "child"  — Flash Player loads the game directly. RAEngine injects
+    //              bytecode at frame 1 that loads the firmware as a child
+    //              clip of the game's _root. The game is the true _level0.
+    // Ignored for AVM2 games (always parent until AVM2 child mode exists).
+    firmwareMode: "parent" | "child";
+    fixTextFieldBindings: boolean;     // parent-mode only
+    fixSoundAttach: boolean;            // parent-mode only
     benchmarkingEnabled: boolean;
 }
-const defaultSettings: Settings = { fixTextFieldBindings: true, fixSoundAttach: true, benchmarkingEnabled: false };
+const defaultSettings: Settings = {
+    firmwareMode: "parent",
+    fixTextFieldBindings: true,
+    fixSoundAttach: true,
+    benchmarkingEnabled: false,
+};
 let settings: Settings = { ...defaultSettings };
 
 async function loadSettings(): Promise<void> {
