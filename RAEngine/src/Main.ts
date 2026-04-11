@@ -215,15 +215,21 @@ const RAFLASH_DOMAIN = "raflash.local"; // Fake domain for proxy routing (127.0.
 
 // Global settings (persisted to RACache/settings.json)
 interface Settings {
-    // Which AVM1 firmware to use:
-    //   "parent" — Flash Player loads the firmware (via AVM1Wrapper) which
-    //              then loads the game into a child clip. The firmware is
-    //              the host. Default — no behavior change for existing users.
+    // Which firmware approach to use for the AVM1 game launch:
     //   "child"  — Flash Player loads the game directly. RAEngine injects
     //              bytecode at frame 1 that loads the firmware as a child
     //              clip of the game's _root. The game is the true _level0.
-    // Ignored for AVM2 games (always parent until AVM2 child mode exists).
-    firmwareMode: "parent" | "child";
+    //              Default; eliminates compatibility hacks needed by parent.
+    //   "parent" — Flash Player loads the firmware (via AVM1Wrapper) which
+    //              then loads the game into a child clip. The firmware is
+    //              the host. Older approach; reliable fallback.
+    //   "none"   — Flash Player loads the game directly, with no injection
+    //              and no firmware involvement at all. Used for debugging
+    //              and side-by-side comparison. Devtools (RADisplay) won't
+    //              be able to connect since there's nothing to talk to.
+    // For AVM2 games, "child" silently falls back to "parent" (no AVM2 child
+    // mode yet); "none" is honored.
+    firmwareMode: "parent" | "child" | "none";
     fixTextFieldBindings: boolean;     // parent-mode only
     fixSoundAttach: boolean;            // parent-mode only
     benchmarkingEnabled: boolean;
@@ -265,12 +271,19 @@ interface AVMConfig {
 let avmConfig: AVMConfig;
 
 /**
- * Resolve which AVM1 firmware mode to use for the current game launch.
- * AVM2 doesn't have a child-mode equivalent yet, so AVM2 games always use
- * parent (the firmwareMode setting is silently ignored for them). For AVM1
- * games this honours the user's firmwareMode setting.
+ * Resolve which firmware approach to use for the current game launch.
+ *
+ * "none" is honored regardless of AVM version — it's the user explicitly
+ * asking for a raw game launch with no firmware involvement.
+ *
+ * "child" is honored only for AVM1; AVM2 games silently fall back to
+ * "parent" because the AVM2 firmware doesn't have a child-mode equivalent
+ * yet. AVM2 games launched in "parent" still get full devtools support.
+ *
+ * "parent" is the fallback for everything else.
  */
-function resolveFirmwareMode(): "parent" | "child" {
+function resolveFirmwareMode(): "parent" | "child" | "none" {
+    if (settings.firmwareMode === "none") return "none";
     if (avmConfig?.mode === "AVM2") return "parent";
     return settings.firmwareMode === "child" ? "child" : "parent";
 }
@@ -2164,13 +2177,16 @@ function handleFirmwareData(data: string): void {
  *             the firmware which loads the game into a child clip.
  *   - child:  load /game.swf directly; RAEngine's /game.swf handler injects
  *             bytecode that loads the firmware as a child of the game.
+ *   - none:   load /game.swf directly with no injection — raw game for
+ *             debugging/comparison.
  */
 function launchFlashPlayer(): Deno.ChildProcess {
     const fpPath = `${Deno.cwd()}/vendor/adobe/fp-32.0.0.380.exe`;
     // Note: cwd is .build/ during development (make run) and the exe's directory when distributed
     const originUrl = AppData.data.gameConfig.originUrl;
     const domain = originUrl ? new URL(originUrl).host : RAFLASH_DOMAIN;
-    const launchUrl = resolveFirmwareMode() === "child"
+    const mode = resolveFirmwareMode();
+    const launchUrl = (mode === "child" || mode === "none")
         ? `http://${domain}/game.swf`
         : `http://${domain}${avmConfig.firmwareUrl}`;
 

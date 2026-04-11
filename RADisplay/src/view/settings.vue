@@ -36,8 +36,19 @@
                         <button class="settings-button" @click="currentSubview = 'parent'">Settings →</button>
                     </div>
 
+                    <div class="firmware-mode-row" :class="{ active: settings.firmwareMode === 'none' }">
+                        <label class="firmware-mode-main">
+                            <input type="radio" value="none" v-model="settings.firmwareMode" @change="save">
+                            <div class="setting-info">
+                                <span class="setting-name">No Firmware</span>
+                                <span class="setting-desc">Flash Player launches the game directly with no injection and no firmware. Devtools cannot connect — used for debugging and side-by-side comparison against the firmware modes.</span>
+                            </div>
+                        </label>
+                        <button class="settings-button" @click="currentSubview = 'none'">Settings →</button>
+                    </div>
+
                     <p class="firmware-note">
-                        Mode change applies on next game launch. AVM2 (AS3) games always use the wrapper regardless of this setting.
+                        Mode change applies on next game launch. For AVM2 (AS3) games, "Child Injection" silently falls back to "Parent Wrapper" since AVM2 child mode isn't implemented yet.
                     </p>
                 </div>
             </div>
@@ -74,6 +85,17 @@
                 </div>
                 <div class="setting-group">
                     <p class="empty-note">No settings yet — child mode runs without the parent-mode compatibility hacks.</p>
+                </div>
+            </div>
+
+            <!-- Firmware tab: No Firmware sub-view -->
+            <div v-if="activeTab === 'firmware' && currentSubview === 'none'">
+                <div class="subview-header">
+                    <button class="back-button" @click="currentSubview = null">← Back</button>
+                    <span class="subview-title">No Firmware Settings</span>
+                </div>
+                <div class="setting-group">
+                    <p class="empty-note">Nothing to configure — the game runs raw with no firmware involvement.</p>
                 </div>
             </div>
 
