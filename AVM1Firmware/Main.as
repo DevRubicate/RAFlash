@@ -3035,15 +3035,19 @@ class Main {
                                     var contribIdx:Number = ahsInfo.contributors[aci];
                                     var contribReq:Object = group.requirements[contribIdx];
                                     var contribHits:Number = contribReq.hits || 0;
+                                    var contribMax:Number = contribReq.maxHits || 0;
                                     // Check if this contributor passes this frame (for lookahead)
                                     var contribResult:Object = evaluateRequirementCondition(contribReq, frameCache, 0);
                                     var contribPasses:Boolean = contribResult.passed && contribResult.valid;
+                                    // Lookahead only fires if Phase 5 will actually increment
+                                    // (i.e. contributor isn't already at its cap)
+                                    var contribCanIncrement:Boolean = contribPasses && (contribMax == 0 || contribHits < contribMax);
                                     if (contribReq.flag == "ADD_HITS") {
                                         effectiveHits += contribHits;
-                                        if (contribPasses) effectiveHitsLookahead += 1;
+                                        if (contribCanIncrement) effectiveHitsLookahead += 1;
                                     } else if (contribReq.flag == "SUB_HITS") {
                                         effectiveHits -= contribHits;
-                                        if (contribPasses) effectiveHitsLookahead -= 1;
+                                        if (contribCanIncrement) effectiveHitsLookahead -= 1;
                                     }
                                 }
                                 // Terminal lookahead: +1 if terminal passes this frame
@@ -3114,7 +3118,9 @@ class Main {
                     type: group.type,
                     requirements: groupReqs,
                     allPassed: groupAllPassed,
-                    isPaused: false
+                    isPaused: false,
+                    addHitsSubHitsInfo: addHitsSubHitsInfo,
+                    groupRef: group
                 });
             }
 
@@ -3213,9 +3219,43 @@ class Main {
                         if (maxHits == 0 && !isAddSubHits) {
                             // No hits tracking - nothing to update
                         } else if (isAddSubHits) {
-                            // AddHits/SubHits: always increment when condition passes
-                            // (no max limit - they contribute all accumulated hits to terminal)
-                            if (reqPassed) {
+                            // AddHits/SubHits: increment when condition passes,
+                            // capped by its own maxHits if set (maxHits=0 means uncapped).
+                            // For ADD_HITS, also gated by the chain terminal's maxHits —
+                            // once the terminal's effective hits reach its target, AddHits
+                            // contributors stop accumulating (going over has no value).
+                            // SUB_HITS is NOT gated by the terminal cap because incrementing
+                            // a SubHits decreases the chain total, bringing it back under cap.
+                            var ownCapOk:Boolean = (maxHits == 0 || currentHits < maxHits);
+                            var terminalCapOk:Boolean = true;
+                            if (req.flag == "ADD_HITS") {
+                                var ahsInfoP5:Object = gr.addHitsSubHitsInfo[ri];
+                                if (ahsInfoP5 && ahsInfoP5.isChainMember) {
+                                    var termIdxP5:Number = ahsInfoP5.terminalIndex;
+                                    if (termIdxP5 < gr.groupRef.requirements.length) {
+                                        var termReqP5:Object = gr.groupRef.requirements[termIdxP5];
+                                        var termMaxHitsP5:Number = termReqP5.maxHits || 0;
+                                        if (termMaxHitsP5 > 0) {
+                                            // Compute current effective hits for the terminal
+                                            var termEffective:Number = termReqP5.hits || 0;
+                                            var termInfoP5:Object = gr.addHitsSubHitsInfo[termIdxP5];
+                                            if (termInfoP5 && termInfoP5.contributors) {
+                                                for (var ciP5:Number = 0; ciP5 < termInfoP5.contributors.length; ciP5++) {
+                                                    var cIdxP5:Number = termInfoP5.contributors[ciP5];
+                                                    var cReqP5:Object = gr.groupRef.requirements[cIdxP5];
+                                                    if (cReqP5.flag == "ADD_HITS") {
+                                                        termEffective += (cReqP5.hits || 0);
+                                                    } else if (cReqP5.flag == "SUB_HITS") {
+                                                        termEffective -= (cReqP5.hits || 0);
+                                                    }
+                                                }
+                                            }
+                                            if (termEffective >= termMaxHitsP5) terminalCapOk = false;
+                                        }
+                                    }
+                                }
+                            }
+                            if (reqPassed && ownCapOk && terminalCapOk) {
                                 var newHits:Number = currentHits + 1;
                                 diffSet(req, "hits", newHits, reqBasePath + "/hits");
                             }

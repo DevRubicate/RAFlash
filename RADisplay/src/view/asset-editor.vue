@@ -79,7 +79,7 @@
                                 <td><select v-model="req.cmp" @change="App.save()"><option v-for="option in cmpOptions" :value="option.value">{{option.text}}</option></select></td>
                                 <td><select v-model="req.typeB" @change="App.save()"><option v-for="option in typeOptions" :value="option.value">{{option.text}}</option></select></td>
                                 <td><input v-model="req.addressB" @change="App.save()"></td>
-                                <td><input type="number" v-model.number="req.maxHits" @change="App.save()" min="0" style="width: 50px"><span v-if="req.maxHits > 0"> ({{req.hits ?? 0}})</span></td>
+                                <td><input type="number" v-model.number="req.maxHits" @change="App.save()" min="0" style="width: 50px"><span v-if="req.maxHits > 0"> ({{effectiveHits(selectedGroup.requirements, index)}})</span></td>
                             </tr>
                         </tbody>
                     </table>
@@ -380,6 +380,25 @@
         { value: '!=',    text: '!='      },
     ];
 
+    // Compute the effective hits for a requirement: its own hits plus any
+    // contiguous AddHits/SubHits chain immediately preceding it. Mirrors the
+    // engine's terminal evaluation in AVM1Firmware/Main.as Phase 1.
+    const effectiveHits = (requirements, index) => {
+        const req = requirements[index];
+        const own = req.hits ?? 0;
+        // AddHits/SubHits rows just show their own hit count
+        if (req.flag === 'ADD_HITS' || req.flag === 'SUB_HITS') return own;
+        // Walk backward over contiguous AddHits/SubHits contributors
+        let total = own;
+        for (let i = index - 1; i >= 0; i--) {
+            const c = requirements[i];
+            if (c.flag === 'ADD_HITS') total += (c.hits ?? 0);
+            else if (c.flag === 'SUB_HITS') total -= (c.hits ?? 0);
+            else break;
+        }
+        return total;
+    };
+
     const selectedPoints = ref(null);
     const selectedProgressionType = ref(null);
     const selectedGroup = ref(null);
@@ -406,6 +425,19 @@
 
     const saveAsset = async () => {
         if (selectedAssetId.value === null) return;
+        // Zero out accumulated hits on every requirement so saving an
+        // achievement gives a clean slate for the next evaluation pass.
+        const asset = selectedAsset.value;
+        let cleared = false;
+        for (const group of asset.groups ?? []) {
+            for (const req of group.requirements ?? []) {
+                if ((req.hits ?? 0) !== 0) {
+                    req.hits = 0;
+                    cleared = true;
+                }
+            }
+        }
+        if (cleared) await App.save();
         await Network.send({ command: 'saveAssets', params: { ids: [selectedAssetId.value] } });
     };
 

@@ -79,7 +79,13 @@ export class AppData {
             const requirements = group.requirements;
             if (!requirements) continue;
 
-            for (const req of requirements) {
+            // Filter out any null/undefined entries left behind by stale diffs
+            const filtered = requirements.filter((r: unknown) => r != null);
+            if (filtered.length !== requirements.length) {
+                group.requirements = filtered;
+            }
+
+            for (const req of filtered) {
                 // Ensure maxHits is a valid integer, default to 0
                 const maxHits = req.maxHits;
                 if (maxHits === undefined || maxHits === null || typeof maxHits !== 'number' || !Number.isFinite(maxHits)) {
