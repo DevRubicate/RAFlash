@@ -22,6 +22,13 @@ class Main {
     private static var gameContainer:MovieClip;
     private static var gameRoot:MovieClip;
     private static var gameLoaded:Boolean = false;
+    // True when the firmware is loaded as a child clip of the game's _root
+    // (the game is _level0 itself). False when the firmware is the host that
+    // loads the game into a child clip.
+    private static var childMode:Boolean = false;
+    // Child mode only: the firmware's own clip (captured from MTASC's frame 1
+    // 'this' arg) so onFrame can re-resolve gameRoot if it ever goes empty.
+    private static var _self:MovieClip;
 
     // Configuration
     private static var PORT:Number = 18081;
@@ -90,10 +97,105 @@ class Main {
     private static var initialSetupDone:Boolean = false;
 
     /**
-     * Initialize the firmware.
-     * Called from AVM1Entry.main() for production, or can be called directly in tests.
+     * Count enumerable game children of a MovieClip, ignoring our own
+     * injected __raflash clip (which is always present in child mode and
+     * shouldn't count as game content for the purposes of picking the right
+     * level).
      */
-    public static function init():Void {
+    private static function countGameChildren(mc:MovieClip):Number {
+        if (mc == undefined || mc == null) return 0;
+        var n:Number = 0;
+        for (var k:String in mc) {
+            if (k != "__raflash") n++;
+        }
+        return n;
+    }
+
+    /**
+     * In child mode, walk several possible sources to find the game's root
+     * MovieClip and pick the candidate with the most game children.
+     *
+     * Many AS2 games are tiny stubs that loadMovieNum themselves into a
+     * different level after their own frame 1 runs, leaving us looking at the
+     * wrong place if we trust the first source we find. Cross-domain wrappers
+     * also surface as non-MovieClip security objects on _parent. By scoring
+     * candidates we naturally pick the right one in both cases.
+     */
+    private static function resolveChildModeGameRoot(ourClip:MovieClip):MovieClip {
+        var bestClip:MovieClip = null;
+        var bestCount:Number = -1;
+
+        var consider = function(mc):Void {
+            if (mc == undefined || mc == null) return;
+            if (typeof(mc) != "movieclip") return;
+            var n:Number = Main.countGameChildren(MovieClip(mc));
+            if (n > bestCount) {
+                bestCount = n;
+                bestClip = MovieClip(mc);
+            }
+        };
+
+        if (ourClip != undefined) {
+            consider(ourClip._parent);
+        }
+        consider(_level0);
+        for (var lvl:Number = 1; lvl <= 10; lvl++) {
+            consider(eval("_level" + lvl));
+        }
+        return bestClip;
+    }
+
+    /**
+     * Initialize the firmware.
+     * Called from AVM1Entry.main(self) for production, or can be called
+     * directly in tests with self=undefined (defaults to parent-mode init).
+     *
+     * Mode is auto-detected via _level0._url: in parent mode _level0 is the
+     * firmware (loaded by AVM1Wrapper) so its URL ends with /avm1-firmware.swf
+     * or similar; in child mode RAEngine launches the game directly so
+     * _level0._url contains "/game.swf". This auto-detection agrees with the
+     * user's firmwareMode setting because RAEngine acts on the setting when
+     * choosing the launch URL.
+     */
+    public static function init(self:MovieClip):Void {
+        var level0Url:String = String(_level0._url);
+        childMode = (level0Url.indexOf("/game.swf") != -1);
+
+        if (childMode) {
+            // Child mode: firmware was loaded by injected bytecode into a
+            // child clip (e.g. _level0.__raflash) of the game's _root. The
+            // game IS _level0 and is already running. We do NOT own the
+            // player chrome.
+            var ourClip:MovieClip = (self != undefined) ? self : MovieClip(_level0.__raflash);
+            _self = ourClip;
+            gameRoot = resolveChildModeGameRoot(ourClip);
+            gameLoaded = true;
+
+            // Drive the per-frame loop from our own clip's onEnterFrame so we
+            // don't clobber the game's _root onEnterFrame.
+            if (ourClip != undefined) {
+                ourClip.onEnterFrame = function():Void {
+                    try { Main.onFrame(); } catch (e:Error) { Main.logError("onEnterFrame", e); }
+                };
+            }
+
+            // F12 key listener (parent mode sets this up after the game loads;
+            // in child mode the game is already loaded so we set it now).
+            var keyListener:Object = {};
+            keyListener.onKeyDown = function():Void {
+                try {
+                    if (Key.getCode() == 123) { // F12
+                        Main.sendMessage("keypress", { keyCode: 123 });
+                    }
+                } catch (e:Error) { Main.logError("onKeyDown", e); }
+            };
+            Key.addListener(keyListener);
+
+            connectToServer();
+            return;
+        }
+
+        // Parent mode (existing behavior — unchanged)
         Stage.scaleMode = "noScale";
         Stage.align = "TL";
         fscommand("showmenu", "false");
@@ -132,7 +234,12 @@ class Main {
                     }
                     Main.hideDisconnectOverlay();
 
-                    if (!Main.gameLoaded) {
+                    // First-connect vs reconnect: gated by initialSetupDone, not
+                    // gameLoaded. In child mode the game is already loaded by the
+                    // time the firmware boots, so gameLoaded is always true here
+                    // and the gameLoaded check would skip the "ready" handshake
+                    // on first connect, leaving RAEngine waiting forever.
+                    if (!Main.initialSetupDone) {
                         Main.sendMessage("ready", {});
                     } else {
                         trace("[AS2] Reconnected to Deno server");
@@ -183,6 +290,10 @@ class Main {
     }
 
     private static function showDisconnectOverlay(permanent:Boolean):Void {
+        // In child mode the firmware doesn't own _root (the game does); skip
+        // the overlay rather than draw on top of the game's content.
+        if (childMode) return;
+
         hideDisconnectOverlay();
 
         var stageW:Number = Stage.width;
@@ -267,13 +378,30 @@ class Main {
         if (!gameLoaded) {
             try { checkLoadProgress(); } catch (e:Error) { logError("checkLoadProgress", e); }
         } else {
+            // Child mode: re-resolve gameRoot if it goes empty. Some stub games
+            // loadMovieNum their content into a higher level after their own
+            // init runs, so the level we picked at firmware boot may have
+            // become irrelevant by the time the game settles.
+            if (childMode) {
+                try {
+                    if (gameRoot == null || countGameChildren(gameRoot) == 0) {
+                        var newRoot:MovieClip = resolveChildModeGameRoot(_self);
+                        if (newRoot != null && newRoot != gameRoot) {
+                            gameRoot = newRoot;
+                        }
+                    }
+                } catch (eRes:Error) { logError("rescanGameRoot", eRes); }
+            }
+
             // Fix Sound objects whose attachSound failed due to wrong library scope.
             // When a game creates new Sound() without a target, attachSound looks in the
             // firmware's library instead of the game's. The patched attachSound records
             // the linkage ID on each Sound, so we can create correctly-targeted replacements.
             // Retries for 3 seconds after game load since game init may take a few frames.
+            // Parent mode only: in child mode the game's sounds default to its
+            // own library because the game IS _level0.
             try {
-                if (_soundFixState == 0 && fixSoundAttach) {
+                if (!childMode && _soundFixState == 0 && fixSoundAttach) {
                     if (_soundFixDeadline == 0) _soundFixDeadline = getTimer() + 3000;
                     var gr:MovieClip = gameRoot;
                     var fixed:Number = 0;
@@ -303,8 +431,11 @@ class Main {
                 }
             } catch (e:Error) { logError("soundFixScan", e); }
 
+            // Parent mode only: in child mode TextField variable bindings
+            // resolve _root correctly because the game IS _root, so no manual
+            // sync is needed.
             try {
-                if (fixTextFieldBindings) {
+                if (!childMode && fixTextFieldBindings) {
                     if (benchmarkingActive) {
                         var tfStart:Number = getTimer();
                         syncTextFieldBindings(gameRoot);
@@ -518,7 +649,15 @@ class Main {
                     }
                     initialSetupDone = true;
                     sendResponse(id, { success: true });
-                    loadGame(params.gameUrl);
+                    if (childMode) {
+                        // Game is already loaded — RAEngine injected the
+                        // firmware loader into it. Signal ready immediately,
+                        // then start badge preload (which needs AppData).
+                        sendMessage("gameLoaded", { bytes: 0 });
+                        try { startBadgePreload(); } catch (e:Error) { logError("startBadgePreload", e); }
+                    } else {
+                        loadGame(params.gameUrl);
+                    }
                 }
                 break;
 
