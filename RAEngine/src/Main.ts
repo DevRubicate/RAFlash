@@ -590,6 +590,238 @@ function parseSwfMetadata(swfBytes: Uint8Array): { frameRate: number; background
     return { frameRate, backgroundColor, width, height, useAS3, exportedSounds };
 }
 
+/**
+ * Splice a DoAction tag at the start of frame 1 of a game SWF that performs
+ * the equivalent of:
+ *
+ *     if (typeof _root.__raflash == "undefined") {
+ *         _root.createEmptyMovieClip("__raflash", 1048575);
+ *         _root.__raflash.loadMovie(firmwareUrl);
+ *     }
+ *
+ * Used by child-mode firmware to inject the AVM1 firmware as a child clip of
+ * the game's _root. The injection runs before the game's own frame 1 actions
+ * so by the time the game starts doing anything the firmware is already
+ * being loaded into the child clip. The game itself remains the true _level0
+ * root movie.
+ *
+ * The firmware URL is passed in (rather than hardcoded) so the caller can
+ * match it to the game's effective domain — for sitelocked games served via
+ * originUrl spoofing, the firmware MUST be loaded from the same domain as
+ * the game or AS2's cross-domain security will block the firmware from
+ * enumerating the game's tree (for-in returns 0 children, _parent is null,
+ * etc.). RAEngine's HTTP proxy serves /avm1-firmware.swf regardless of the
+ * Host header, so any domain works as long as the path matches.
+ *
+ * The idempotency guard is necessary because many AS2 games loop their
+ * frame 1 (preloader → menu transitions, etc.); without it the createEmpty
+ * + loadMovie would re-fire each loop and pull the firmware twice.
+ *
+ * If the input SWF is compressed (CWS) it is decompressed and re-emitted as
+ * uncompressed FWS. The new tag is inserted immediately before the first
+ * ShowFrame tag, and the FileLength header is updated.
+ */
+function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8Array {
+    const sig = String.fromCharCode(swfBytes[0], swfBytes[1], swfBytes[2]);
+    let data: Uint8Array;
+    if (sig === "CWS") {
+        const decompressed = pako.inflate(swfBytes.slice(8));
+        data = new Uint8Array(8 + decompressed.length);
+        data.set(swfBytes.slice(0, 8));
+        data.set(decompressed, 8);
+        data[0] = 0x46; // 'F' — convert CWS → FWS signature
+    } else if (sig === "FWS") {
+        data = new Uint8Array(swfBytes);
+    } else {
+        console.warn(`injectFirmwareLoader: unsupported signature ${sig}, returning unmodified`);
+        return swfBytes;
+    }
+
+    // Skip RECT (variable width) + frameRate (2) + frameCount (2) to reach the tag stream
+    const rectNBits = (data[8] >> 3) & 0x1F;
+    const rectBytes = Math.ceil((5 + rectNBits * 4) / 8);
+    const tagsOffset = 8 + rectBytes + 4;
+
+    // Find the offset of the first ShowFrame tag (tag type 1)
+    let offset = tagsOffset;
+    let insertOffset = -1;
+    while (offset < data.length - 2) {
+        const tcl = data[offset] | (data[offset + 1] << 8);
+        const tagType = tcl >> 6;
+        let tagLength = tcl & 0x3F;
+        let headerSize = 2;
+        if (tagLength === 0x3F) {
+            tagLength = data[offset + 2] | (data[offset + 3] << 8) |
+                       (data[offset + 4] << 16) | (data[offset + 5] << 24);
+            headerSize = 6;
+        }
+        if (tagType === 1) { insertOffset = offset; break; }
+        if (tagType === 0) break;
+        offset += headerSize + tagLength;
+    }
+    if (insertOffset === -1) {
+        console.warn("injectFirmwareLoader: no ShowFrame tag found, returning unmodified");
+        return swfBytes;
+    }
+
+    // ----- Build the action stream -----
+    //
+    // Hand-rolled AS2 bytecode patterned after MTASC's compilation of method
+    // calls (verified against MTASC dumps in the prior POC). Push order for
+    // a method call: args (REVERSE of call order — last arg first), then
+    // num_args, then object name, then GetVariable, then method name, then
+    // CallMethod, then Pop (discard return).
+    //
+    // Action opcodes used:
+    //   0x96 ActionPush         — header is opcode + UI16 length, then values
+    //   0x07 (in payload)       — int32 type tag, followed by 4 LE bytes
+    //   0x00 (in payload)       — string type tag, followed by null-terminated bytes
+    //   0x1C ActionGetVariable  — pop name string, push variable value
+    //   0x4E ActionGetMember    — pop member name, pop object, push object[member]
+    //   0x9D ActionIf           — pop boolean, branch by signed UI16 if true
+    //   0x52 ActionCallMethod   — pop method name, pop object, pop num_args, pop args, call
+    //   0x17 ActionPop          — discard top of stack
+    //   0x00 ActionEndFlag      — terminate action stream
+
+    const enc = new TextEncoder();
+    const CHILD_NAME = "__raflash";
+    const CHILD_DEPTH = 1048575;
+    const urlBytes = enc.encode(firmwareUrl);
+    const childNameBytes = enc.encode(CHILD_NAME);
+    const rootBytes = enc.encode("_root");
+    const createMethodBytes = enc.encode("createEmptyMovieClip");
+    const loadMethodBytes = enc.encode("loadMovie");
+
+    // Helpers to build push payloads piecewise
+    const pushInt32 = (n: number, out: number[]) => {
+        out.push(0x07);
+        out.push(n & 0xFF, (n >>> 8) & 0xFF, (n >>> 16) & 0xFF, (n >>> 24) & 0xFF);
+    };
+    const pushString = (b: Uint8Array, out: number[]) => {
+        out.push(0x00);
+        for (const x of b) out.push(x);
+        out.push(0x00);
+    };
+    const writePushAction = (payload: number[], out: number[]) => {
+        out.push(0x96);
+        out.push(payload.length & 0xFF, (payload.length >>> 8) & 0xFF);
+        for (const x of payload) out.push(x);
+    };
+
+    // Build the create+load body as a separate stream so we can compute its
+    // byte length and use it as the ActionIf branch offset for the guard.
+    const body: number[] = [];
+
+    // ----- Call 1: _root.createEmptyMovieClip("__raflash", 1048575) -----
+    {
+        const payload: number[] = [];
+        pushInt32(CHILD_DEPTH, payload);
+        pushString(childNameBytes, payload);
+        pushInt32(2, payload);
+        pushString(rootBytes, payload);
+        writePushAction(payload, body);
+    }
+    body.push(0x1C); // GetVariable: _root → MovieClip
+    {
+        const payload: number[] = [];
+        pushString(createMethodBytes, payload);
+        writePushAction(payload, body);
+    }
+    body.push(0x52); // CallMethod
+    body.push(0x17); // Pop (discard returned MovieClip)
+
+    // ----- Call 2: _root.__raflash.loadMovie(firmwareUrl) -----
+    {
+        const payload: number[] = [];
+        pushString(urlBytes, payload);
+        pushInt32(1, payload);
+        pushString(rootBytes, payload);
+        writePushAction(payload, body);
+    }
+    body.push(0x1C); // GetVariable: _root → MovieClip
+    {
+        const payload: number[] = [];
+        pushString(childNameBytes, payload);
+        writePushAction(payload, body);
+    }
+    body.push(0x4E); // GetMember: _root.__raflash → MovieClip
+    {
+        const payload: number[] = [];
+        pushString(loadMethodBytes, payload);
+        writePushAction(payload, body);
+    }
+    body.push(0x52); // CallMethod
+    body.push(0x17); // Pop
+
+    // ----- Idempotency guard wrapping the body -----
+    //
+    // Compute _root.__raflash, ActionIf branches when truthy (clip exists)
+    // past the body. ActionGetMember pushes undefined when the member doesn't
+    // exist, which AS1's ActionIf treats as false → fall through to body.
+    const stream: number[] = [];
+    {
+        const payload: number[] = [];
+        pushString(rootBytes, payload);
+        writePushAction(payload, stream);
+    }
+    stream.push(0x1C); // GetVariable → _root
+    {
+        const payload: number[] = [];
+        pushString(childNameBytes, payload);
+        writePushAction(payload, stream);
+    }
+    stream.push(0x4E); // GetMember → _root.__raflash (or undefined)
+    // ActionIf: opcode + UI16 length=2 + signed UI16 branch offset.
+    // Offset is measured from the END of the ActionIf instruction. To skip
+    // the body we branch by exactly body.length bytes.
+    stream.push(0x9D);
+    stream.push(0x02, 0x00);
+    stream.push(body.length & 0xFF, (body.length >>> 8) & 0xFF);
+
+    // Body: create+load (skipped if guard branched)
+    for (const x of body) stream.push(x);
+
+    stream.push(0x00); // ActionEndFlag
+
+    const tagContent = new Uint8Array(stream);
+
+    // ----- Wrap in a DoAction (tag type 12) tag header -----
+    let inserted: Uint8Array;
+    if (tagContent.length < 0x3F) {
+        const tagCodeAndLength = (12 << 6) | tagContent.length;
+        inserted = new Uint8Array(2 + tagContent.length);
+        inserted[0] = tagCodeAndLength & 0xFF;
+        inserted[1] = (tagCodeAndLength >> 8) & 0xFF;
+        inserted.set(tagContent, 2);
+    } else {
+        // Extended header: short tag = (12 << 6) | 0x3F, then UI32 length
+        const shortTag = (12 << 6) | 0x3F;
+        inserted = new Uint8Array(6 + tagContent.length);
+        inserted[0] = shortTag & 0xFF;
+        inserted[1] = (shortTag >> 8) & 0xFF;
+        inserted[2] = tagContent.length & 0xFF;
+        inserted[3] = (tagContent.length >> 8) & 0xFF;
+        inserted[4] = (tagContent.length >> 16) & 0xFF;
+        inserted[5] = (tagContent.length >> 24) & 0xFF;
+        inserted.set(tagContent, 6);
+    }
+
+    // Splice into the SWF
+    const result = new Uint8Array(data.length + inserted.length);
+    result.set(data.subarray(0, insertOffset), 0);
+    result.set(inserted, insertOffset);
+    result.set(data.subarray(insertOffset), insertOffset + inserted.length);
+
+    // Update FileLength header (bytes 4..7, UI32 LE)
+    const newLen = result.length;
+    result[4] = newLen & 0xFF;
+    result[5] = (newLen >> 8) & 0xFF;
+    result[6] = (newLen >> 16) & 0xFF;
+    result[7] = (newLen >> 24) & 0xFF;
+
+    return result;
+}
+
 // Application state
 enum AppState {
     FILE_PICKER,
