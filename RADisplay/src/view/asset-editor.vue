@@ -513,6 +513,7 @@
                     id: App.getFakeId(), type: 'ALT', requirements: []
                 });
             }
+            await App.save();
         }
     };
 
@@ -524,6 +525,7 @@
             }
             selectedAsset.value.groups.splice(index, 1);
             selectedGroupId.value = selectedAsset.value.groups[index]?.id ?? selectedAsset.value.groups[index - 1]?.id;
+            await App.save();
         }
     };
 
