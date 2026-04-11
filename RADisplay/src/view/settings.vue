@@ -301,7 +301,7 @@ const tabs = [
 ];
 
 const settings = ref({
-    firmwareMode: 'parent',
+    firmwareMode: 'child',
     fixTextFieldBindings: true,
     fixSoundAttach: true,
     benchmarkingEnabled: false,

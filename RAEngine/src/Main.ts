@@ -229,7 +229,7 @@ interface Settings {
     benchmarkingEnabled: boolean;
 }
 const defaultSettings: Settings = {
-    firmwareMode: "parent",
+    firmwareMode: "child",
     fixTextFieldBindings: true,
     fixSoundAttach: true,
     benchmarkingEnabled: false,
