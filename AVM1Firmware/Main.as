@@ -30,6 +30,13 @@ class Main {
     // 'this' arg) so onFrame can re-resolve gameRoot if it ever goes empty.
     private static var _self:MovieClip;
 
+    // Child-mode rescan diagnostics: track how long the rescan has been
+    // unable to find a valid game root, and emit a one-shot warning if it
+    // crosses a threshold so the user knows why achievements aren't firing.
+    private static var _rescanFailFrames:Number = 0;
+    private static var _rescanWarned:Boolean = false;
+    private static var RESCAN_WARN_THRESHOLD:Number = 60;
+
     // Configuration
     private static var PORT:Number = 18081;
     private static var fixTextFieldBindings:Boolean = true;
@@ -389,6 +396,16 @@ class Main {
                         if (newRoot != null && newRoot != gameRoot) {
                             gameRoot = newRoot;
                         }
+                    }
+                    if (gameRoot == null) {
+                        _rescanFailFrames++;
+                        if (!_rescanWarned && _rescanFailFrames >= RESCAN_WARN_THRESHOLD) {
+                            _rescanWarned = true;
+                            sendMessage("log", { message: "[firmware] child-mode gameRoot rescan failing — achievements will not fire until a valid root is found" });
+                        }
+                    } else {
+                        _rescanFailFrames = 0;
+                        _rescanWarned = false;
                     }
                 } catch (eRes:Error) { logError("rescanGameRoot", eRes); }
             }
