@@ -1656,6 +1656,44 @@ async function handleApiRequest(
             const originUrl = AppData.data.gameConfig.originUrl;
             const gameUrl = originUrl ? originUrl + "/game.swf" : null;
             emitLog("engine", "info", "Resetting game...");
+
+            // Clear accumulated runtime state on every asset so the new run
+            // starts from a clean slate. Without this, achievements with
+            // partially-accumulated hits would falsely trigger on frame 1 of
+            // the fresh game when their conditions evaluate against the old
+            // hit counts.
+            const resetEdits: Array<[string, unknown]> = [];
+            const assets = AppData.data.assets;
+            for (let i = 0; i < assets.length; i++) {
+                const asset = assets[i];
+                if (asset._primed) {
+                    asset._primed = false;
+                    resetEdits.push([`assets/${i}/_primed`, false]);
+                }
+                const groups = asset.groups ?? [];
+                for (let g = 0; g < groups.length; g++) {
+                    const reqs = groups[g].requirements ?? [];
+                    for (let r = 0; r < reqs.length; r++) {
+                        const req = reqs[r];
+                        if (req && (req.hits ?? 0) !== 0) {
+                            req.hits = 0;
+                            resetEdits.push([`assets/${i}/groups/${g}/requirements/${r}/hits`, 0]);
+                        }
+                    }
+                }
+            }
+
+            if (resetEdits.length > 0) {
+                const resetDiff: Diff = { edited: resetEdits };
+                // Push to devtools clients so the editor reflects the cleared state
+                broadcastToDevtools("editData", resetDiff);
+                // Push to firmware so its in-memory copy matches (matters for
+                // parent mode where the firmware persists across the reset; in
+                // child mode the firmware is destroyed and resyncs from engine
+                // on reconnect anyway, but sending is harmless).
+                sendToFirmware("editData", { changes: resetDiff }).catch(() => {});
+            }
+
             const response = await sendToFirmware("resetGame", { gameUrl });
             emitLog("engine", "info", "Game reset complete");
             return response;
@@ -2019,6 +2057,12 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
             firmwareConnected = false;
             firmwareWriter = null;
             firmwareMessageBuffer = "";
+            // Clear any in-flight requests so their promises don't dangle when
+            // the firmware reconnects (e.g. after a child-mode resetGame).
+            for (const [, resolver] of pendingRequests) {
+                resolver({ success: false, error: "Firmware disconnected" });
+            }
+            pendingRequests.clear();
         }
         try {
             writer.releaseLock();

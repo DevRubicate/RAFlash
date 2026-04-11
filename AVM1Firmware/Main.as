@@ -791,27 +791,40 @@ class Main {
                 break;
 
             case "resetGame":
-                // Unload game and reset all runtime state
-                gameRoot.unloadMovie();
-                gameContainer.removeMovieClip();
-                gameLoaded = false;
-                _soundFixState = 0;
-                _soundFixDeadline = 0;
-                deltaValues = {};
-                rememberedValues = {};
-                memoryWatchers = {};
-                memoryWatchFrameCount = 0;
-                badgeImageCache = {};
-                preloadQueue = [];
-                currentPreloadId = 0;
-                if (preloadContainer != null) {
-                    preloadContainer.removeMovieClip();
-                    preloadContainer = null;
+                if (childMode) {
+                    // In child mode the firmware is a clip inside _level0 (the
+                    // game), so we cannot unload the game from here without
+                    // tearing down our own execution context. Instead, ack the
+                    // request now and reload _level0 with the game URL — that
+                    // destroys this firmware along with the game tree, and the
+                    // injected bootstrap on frame 1 of the fresh game will load
+                    // a new firmware that reconnects and re-handshakes.
+                    sendResponse(id, { success: true });
+                    var resetUrl:String = String(_level0._url);
+                    sendMessage("log", { message: "[reset] reloading _level0 from " + resetUrl });
+                    _level0.loadMovie(resetUrl);
+                } else {
+                    // Parent mode: unload game and reset all runtime state
+                    gameRoot.unloadMovie();
+                    gameContainer.removeMovieClip();
+                    gameLoaded = false;
+                    _soundFixState = 0;
+                    _soundFixDeadline = 0;
+                    deltaValues = {};
+                    rememberedValues = {};
+                    memoryWatchers = {};
+                    memoryWatchFrameCount = 0;
+                    badgeImageCache = {};
+                    preloadQueue = [];
+                    currentPreloadId = 0;
+                    if (preloadContainer != null) {
+                        preloadContainer.removeMovieClip();
+                        preloadContainer = null;
+                    }
+                    lastRichPresenceTime = 0;
+                    sendResponse(id, { success: true });
+                    loadGame(params.gameUrl);
                 }
-                lastRichPresenceTime = 0;
-                // Reload game
-                sendResponse(id, { success: true });
-                loadGame(params.gameUrl);
                 break;
 
             case "setValue":
@@ -2637,6 +2650,38 @@ class Main {
                 var chainInfo:Object = {};  // Track chain membership for this group
                 var rnifHandledInPhase0:Object = {};  // ResetNextIf indices handled here (skip in Phase 2)
 
+                // Detect AddHits/SubHits chains so a PauseIf can act as a chain terminal
+                // (mirrors the chain detection done in Phase 1 for non-paused requirements)
+                var phase0AhsInfo:Object = {};
+                for (var k0:Number = 0; k0 < group.requirements.length; ++k0) {
+                    if (phase0AhsInfo[k0]) continue;
+                    var req0:Object = group.requirements[k0];
+                    if (req0.flag == "ADD_HITS" || req0.flag == "SUB_HITS") {
+                        var contribs0:Array = [k0];
+                        var term0:Number = k0 + 1;
+                        while (term0 < group.requirements.length) {
+                            var nextReq0:Object = group.requirements[term0];
+                            if (nextReq0.flag == "ADD_HITS" || nextReq0.flag == "SUB_HITS") {
+                                contribs0.push(term0);
+                                term0++;
+                            } else {
+                                break;
+                            }
+                        }
+                        for (var ci0:Number = 0; ci0 < contribs0.length; ci0++) {
+                            phase0AhsInfo[contribs0[ci0]] = {
+                                isChainMember: true,
+                                terminalIndex: term0,
+                                flag: group.requirements[contribs0[ci0]].flag
+                            };
+                        }
+                        if (term0 < group.requirements.length) {
+                            phase0AhsInfo[term0] = {isTerminal: true, contributors: contribs0};
+                        }
+                        k0 = term0 - 1;
+                    }
+                }
+
                 // First pass: identify AndNext/OrNext chains ending in Pause If
                 for (var k:Number = 0; k < group.requirements.length; ++k) {
                     var requirement:Object = group.requirements[k];
@@ -2725,17 +2770,31 @@ class Main {
                             isPaused = true;
                         }
                     } else {
-                        // Threshold pause: check for persistent pause
-                        if (currentHits >= maxHits) {
-                            // Already at max hits - persistent pause continues
-                            isPaused = true;
-                        } else if (passed) {
-                            // Condition true, increment hits
+                        // Threshold pause: fires when effective hits (own + AddHits/SubHits
+                        // chain plus this-frame lookahead) reaches maxHits. The cmp only
+                        // contributes through the own-hits increment.
+                        if (passed && currentHits < maxHits) {
                             var newHits:Number = currentHits + 1;
                             diffSet(requirement, "hits", newHits, basePath + "/hits");
-                            if (newHits >= maxHits) {
-                                isPaused = true;
+                            currentHits = newHits;
+                        }
+                        // Compute effective hits including AddHits/SubHits chain
+                        var pifEffective:Number = currentHits;
+                        var pifAhsInfo:Object = phase0AhsInfo[k];
+                        if (pifAhsInfo && pifAhsInfo.isTerminal && pifAhsInfo.contributors) {
+                            for (var pifCi:Number = 0; pifCi < pifAhsInfo.contributors.length; pifCi++) {
+                                var pifCIdx:Number = pifAhsInfo.contributors[pifCi];
+                                var pifCReq:Object = group.requirements[pifCIdx];
+                                var pifCHits:Number = pifCReq.hits || 0;
+                                if (pifCReq.flag == "ADD_HITS") {
+                                    pifEffective += pifCHits;
+                                } else if (pifCReq.flag == "SUB_HITS") {
+                                    pifEffective -= pifCHits;
+                                }
                             }
+                        }
+                        if (pifEffective >= maxHits) {
+                            isPaused = true;
                         }
                     }
 
@@ -3073,31 +3132,87 @@ class Main {
                     }
 
                     // Check for Reset If trigger (only in non-paused groups)
-                    if (requirement.flag == "RESET_IF" && passed) {
+                    // - maxHits == 0: fires when cmp passes
+                    // - maxHits >  0: fires when effective hits (own + AddHits/SubHits
+                    //   chain, plus this-frame lookahead) reaches maxHits. The cmp only
+                    //   contributes through the own-hits increment.
+                    if (requirement.flag == "RESET_IF") {
                         var maxHitsCheck:Number = requirement.maxHits || 0;
                         var currentHitsCheck:Number = requirement.hits || 0;
 
                         if (maxHitsCheck == 0) {
-                            resetIfFired = true;
-                        } else if (currentHitsCheck == maxHitsCheck - 1) {
-                            resetIfFired = true;
+                            if (passed) resetIfFired = true;
+                        } else {
+                            // Compute effective hits including AddHits/SubHits chain
+                            var rifEffective:Number = currentHitsCheck;
+                            var rifLookahead:Number = 0;
+                            var rifAhsInfo:Object = addHitsSubHitsInfo[k];
+                            if (rifAhsInfo && rifAhsInfo.isTerminal && rifAhsInfo.contributors) {
+                                for (var rifCi:Number = 0; rifCi < rifAhsInfo.contributors.length; rifCi++) {
+                                    var rifCIdx:Number = rifAhsInfo.contributors[rifCi];
+                                    var rifCReq:Object = group.requirements[rifCIdx];
+                                    var rifCHits:Number = rifCReq.hits || 0;
+                                    var rifCMax:Number = rifCReq.maxHits || 0;
+                                    var rifCRes:Object = evaluateRequirementCondition(rifCReq, frameCache, 0);
+                                    var rifCPasses:Boolean = rifCRes.passed && rifCRes.valid;
+                                    var rifCCanInc:Boolean = rifCPasses && (rifCMax == 0 || rifCHits < rifCMax);
+                                    if (rifCReq.flag == "ADD_HITS") {
+                                        rifEffective += rifCHits;
+                                        if (rifCCanInc) rifLookahead += 1;
+                                    } else if (rifCReq.flag == "SUB_HITS") {
+                                        rifEffective -= rifCHits;
+                                        if (rifCCanInc) rifLookahead -= 1;
+                                    }
+                                }
+                            }
+                            // Own-hit lookahead: cmp passing this frame would increment own hits
+                            var rifOwnLook:Number = (passed && currentHitsCheck < maxHitsCheck) ? 1 : 0;
+                            if (rifEffective + rifLookahead + rifOwnLook >= maxHitsCheck) {
+                                resetIfFired = true;
+                            }
                         }
                     }
 
                     // Check for ResetNextIf trigger - resets only the NEXT requirement's hits
                     // Note: We record targets here and apply reset AFTER Phase 5 so the reset
-                    // takes effect after any hits increment
-                    if (requirement.flag == "RESET_NEXT_IF" && passed) {
+                    // takes effect after any hits increment.
+                    // - maxHits == 0: fires when cmp passes
+                    // - maxHits >  0: fires when effective hits (own + AddHits/SubHits chain
+                    //   plus this-frame lookahead) reaches maxHits
+                    if (requirement.flag == "RESET_NEXT_IF") {
                         var maxHitsRNI:Number = requirement.maxHits || 0;
                         var currentHitsRNI:Number = requirement.hits || 0;
                         var resetNextIfFired:Boolean = false;
 
                         if (maxHitsRNI == 0) {
-                            // Always-active mode: fires every frame condition is true
-                            resetNextIfFired = true;
-                        } else if (currentHitsRNI == maxHitsRNI - 1) {
-                            // Threshold mode: fires only when this increment would reach maxHits
-                            resetNextIfFired = true;
+                            if (passed) resetNextIfFired = true;
+                        } else {
+                            // Compute effective hits including AddHits/SubHits chain
+                            var rniEffective:Number = currentHitsRNI;
+                            var rniLookahead:Number = 0;
+                            var rniAhsInfo:Object = addHitsSubHitsInfo[k];
+                            if (rniAhsInfo && rniAhsInfo.isTerminal && rniAhsInfo.contributors) {
+                                for (var rniCi:Number = 0; rniCi < rniAhsInfo.contributors.length; rniCi++) {
+                                    var rniCIdx:Number = rniAhsInfo.contributors[rniCi];
+                                    var rniCReq:Object = group.requirements[rniCIdx];
+                                    var rniCHits:Number = rniCReq.hits || 0;
+                                    var rniCMax:Number = rniCReq.maxHits || 0;
+                                    var rniCRes:Object = evaluateRequirementCondition(rniCReq, frameCache, 0);
+                                    var rniCPasses:Boolean = rniCRes.passed && rniCRes.valid;
+                                    var rniCCanInc:Boolean = rniCPasses && (rniCMax == 0 || rniCHits < rniCMax);
+                                    if (rniCReq.flag == "ADD_HITS") {
+                                        rniEffective += rniCHits;
+                                        if (rniCCanInc) rniLookahead += 1;
+                                    } else if (rniCReq.flag == "SUB_HITS") {
+                                        rniEffective -= rniCHits;
+                                        if (rniCCanInc) rniLookahead -= 1;
+                                    }
+                                }
+                            }
+                            var rniOwnLook:Number = (passed && currentHitsRNI < maxHitsRNI) ? 1 : 0;
+                            if (rniEffective + rniLookahead + rniOwnLook >= maxHitsRNI) {
+                                resetNextIfFired = true;
+                            }
                         }
 
                         if (resetNextIfFired) {
