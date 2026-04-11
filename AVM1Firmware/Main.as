@@ -417,6 +417,14 @@ class Main {
     private static var _soundFixState:Number = 0; // 0=scanning, 1=done
     private static var _soundFixDeadline:Number = 0;
     private static function onFrame():Void {
+        // Function-call hook snapshot. Move "pending" → "seen" so all
+        // formula evaluations within this onFrame see a consistent view
+        // of which hooked functions fired since the previous snapshot.
+        // Calls landing after this swap show up in the NEXT frame.
+        if (_global.__raHookPending != undefined) {
+            _global.__raHookSeen = _global.__raHookPending;
+            _global.__raHookPending = {};
+        }
         if (!gameLoaded) {
             try { checkLoadProgress(); } catch (e:Error) { logError("checkLoadProgress", e); }
         } else {
@@ -866,6 +874,12 @@ class Main {
                     rememberedValues = {};
                     memoryWatchers = {};
                     memoryWatchFrameCount = 0;
+                    // Drop function-call hook state. Wrappers still
+                    // installed on the (now-unloading) game tree will
+                    // become unreachable along with the tree itself.
+                    _global.__raHookSeen = {};
+                    _global.__raHookPending = {};
+                    _global.__raHookNextId = 0;
                     badgeImageCache = {};
                     preloadQueue = [];
                     currentPreloadId = 0;
@@ -1519,6 +1533,59 @@ class Main {
     }
 
     /**
+     * Function-call hook. When the formula DSL accesses a property whose
+     * value is a Function, we transparently swap it for a wrapper that
+     * records the call. The function itself still appears as a function
+     * to the DSL — but now exposes a synthetic `.triggered` property
+     * that resolves to 1 on frames the wrapper fired and 0 otherwise.
+     * So `stage.menu.gotoMySite.triggered` is the achievement-friendly
+     * expression; `stage.menu.gotoMySite` alone just yields the function
+     * reference.
+     *
+     * Storage lives on _global so wrapper closures can write to it
+     * without needing a reference back into Main, and so it survives
+     * across reloads of this firmware in child mode.
+     *
+     * Returns the wrapper for function values; returns the original
+     * value unchanged for everything else.
+     */
+    private static function wrapHook(parent, key, value) {
+        if (typeof(value) != "function") {
+            return value;
+        }
+        if (_global.__raHookSeen == undefined) {
+            _global.__raHookSeen = {};
+            _global.__raHookPending = {};
+            _global.__raHookNextId = 0;
+        }
+        if (value.__raHookId != undefined || value.__raHookSkip == true) {
+            return value;  // already wrapped, or previously failed to wrap
+        }
+        // First sighting: install a wrapper. The wrapper records the
+        // call into _global.__raHookPending[id]; the swap at the top
+        // of onFrame moves "pending" → "seen" so eval reads a stable
+        // snapshot for the whole frame.
+        var id:Number = ++_global.__raHookNextId;
+        var orig:Function = value;
+        var wrapper:Function = function() {
+            _global.__raHookPending[id] = true;
+            return orig.apply(this, arguments);
+        };
+        wrapper.__raHookId = id;
+        wrapper.__raHookOrig = orig;
+        parent[key] = wrapper;
+        // If the assignment didn't take (read-only / native slot),
+        // mark the original so we don't keep allocating fresh ids on
+        // every evaluation. `.triggered` on it will be undefined and
+        // the achievement will read as never-fired.
+        if (parent[key] !== wrapper) {
+            value.__raHookSkip = true;
+            return value;
+        }
+        return wrapper;
+    }
+
+    /**
      * Evaluate a compiled formula expression
      * This is a stack-based bytecode interpreter supporting:
      * - Arithmetic: ADD, SUB, MUL, DIV, MOD, POW
@@ -2133,9 +2200,18 @@ class Main {
 
                         var propName:String = formula[i + 6];
                         for (var j = 0; j < targets.length; ++j) {
+                            // Synthetic .triggered on hooked functions:
+                            // resolves to 1 if the wrapper fired during
+                            // the current snapshot window, 0 otherwise.
+                            if (propName == "triggered"
+                                    && typeof(targets[j]) == "function"
+                                    && targets[j].__raHookId != undefined) {
+                                result.push(_global.__raHookSeen[targets[j].__raHookId] == true ? 1 : 0);
+                                continue;
+                            }
                             var value = targets[j][propName];
                             if (value !== undefined) {
-                                result.push(value);
+                                result.push(wrapHook(targets[j], propName, value));
                             }
                         }
                         objAccessOptimized++;
@@ -2156,12 +2232,30 @@ class Main {
                             childThis.push(target[propertyName]);
                             childKeys.push(propertyName);
                         }
+                        // Synthetic .triggered for hooked functions, so
+                        // generic-path filters like `key == "triggered"`
+                        // resolve to the snapshot value.
+                        if (typeof(target) == "function" && target.__raHookId != undefined) {
+                            childThis.push(_global.__raHookSeen[target.__raHookId] == true ? 1 : 0);
+                            childKeys.push("triggered");
+                        }
 
                         var filteredResult = evaluate(formula, i + 2, i + amount + 2, childThis, childKeys);
 
                         for (var k = 0; k < filteredResult.length; ++k) {
                             if (filteredResult[k] == true) {
-                                result.push(target[childKeys[k]]);
+                                // Synthetic .triggered isn't a real
+                                // property of `target`, so reading it
+                                // back via target[...] would be wrong.
+                                // childThis already holds the correct
+                                // value (the 1/0 we synthesized).
+                                if (childKeys[k] == "triggered"
+                                        && typeof(target) == "function"
+                                        && target.__raHookId != undefined) {
+                                    result.push(childThis[k]);
+                                } else {
+                                    result.push(wrapHook(target, childKeys[k], target[childKeys[k]]));
+                                }
                             }
                         }
                     }
@@ -2183,7 +2277,7 @@ class Main {
                         for (var j = 0; j < targets.length; ++j) {
                             var value = targets[j][idx];
                             if (value !== undefined) {
-                                result.push(value);
+                                result.push(wrapHook(targets[j], idx, value));
                             }
                         }
                         arrAccessOptimized++;
@@ -2211,7 +2305,7 @@ class Main {
 
                         for (var k = 0; k < filteredResult.length; ++k) {
                             if (filteredResult[k] == true) {
-                                result.push(target[childKeys[k]]);
+                                result.push(wrapHook(target, childKeys[k], target[childKeys[k]]));
                             }
                         }
                     }
