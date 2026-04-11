@@ -194,9 +194,17 @@ class Main {
             Stage.align = "TL";
             fscommand("showmenu", "false");
             fscommand("allowscale", "false");
+            // Apply the trimmed menu via the prototype chain so every existing
+            // and future MovieClip / Button picks it up without us having to
+            // walk the display list. Clips that haven't explicitly assigned
+            // their own .menu inherit this one through normal AS2 prototype
+            // lookup. Can't get below the 2-item Settings/About floor — that
+            // floor is enforced by the player itself, not by AS2 — but this
+            // is the cheapest way to make the floor universal.
             var cm:ContextMenu = new ContextMenu();
             cm.hideBuiltInItems();
-            _level0.menu = cm;
+            MovieClip.prototype.menu = cm;
+            Button.prototype.menu = cm;
 
             var ourClip:MovieClip = (self != undefined) ? self : MovieClip(_level0.__raflash);
             _self = ourClip;
@@ -231,9 +239,11 @@ class Main {
         Stage.scaleMode = "noScale";
         Stage.align = "TL";
         fscommand("showmenu", "false");
+        // See child-mode comment above for why this uses prototype assignment.
         var cm:ContextMenu = new ContextMenu();
         cm.hideBuiltInItems();
-        _root.menu = cm;
+        MovieClip.prototype.menu = cm;
+        Button.prototype.menu = cm;
 
         connectToServer();
     }
