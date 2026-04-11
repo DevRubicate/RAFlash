@@ -433,7 +433,7 @@ async function openEventLog() {
 
 // Open Settings window
 async function openSettings() {
-    await Network.send({ command: 'showPopup', params: { url: 'internals/assets/settings.html', width: 500, height: 400, params: {}, parentWindowId: App.windowId } });
+    await Network.send({ command: 'showPopup', params: { url: 'internals/assets/settings.html', width: 500, height: 600, params: {}, parentWindowId: App.windowId } });
 }
 
 // Check for updates

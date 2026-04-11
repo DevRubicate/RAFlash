@@ -41,10 +41,9 @@
                             <input type="radio" value="none" v-model="settings.firmwareMode" @change="save">
                             <div class="setting-info">
                                 <span class="setting-name">No Firmware</span>
-                                <span class="setting-desc">Flash Player launches the game directly with no injection and no firmware. Devtools cannot connect — used for debugging and side-by-side comparison against the firmware modes.</span>
+                                <span class="setting-desc">Flash Player launches the game directly with no injection and no firmware. Devtools cannot connect and achievements will not trigger — used for debugging and side-by-side comparison against the firmware modes.</span>
                             </div>
                         </label>
-                        <button class="settings-button" @click="currentSubview = 'none'">Settings →</button>
                     </div>
 
                     <p class="firmware-note">
@@ -88,16 +87,6 @@
                 </div>
             </div>
 
-            <!-- Firmware tab: No Firmware sub-view -->
-            <div v-if="activeTab === 'firmware' && currentSubview === 'none'">
-                <div class="subview-header">
-                    <button class="back-button" @click="currentSubview = null">← Back</button>
-                    <span class="subview-title">No Firmware Settings</span>
-                </div>
-                <div class="setting-group">
-                    <p class="empty-note">Nothing to configure — the game runs raw with no firmware involvement.</p>
-                </div>
-            </div>
 
             <!-- Developer tab -->
             <div v-if="activeTab === 'developer'">
