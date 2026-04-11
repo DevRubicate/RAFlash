@@ -265,6 +265,17 @@ interface AVMConfig {
 let avmConfig: AVMConfig;
 
 /**
+ * Resolve which AVM1 firmware mode to use for the current game launch.
+ * AVM2 doesn't have a child-mode equivalent yet, so AVM2 games always use
+ * parent (the firmwareMode setting is silently ignored for them). For AVM1
+ * games this honours the user's firmwareMode setting.
+ */
+function resolveFirmwareMode(): "parent" | "child" {
+    if (avmConfig?.mode === "AVM2") return "parent";
+    return settings.firmwareMode === "child" ? "child" : "parent";
+}
+
+/**
  * Patch a firmware SWF's header with target frameRate and background color.
  * This allows games to run at their intended speed with correct colors.
  *
@@ -1094,8 +1105,19 @@ function startHttpServerInner() {
                     }
                 }
 
-                // Serve inner AVM1 firmware (loaded by AVM1Wrapper)
+                // Serve inner AVM1 firmware (loaded by AVM1Wrapper in parent
+                // mode, or by injected loader bytecode in child mode).
                 if (url.pathname === "/avm1-firmware.swf" && avmConfig?.innerFirmwareSwf && selectedGamePath) {
+                    if (resolveFirmwareMode() === "child") {
+                        // Child mode: serve unpatched. The firmware doesn't own
+                        // the player chrome, so dimension/framerate patching
+                        // would just stomp on the game's stage.
+                        const firmwareBytes = await Deno.readFile(avmConfig.innerFirmwareSwf);
+                        return new Response(firmwareBytes, {
+                            status: 200,
+                            headers: { "Content-Type": "application/x-shockwave-flash" },
+                        });
+                    }
                     const gameSwfBuffer = await Deno.readFile(selectedGamePath);
                     const gameMetadata = parseSwfMetadata(gameSwfBuffer);
                     const firmwareBytes = await Deno.readFile(avmConfig.innerFirmwareSwf);
@@ -1133,7 +1155,18 @@ function startHttpServerInner() {
                     filePath = join("internals", "assets", url.pathname.substring(1));
                 }
 
-                const file = await Deno.readFile(filePath);
+                const rawFile = await Deno.readFile(filePath);
+                let file: Uint8Array<ArrayBuffer> = rawFile;
+                if (filePath === selectedGamePath && resolveFirmwareMode() === "child") {
+                    // Build the firmware URL using the same domain the game is
+                    // served from (sitelock-spoofed origin if applicable) so the
+                    // firmware ends up in the same security sandbox as the game
+                    // and can enumerate its tree without cross-domain blocks.
+                    const originUrl = AppData.data.gameConfig.originUrl;
+                    const fwDomain = originUrl ? new URL(originUrl).host : RAFLASH_DOMAIN;
+                    const fwUrl = `http://${fwDomain}/avm1-firmware.swf`;
+                    file = injectFirmwareLoader(rawFile, fwUrl) as Uint8Array<ArrayBuffer>;
+                }
                 const extension = filePath.split(".").pop() || "";
                 const mimeTypes: Record<string, string> = {
                     html: "text/html",
@@ -1747,12 +1780,19 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
             return;
         }
 
-        // HTTP request for inner AVM1 firmware (loaded by AVM1Wrapper)
+        // HTTP request for inner AVM1 firmware (loaded by AVM1Wrapper in
+        // parent mode, or by injected loader bytecode in child mode)
         if (httpBuffer.startsWith("GET /avm1-firmware.swf") && avmConfig.innerFirmwareSwf) {
-            const gameSwfBuffer = await Deno.readFile(selectedGamePath!);
-            const gameMetadata = parseSwfMetadata(gameSwfBuffer);
-            const firmwareBytes = await Deno.readFile(avmConfig.innerFirmwareSwf);
-            const swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height, swfHidesMenuBar(gameSwfBuffer));
+            let swfData: Uint8Array;
+            if (resolveFirmwareMode() === "child") {
+                // Child mode: serve unpatched (firmware doesn't own player chrome)
+                swfData = await Deno.readFile(avmConfig.innerFirmwareSwf);
+            } else {
+                const gameSwfBuffer = await Deno.readFile(selectedGamePath!);
+                const gameMetadata = parseSwfMetadata(gameSwfBuffer);
+                const firmwareBytes = await Deno.readFile(avmConfig.innerFirmwareSwf);
+                swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height, swfHidesMenuBar(gameSwfBuffer));
+            }
 
             const response = [
                 "HTTP/1.1 200 OK",
@@ -1770,9 +1810,17 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
             return;
         }
 
-        // HTTP request for game SWF
+        // HTTP request for game SWF — inject firmware loader bytecode in
+        // child mode so the firmware loads as a child of the game's _root.
         if (httpBuffer.startsWith("GET /game.swf")) {
-            const swfData = await Deno.readFile(selectedGamePath!);
+            const rawSwfData = await Deno.readFile(selectedGamePath!);
+            let swfData: Uint8Array = rawSwfData;
+            if (resolveFirmwareMode() === "child") {
+                const rsOriginUrl = AppData.data.gameConfig.originUrl;
+                const rsDomain = rsOriginUrl ? new URL(rsOriginUrl).host : RAFLASH_DOMAIN;
+                const rsFirmwareUrl = `http://${rsDomain}/avm1-firmware.swf`;
+                swfData = injectFirmwareLoader(rawSwfData, rsFirmwareUrl);
+            }
             const response = [
                 "HTTP/1.1 200 OK",
                 "Content-Type: application/x-shockwave-flash",
@@ -2110,17 +2158,24 @@ function handleFirmwareData(data: string): void {
 }
 
 /**
- * Launch Flash Player with firmware
+ * Launch Flash Player with the appropriate initial movie for the resolved
+ * firmware mode:
+ *   - parent: load the AVM1Wrapper (existing behavior); the wrapper loads
+ *             the firmware which loads the game into a child clip.
+ *   - child:  load /game.swf directly; RAEngine's /game.swf handler injects
+ *             bytecode that loads the firmware as a child of the game.
  */
 function launchFlashPlayer(): Deno.ChildProcess {
     const fpPath = `${Deno.cwd()}/vendor/adobe/fp-32.0.0.380.exe`;
     // Note: cwd is .build/ during development (make run) and the exe's directory when distributed
     const originUrl = AppData.data.gameConfig.originUrl;
     const domain = originUrl ? new URL(originUrl).host : RAFLASH_DOMAIN;
-    const firmwareUrl = `http://${domain}${avmConfig.firmwareUrl}`;
+    const launchUrl = resolveFirmwareMode() === "child"
+        ? `http://${domain}/game.swf`
+        : `http://${domain}${avmConfig.firmwareUrl}`;
 
     const command = new Deno.Command(fpPath, {
-        args: [firmwareUrl],
+        args: [launchUrl],
         cwd: Deno.cwd(),
     });
     return command.spawn();
