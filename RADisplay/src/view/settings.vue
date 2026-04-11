@@ -19,7 +19,7 @@
                             <input type="radio" value="child" v-model="settings.firmwareMode" @change="save">
                             <div class="setting-info">
                                 <span class="setting-name">Child Injection Firmware</span>
-                                <span class="setting-desc">Flash Player launches the game directly. RAEngine injects bytecode at frame 1 that loads the firmware as a child clip of the game's _root, so the game runs as the true _level0. Eliminates several compatibility hacks but is newer and less battle-tested.</span>
+                                <span class="setting-desc">Flash Player launches the game directly. RAEngine injects bytecode at frame 1 that loads the firmware as a child clip of the game's _root, so the game runs as the true _level0.</span>
                             </div>
                         </label>
                         <button class="settings-button" @click="currentSubview = 'child'">Settings →</button>
@@ -30,7 +30,7 @@
                             <input type="radio" value="parent" v-model="settings.firmwareMode" @change="save">
                             <div class="setting-info">
                                 <span class="setting-name">Parent Wrapper Firmware</span>
-                                <span class="setting-desc">Flash Player launches the firmware (via AVM1Wrapper), which then loads the game into a child clip. The original architecture; reliable but requires per-game compatibility hacks for sound and TextField bindings.</span>
+                                <span class="setting-desc">Flash Player launches the firmware, which then loads the game into a child clip.</span>
                             </div>
                         </label>
                         <button class="settings-button" @click="currentSubview = 'parent'">Settings →</button>
@@ -41,7 +41,7 @@
                             <input type="radio" value="none" v-model="settings.firmwareMode" @change="save">
                             <div class="setting-info">
                                 <span class="setting-name">No Firmware</span>
-                                <span class="setting-desc">Flash Player launches the game directly with no injection and no firmware. Devtools cannot connect and achievements will not trigger — used for debugging and side-by-side comparison against the firmware modes.</span>
+                                <span class="setting-desc">Flash Player launches the game directly with no firmware. No devtools or achievement support.</span>
                             </div>
                         </label>
                     </div>
