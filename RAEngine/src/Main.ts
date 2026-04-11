@@ -660,6 +660,11 @@ function parseSwfMetadata(swfBytes: Uint8Array): { frameRate: number; background
  * ShowFrame tag, and the FileLength header is updated.
  */
 function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8Array {
+    try {
+    if (swfBytes.length < 9) {
+        console.warn("injectFirmwareLoader: swf too short for header, returning unmodified");
+        return swfBytes;
+    }
     const sig = String.fromCharCode(swfBytes[0], swfBytes[1], swfBytes[2]);
     let data: Uint8Array;
     if (sig === "CWS") {
@@ -679,23 +684,38 @@ function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8A
     const rectNBits = (data[8] >> 3) & 0x1F;
     const rectBytes = Math.ceil((5 + rectNBits * 4) / 8);
     const tagsOffset = 8 + rectBytes + 4;
+    if (tagsOffset >= data.length) {
+        console.warn("injectFirmwareLoader: tag stream offset past end of file, returning unmodified");
+        return swfBytes;
+    }
 
-    // Find the offset of the first ShowFrame tag (tag type 1)
+    // Find the offset of the first ShowFrame tag (tag type 1).
+    // Bounds-check every read so a truncated or malformed SWF can't cause an
+    // out-of-bounds read or an infinite loop on a bogus tagLength.
     let offset = tagsOffset;
     let insertOffset = -1;
-    while (offset < data.length - 2) {
+    while (offset + 2 <= data.length) {
         const tcl = data[offset] | (data[offset + 1] << 8);
         const tagType = tcl >> 6;
         let tagLength = tcl & 0x3F;
         let headerSize = 2;
         if (tagLength === 0x3F) {
+            if (offset + 6 > data.length) {
+                console.warn("injectFirmwareLoader: truncated long-form tag header, returning unmodified");
+                return swfBytes;
+            }
             tagLength = data[offset + 2] | (data[offset + 3] << 8) |
                        (data[offset + 4] << 16) | (data[offset + 5] << 24);
             headerSize = 6;
         }
         if (tagType === 1) { insertOffset = offset; break; }
         if (tagType === 0) break;
-        offset += headerSize + tagLength;
+        const nextOffset = offset + headerSize + tagLength;
+        if (nextOffset <= offset || nextOffset > data.length) {
+            console.warn("injectFirmwareLoader: tag would walk past end of file, returning unmodified");
+            return swfBytes;
+        }
+        offset = nextOffset;
     }
     if (insertOffset === -1) {
         console.warn("injectFirmwareLoader: no ShowFrame tag found, returning unmodified");
@@ -864,6 +884,14 @@ function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8A
     result[7] = (newLen >> 24) & 0xFF;
 
     return result;
+    } catch (err) {
+        // Final safety net: if anything in the parser/builder throws on a
+        // malformed SWF, log and return the original bytes so the game still
+        // launches (without injection — equivalent to "none" mode for this
+        // session). Better a degraded experience than a 500'd game request.
+        console.warn(`injectFirmwareLoader: ${err}, returning unmodified`);
+        return swfBytes;
+    }
 }
 
 // Application state
