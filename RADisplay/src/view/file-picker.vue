@@ -79,6 +79,17 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Invalid drop modal (drag-drop launches that hit a bad path) -->
+            <div class="update-overlay" v-if="invalidDropMessage" @click.self="invalidDropMessage = null">
+                <div class="update-modal">
+                    <div class="update-header">Invalid File</div>
+                    <div class="update-notes">{{ invalidDropMessage }}</div>
+                    <div class="update-actions">
+                        <button class="btn btn-primary" @click="invalidDropMessage = null">OK</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     <div class="loading" v-else>
@@ -327,6 +338,9 @@ const assetSyncLabel = computed(() => {
 // Update state
 const updateState = ref('idle'); // 'idle' | 'checking' | 'downloading' | 'uptodate'
 const updateInfo = ref(null);
+
+// Invalid-drop message (set when RAFlash was launched with a bad CLI arg)
+const invalidDropMessage = ref(null);
 const updateLabel = computed(() => {
     if (updateState.value === 'checking') return 'Checking...';
     if (updateState.value === 'downloading') return 'Downloading...';
@@ -522,11 +536,17 @@ onMounted(async () => {
     App.windowId = Number(new URL(window.location.href).searchParams.get('windowId'));
     Network.connect();
 
-    // Load users and directory info in parallel
-    const [, dirResponse] = await Promise.all([
+    // Load users, directory info, and per-window setup params in parallel
+    const [, dirResponse, setupResponse] = await Promise.all([
         loadUsers(),
-        Network.send({ command: 'getDirectoryInfo', params: {} })
+        Network.send({ command: 'getDirectoryInfo', params: {} }),
+        Network.send({ command: 'setup', params: { windowId: App.windowId } })
     ]);
+
+    // Show the invalid-drop modal if RAEngine plumbed a message through windowParams
+    if (setupResponse.success && setupResponse.params?.params?.invalidDropMessage) {
+        invalidDropMessage.value = setupResponse.params.params.invalidDropMessage;
+    }
 
     if (dirResponse.success) {
         pathSegments.value = dirResponse.params.currentDirectory;

@@ -22,7 +22,7 @@ import { AppData } from "./AppData.ts";
 import { UserProfile } from "./UserProfile.ts";
 import { WindowManager } from "./WindowManager.ts";
 import type { Requirement } from "./types.ts";
-import { join, SEPARATOR } from "https://deno.land/std/path/mod.ts";
+import { dirname, isAbsolute, join, SEPARATOR } from "https://deno.land/std/path/mod.ts";
 import { Buffer } from "node:buffer";
 import { PNG } from "npm:pngjs";
 import jpeg from "npm:jpeg-js";
@@ -233,12 +233,17 @@ interface Settings {
     fixTextFieldBindings: boolean;     // parent-mode only
     fixSoundAttach: boolean;            // parent-mode only
     benchmarkingEnabled: boolean;
+    // Last user picked in the file picker. Persisted so that drag-drop /
+    // CLI-arg launches (which skip the picker) can default to the user the
+    // person was already running under. Falls back to "Guest" on first run.
+    lastUser: string;
 }
 const defaultSettings: Settings = {
     firmwareMode: "child",
     fixTextFieldBindings: true,
     fixSoundAttach: true,
     benchmarkingEnabled: false,
+    lastUser: "Guest",
 };
 let settings: Settings = { ...defaultSettings };
 
@@ -1283,6 +1288,11 @@ async function handleApiRequest(
             const user = String(input.params.user || "");
             selectedGamePath = path;
             emitLog("engine", "info", `Game selected: ${path}`);
+            // Persist for future drag-drop / CLI-arg launches that skip the picker.
+            if (user && user !== settings.lastUser) {
+                settings.lastUser = user;
+                await saveSettings(settings);
+            }
             if (fileSelectedResolver) {
                 fileSelectedResolver({ gamePath: path, user });
             }
@@ -1775,9 +1785,16 @@ async function handleApiRequest(
 /**
  * Show file picker and wait for selection.
  * Returns null if the user closes the window without selecting a file.
+ *
+ * If invalidDropMessage is provided, it's plumbed through windowParams so
+ * the picker can show an error modal explaining why the dropped file was
+ * rejected.
  */
-async function showFilePicker(): Promise<{ gamePath: string; user: string } | null> {
+async function showFilePicker(invalidDropMessage?: string | null): Promise<{ gamePath: string; user: string } | null> {
     const windowId = Math.floor(Math.random() * 0xFFFFFF);
+    if (invalidDropMessage) {
+        windowParams.set(windowId, { invalidDropMessage });
+    }
     await HTMLWindow.create("file-picker.html", 800, 500, windowId);
 
     const result = await Promise.race([
@@ -2289,12 +2306,36 @@ function launchFlashPlayer(): Deno.ChildProcess {
  */
 async function main(): Promise<void> {
 
-    // Verify both firmwares exist (we don't know which we'll need until game is selected)
-    for (const fw of ["firmware/AVM1.swf", "firmware/AVM2.swf"]) {
+    // Capture the original cwd BEFORE any chdir below, so drag-drop launches
+    // with a relative path argument resolve against the directory the user
+    // was actually in (in practice Windows passes absolute paths for
+    // drag-drop, but this keeps `RAFlash.exe ./game.swf` working from a
+    // shell too).
+    const originalCwd = Deno.cwd();
+
+    // Locate the firmware directory. When launched normally (double-click,
+    // `make run`) Windows sets cwd to the exe's directory and the relative
+    // lookup just works. When launched via drag-drop, Windows sets cwd to
+    // the directory of the dropped file instead, so the relative lookup
+    // fails and the windowed binary silently exits with no console output.
+    // Fall back to the exe's directory in that case and chdir into it so
+    // every other relative path (RACache, vendor/adobe, assets/icon.ico,
+    // etc.) keeps working unchanged.
+    async function firmwarePresent(dir: string): Promise<boolean> {
         try {
-            await Deno.stat(fw);
+            await Deno.stat(join(dir, "firmware/AVM1.swf"));
+            await Deno.stat(join(dir, "firmware/AVM2.swf"));
+            return true;
         } catch {
-            console.error(`ERROR: Firmware SWF not found: ${fw}`);
+            return false;
+        }
+    }
+    if (!(await firmwarePresent("."))) {
+        const exeDir = dirname(Deno.execPath());
+        if (await firmwarePresent(exeDir)) {
+            Deno.chdir(exeDir);
+        } else {
+            console.error(`ERROR: Firmware SWFs not found in ${Deno.cwd()} or ${exeDir}`);
             console.error("Run 'make' first to build both firmwares");
             Deno.exit(1);
         }
@@ -2334,9 +2375,47 @@ async function main(): Promise<void> {
         Deno.exit(0);
     });
 
+    // Drag-drop / CLI arg: take Deno.args[0] as the initial game path.
+    // Validated once at startup. If the path is bad we still fall through to
+    // the picker but surface the failure as an error modal. Multiple files
+    // dropped at once → take the first, ignore the rest silently.
+    let initialDrop: { gamePath: string } | null = null;
+    let invalidDropMessage: string | null = null;
+    if (Deno.args.length > 0) {
+        const arg = Deno.args[0];
+        // Resolve against the original cwd, not the (possibly chdir'd) firmware
+        // directory — relative args from the user's shell should mean what they
+        // looked like when typed.
+        const resolved = isAbsolute(arg) ? arg : join(originalCwd, arg);
+        try {
+            const stat = await Deno.stat(resolved);
+            if (!stat.isFile) {
+                invalidDropMessage = `Not a file: ${arg}`;
+            } else if (!resolved.toLowerCase().endsWith(".swf")) {
+                invalidDropMessage = `Not a .swf file: ${arg}`;
+            } else {
+                initialDrop = { gamePath: resolved };
+            }
+        } catch {
+            invalidDropMessage = `File not found: ${arg}`;
+        }
+    }
+
     // 4. Game loop: file picker → game → cleanup → repeat
     while (true) {
-        const pickerResult = await showFilePicker();
+        let pickerResult: { gamePath: string; user: string } | null;
+        // True for the iteration that consumes a drag-drop / CLI arg launch.
+        // After that game closes we exit instead of falling back to the picker
+        // — drag-drop is a "launch one game" verb, not "enter the launcher".
+        let launchedFromArg = false;
+        if (initialDrop) {
+            pickerResult = { gamePath: initialDrop.gamePath, user: settings.lastUser };
+            initialDrop = null;  // Subsequent iterations always use the picker
+            launchedFromArg = true;
+        } else {
+            pickerResult = await showFilePicker(invalidDropMessage);
+            invalidDropMessage = null;  // Only show the error on the first picker open
+        }
 
         // User closed file picker without selecting → exit
         if (!pickerResult) {
@@ -2445,6 +2524,12 @@ async function main(): Promise<void> {
         }
         devtoolsClients.clear();
         await HTMLWindow.shutdown();
+
+        // Drag-drop launches exit when their one game closes — they aren't
+        // intended to drop the user into the picker afterward.
+        if (launchedFromArg) {
+            Deno.exit(0);
+        }
 
         // Reset state for next game
         resetGameState();
