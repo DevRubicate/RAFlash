@@ -1,5 +1,8 @@
 <template>
     <div class="container" v-if="App.ready">
+        <div v-if="!App.flashConnected" class="flash-disconnected-banner">
+            Flash Player is not running &mdash; values are no longer live. Notes can still be edited.
+        </div>
         <div class="header">
             <button class="add-button" @click="addNote">+ Add</button>
             <input
@@ -63,6 +66,19 @@
 <style>
     .container {
         padding: 0.5rem;
+    }
+
+    .flash-disconnected-banner {
+        flex-shrink: 0;
+        margin-bottom: 0.375rem;
+        padding: 0.4375rem 0.625rem;
+        background-color: var(--c-surface-alt);
+        border: 1px solid var(--c-border);
+        border-left: 3px solid var(--c-text-muted);
+        border-radius: var(--radius-sm);
+        color: var(--c-text-muted);
+        font-family: var(--font-sans);
+        font-size: 0.75rem;
     }
 
     .header {
@@ -347,6 +363,10 @@
         populateInitialVisibleRows();
 
         intervalId = setInterval(async () => {
+            // When Flash is gone there's nothing to evaluate against — leave
+            // the last known values frozen on screen instead of polling a
+            // dead firmware socket.
+            if (!App.flashConnected) return;
             const visibleIndices = [...visibleRows.value];
             if (visibleIndices.length === 0) return;
 

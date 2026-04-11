@@ -98,6 +98,13 @@
                             <span class="setting-desc">Profiles firmware execution time per frame. A Benchmarking window becomes available in devtools. Has a minor performance cost when active.</span>
                         </div>
                     </label>
+                    <label class="setting-row">
+                        <input type="checkbox" v-model="settings.autoOpenDevtools" @change="save">
+                        <div class="setting-info">
+                            <span class="setting-name">Open RAFlash dev tools when game opens</span>
+                            <span class="setting-desc">Automatically opens the devtools menu every time a game launches. Useful for sitelocked or immediately-crashing games where you'd never get a chance to hit F12 in time.</span>
+                        </div>
+                    </label>
                 </div>
             </div>
         </div>
@@ -316,6 +323,7 @@ const settings = ref({
     fixTextFieldBindings: true,
     fixSoundAttach: true,
     benchmarkingEnabled: false,
+    autoOpenDevtools: false,
 });
 
 async function save() {

@@ -7,6 +7,11 @@ export const App: Record<string, any> = reactive({
     ready: false,
     gameId: 1686,
     windowId: 0,  // Set during network initialization
+    // True until RAEngine broadcasts `flashDisconnected` (i.e. Flash Player
+    // exited or crashed). Components bind `:disabled="!App.flashConnected"`
+    // on actions that need a live Flash Player. Game Behavior / Settings
+    // stay editable so the user can recover from a sitelocked game.
+    flashConnected: true,
 
     data: {assets: [], codeNotes: []},
     originalData: {assets: [], codeNotes: []},
@@ -27,6 +32,12 @@ export const App: Record<string, any> = reactive({
     // methods
     async initialize() {
         await Network.initialize();
+        // Listen for the engine's broadcast that Flash Player is gone. This
+        // flips the global UI gate so every component can degrade in unison
+        // without having to subscribe individually.
+        Network.addEventListener('flashDisconnected', () => {
+            App.flashConnected = false;
+        });
     },
 
     getFakeId(): number {

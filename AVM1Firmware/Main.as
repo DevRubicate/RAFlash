@@ -183,14 +183,11 @@ class Main {
             // child clip (e.g. _level0.__raflash) of the game's _root. The
             // game IS _level0 and is already running.
             //
-            // Reapply player chrome that the engine's sitelock patcher
-            // strips. The patcher kills every window-target ActionGetURL2
-            // (flags=0x00) including legitimate fscommand("showmenu") /
-            // fscommand("allowscale") calls — we can't discriminate them
-            // from fscommand("quit") at the bytecode level since they all
-            // share the same opcode and flags. Without this restoration
-            // the standalone player's menu bar and right-click items stay
-            // visible because the game's chrome-setup calls were silenced.
+            // Set up player chrome (no menu bar, no right-click items, no
+            // auto-scale) so the player presents the same way in child mode
+            // as it does in parent mode. Most games disable chrome
+            // themselves on their first frame, but doing it here too means
+            // games that don't bother still get a consistent presentation.
             // fscommand calls work from any clip; they go to the player,
             // not the enclosing scope.
             Stage.scaleMode = "noScale";

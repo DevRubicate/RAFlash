@@ -1,5 +1,8 @@
 <template>
     <div class="container" v-if="App.ready">
+        <div v-if="!App.flashConnected" class="flash-disconnected-banner">
+            Flash Player is not running &mdash; new values can't be watched. Existing log is preserved.
+        </div>
         <div class="input-wrapper">
             <input
                 type="text"
@@ -7,10 +10,10 @@
                 v-model="formula"
                 placeholder="Formula (e.g., stage.player.x)"
                 spellcheck="false"
-                :disabled="watching"
+                :disabled="watching || !App.flashConnected"
                 @keyup.enter="toggleWatch"
             />
-            <button class="watch-button" :class="{ active: watching }" @click="toggleWatch">
+            <button class="watch-button" :class="{ active: watching }" :disabled="!App.flashConnected" @click="toggleWatch">
                 {{ watching ? 'Stop' : 'Watch' }}
             </button>
             <button class="clear-button" @click="clearLog" :disabled="log.length === 0">
@@ -52,6 +55,19 @@
 <style>
     .container {
         padding: 0.75rem;
+    }
+
+    .flash-disconnected-banner {
+        flex-shrink: 0;
+        margin-bottom: 0.5rem;
+        padding: 0.4375rem 0.625rem;
+        background-color: var(--c-surface-alt);
+        border: 1px solid var(--c-border);
+        border-left: 3px solid var(--c-text-muted);
+        border-radius: var(--radius-sm);
+        color: var(--c-text-muted);
+        font-family: var(--font-sans);
+        font-size: 0.75rem;
     }
 
     .input-wrapper {
@@ -172,7 +188,7 @@
 </style>
 
 <script setup>
-    import { ref, onMounted, onUnmounted, nextTick } from 'vue';
+    import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
     import { Network } from '../js/network.ts';
     import { App } from '../js/app.ts';
 
@@ -183,6 +199,16 @@
     const watcherId = ref(null);
     const mode = ref('unknown'); // 'unknown' | 'value' | 'structure'
     const seenKeys = ref(new Map()); // Map<string, { removed: boolean }>
+
+    // When Flash Player exits while a watch is active there's no firmware
+    // left to stop, so flip the local UI state to "not watching" to match
+    // reality. The accumulated log stays on screen.
+    watch(() => App.flashConnected, (connected) => {
+        if (!connected && watching.value) {
+            watching.value = false;
+            watcherId.value = null;
+        }
+    });
 
     const toggleWatch = async () => {
         if (watching.value) {

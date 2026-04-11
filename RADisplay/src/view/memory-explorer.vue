@@ -1,6 +1,10 @@
 <template>
     <div class="container" v-if="App.ready">
-        
+
+        <div v-if="!App.flashConnected" class="flash-disconnected-banner">
+            Flash Player is not running &mdash; live evaluation is disabled. Last results stay visible.
+        </div>
+
         <div class="history-bar">
             <button class="history-btn" :disabled="historyIndex <= 0" @click="historyBack()">&lt;</button>
             <button class="history-btn" :disabled="historyIndex >= history.length - 1" @click="historyForward()">&gt;</button>
@@ -15,12 +19,12 @@
 
             ></textarea>
             <div class="split-button">
-                <button class="split-main" @click="evaluate()">Evaluate</button>
-                <button class="split-toggle" @click="dropdownOpen = !dropdownOpen">&#9662;</button>
+                <button class="split-main" :disabled="!App.flashConnected" @click="evaluate()">Evaluate</button>
+                <button class="split-toggle" :disabled="!App.flashConnected" @click="dropdownOpen = !dropdownOpen">&#9662;</button>
                 <div class="split-dropdown" v-if="dropdownOpen">
-                    <button :disabled="!previousResults" @click="compare(); dropdownOpen = false">Changed</button>
-                    <button :disabled="!previousResults" @click="remains(); dropdownOpen = false">Remains</button>
-                    <button :disabled="!previousResults" @click="leaves(); dropdownOpen = false">Leaves</button>
+                    <button :disabled="!previousResults || !App.flashConnected" @click="compare(); dropdownOpen = false">Changed</button>
+                    <button :disabled="!previousResults || !App.flashConnected" @click="remains(); dropdownOpen = false">Remains</button>
+                    <button :disabled="!previousResults || !App.flashConnected" @click="leaves(); dropdownOpen = false">Leaves</button>
                 </div>
             </div>
         </div>
@@ -101,7 +105,7 @@
                                 @dblclick="drillInto(res.value)">
                                 <td>
                                     {{ res.value }}
-                                    <button v-if="isEditable(res.value)" class="edit-btn" @click.stop="openEdit(res.value)" title="Edit value">&#9998;</button>
+                                    <button v-if="isEditable(res.value) && App.flashConnected" class="edit-btn" @click.stop="openEdit(res.value)" title="Edit value">&#9998;</button>
                                 </td>
                             </tr>
                         </tbody>
@@ -142,6 +146,19 @@
 <style>
     .container {
         padding: 0.75rem;
+    }
+
+    .flash-disconnected-banner {
+        flex-shrink: 0;
+        margin-bottom: 0.5rem;
+        padding: 0.4375rem 0.625rem;
+        background-color: var(--c-surface-alt);
+        border: 1px solid var(--c-border);
+        border-left: 3px solid var(--c-text-muted);
+        border-radius: var(--radius-sm);
+        color: var(--c-text-muted);
+        font-family: var(--font-sans);
+        font-size: 0.75rem;
     }
 
     /* === History Navigation === */

@@ -4,6 +4,10 @@
             <h2 class="header-title">Game Behavior</h2>
         </header>
 
+        <div v-if="!App.flashConnected" class="flash-disconnected-banner">
+            Flash Player is not running. Your edits are still saved &mdash; relaunch the game to apply them.
+        </div>
+
         <div class="editor-body">
             <div class="badge-row">
                 <div class="badge-image-wrapper">
@@ -41,6 +45,19 @@
         background-color: var(--c-surface);
         border-bottom: 1px solid var(--c-border);
         flex-shrink: 0;
+    }
+
+    .flash-disconnected-banner {
+        flex-shrink: 0;
+        margin: 0.5rem 0.875rem 0;
+        padding: 0.4375rem 0.625rem;
+        background-color: var(--c-surface-alt);
+        border: 1px solid var(--c-border);
+        border-left: 3px solid var(--c-text-muted);
+        border-radius: var(--radius-sm);
+        color: var(--c-text-muted);
+        font-family: var(--font-sans);
+        font-size: 0.75rem;
     }
 
     .header-title {

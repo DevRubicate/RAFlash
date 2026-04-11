@@ -233,6 +233,10 @@ interface Settings {
     fixTextFieldBindings: boolean;     // parent-mode only
     fixSoundAttach: boolean;            // parent-mode only
     benchmarkingEnabled: boolean;
+    // When true, the devtools menu auto-opens whenever a game launches —
+    // useful for sitelocked / immediately-crashing games where the user has
+    // no chance to hit F12 themselves.
+    autoOpenDevtools: boolean;
     // Last user picked in the file picker. Persisted so that drag-drop /
     // CLI-arg launches (which skip the picker) can default to the user the
     // person was already running under. Falls back to "Guest" on first run.
@@ -243,6 +247,7 @@ const defaultSettings: Settings = {
     fixTextFieldBindings: true,
     fixSoundAttach: true,
     benchmarkingEnabled: false,
+    autoOpenDevtools: false,
     lastUser: "Guest",
 };
 let settings: Settings = { ...defaultSettings };
@@ -942,6 +947,12 @@ const windowParams = new Map<number, Record<string, unknown>>();
 // Flash Player window management
 let flashPlayerPid: number | null = null;
 let flashProcess: Deno.ChildProcess | null = null;
+// True between `flashProcess.spawn` and `await flashProcess.status` resolving.
+// When false, devtools windows are degraded into a read-only mode (the user
+// can still browse last-known data and edit per-game settings, but anything
+// that requires a live Flash Player is disabled). See the `flashDisconnected`
+// broadcast on the cleanup path of the game loop.
+let flashConnected = false;
 
 // Rich Presence title updates
 let lastRichPresenceTime = 0;
@@ -964,10 +975,12 @@ function resetGameState(): void {
     selectedGamePath = null;
     selectedUserName = null;
     appState = AppState.FILE_PICKER;
-    AppData.data = { assets: [], codeNotes: [], gameConfig: { title: '', originUrl: '', badgeImage: '' } };
-    AppData.gamePath = null;
-    AppData.stateFilePath = null;
-    AppData.gameHash = null;
+    // Deliberately do NOT clear AppData here. After Flash exits the user
+    // may still be editing per-game settings in the auto-opened devtools
+    // menu (e.g. setting originUrl after a sitelock killed Flash on frame
+    // 1) and AppData.saveData() needs the still-valid stateFilePath to
+    // know which file to write. The next game launch unconditionally
+    // overwrites every AppData field via setGamePath() + loadData().
     UserProfile.reset();
 }
 
@@ -1226,8 +1239,7 @@ function startHttpServerInner() {
                     filePath = join("internals", "assets", url.pathname.substring(1));
                 }
 
-                const rawFile = await Deno.readFile(filePath);
-                let file: Uint8Array<ArrayBuffer> = rawFile;
+                let file: Uint8Array<ArrayBuffer> = await Deno.readFile(filePath);
                 if (filePath === selectedGamePath && resolveFirmwareMode() === "child") {
                     // Build the firmware URL using the same domain the game is
                     // served from (sitelock-spoofed origin if applicable) so the
@@ -1236,7 +1248,7 @@ function startHttpServerInner() {
                     const originUrl = AppData.data.gameConfig.originUrl;
                     const fwDomain = originUrl ? new URL(originUrl).host : RAFLASH_DOMAIN;
                     const fwUrl = `http://${fwDomain}/avm1-firmware.swf`;
-                    file = injectFirmwareLoader(rawFile, fwUrl) as Uint8Array<ArrayBuffer>;
+                    file = injectFirmwareLoader(file, fwUrl) as Uint8Array<ArrayBuffer>;
                 }
                 const extension = filePath.split(".").pop() || "";
                 const mimeTypes: Record<string, string> = {
@@ -1807,12 +1819,19 @@ async function showFilePicker(invalidDropMessage?: string | null): Promise<{ gam
     }
     await HTMLWindow.create("file-picker.html", 800, 500, windowId);
 
+    // Race the file selection against the *picker window's* process exiting,
+    // NOT against any HTMLWindow closing. After Flash crashes we may have
+    // auto-opened the devtools menu (and the user may have spawned Game
+    // Behavior from it to fix originUrl); closing those should not be
+    // interpreted as "user dismissed the picker → quit RAFlash".
+    const pickerInstance = HTMLWindow.instances.find(w => w.windowId === windowId);
     const result = await Promise.race([
         new Promise<{ gamePath: string; user: string }>((resolve) => { fileSelectedResolver = resolve; }),
-        HTMLWindow.waitForAnyClose().then(() => null)
+        pickerInstance ? pickerInstance.process.status.then(() => null) : Promise.resolve(null),
     ]);
 
-    // Close just the file picker, not other windows (e.g. Event Log)
+    // Close just the file picker, not other windows (e.g. Event Log,
+    // auto-opened devtools menu)
     const pickerWindow = HTMLWindow.instances.find(w => w.windowId === windowId);
     if (pickerWindow) await pickerWindow.close();
 
@@ -1931,8 +1950,9 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
             return;
         }
 
-        // HTTP request for game SWF — inject firmware loader bytecode in
-        // child mode so the firmware loads as a child of the game's _root.
+        // HTTP request for game SWF — optionally inject firmware loader
+        // bytecode in child mode so the firmware loads as a child of the
+        // game's _root.
         if (httpBuffer.startsWith("GET /game.swf")) {
             const rawSwfData = await Deno.readFile(selectedGamePath!);
             let swfData: Uint8Array = rawSwfData;
@@ -2539,6 +2559,14 @@ async function main(): Promise<void> {
         // Launch Flash Player
         flashProcess = launchFlashPlayer();
         flashPlayerPid = flashProcess.pid;
+        flashConnected = true;
+
+        // Auto-open the devtools menu if the user has asked us to. Useful
+        // for sitelocked / immediately-crashing games where the user has no
+        // chance to hit F12 themselves before Flash dies.
+        if (settings.autoOpenDevtools) {
+            openDevtoolsMenu().catch(() => { /* best effort */ });
+        }
 
         // Resize and center Flash Player to match game dimensions (Windows only)
         if (Deno.build.os === "windows") {
@@ -2556,6 +2584,7 @@ async function main(): Promise<void> {
 
         // Wait for Flash Player to close
         await flashProcess.status;
+        flashConnected = false;
 
         // Cleanup between games
         if (richPresenceCheckInterval) {
@@ -2567,16 +2596,30 @@ async function main(): Promise<void> {
         // Flush user profile before cleanup
         await UserProfile.saveUser();
 
-        // Close all devtools WebSocket connections and windows
-        for (const ws of devtoolsClients) {
-            try { ws.close(); } catch { /* already closed */ }
-        }
-        devtoolsClients.clear();
-        await HTMLWindow.shutdown();
+        // Tell every open devtools window that Flash is gone so it can
+        // degrade to a read-only / locally-editable mode. We deliberately do
+        // NOT close the windows here — the user may still want to edit
+        // per-game settings (e.g. originUrl) after a sitelocked game crashed
+        // Flash on launch, which is the entire point of this flow. Stale
+        // windows are cleaned up at the top of the next game launch (see the
+        // `HTMLWindow.shutdown()` call further up in this loop).
+        broadcastToDevtools("flashDisconnected", {});
 
-        // Drag-drop launches exit when their one game closes — they aren't
-        // intended to drop the user into the picker afterward.
+        // Drag-drop launches are "launch one game" verbs, not "enter the
+        // launcher" — we don't drop the user back at the picker after the
+        // game closes. But we DO keep RAFlash alive while degraded windows
+        // are still open so the user can finish editing settings before
+        // exit. Once every Chrome window has closed, we can quit cleanly.
         if (launchedFromArg) {
+            const open = HTMLWindow.instances.filter(w => !w.isClosed);
+            if (open.length > 0) {
+                await Promise.all(open.map(w => w.process.status));
+            }
+            await HTMLWindow.shutdown();
+            for (const ws of devtoolsClients) {
+                try { ws.close(); } catch { /* already closed */ }
+            }
+            devtoolsClients.clear();
             Deno.exit(0);
         }
 
