@@ -624,6 +624,15 @@ export class WindowManager {
                     x, y, outerWidth, outerHeight,
                     SWP_FRAMECHANGED | SWP_SHOWWINDOW
                 );
+
+                // Force focus. SetWindowPos(SHOWWINDOW) shows the window but
+                // doesn't reliably steal focus from whatever was already
+                // foreground (notification, the closing file picker, etc.),
+                // which led to the Flash Player occasionally launching
+                // unfocused. focusWindow does the AttachThreadInput dance
+                // that bypasses Windows' focus-stealing prevention.
+                this.focusWindow(hwnd, outerWidth, outerHeight);
+
                 return true;
             }
             await new Promise(resolve => setTimeout(resolve, delayMs));
