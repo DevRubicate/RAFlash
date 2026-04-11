@@ -24,7 +24,7 @@
 
                     <div class="form-group">
                         <label for="origin-url">Origin URL</label>
-                        <input type="text" id="origin-url" class="mono-input" v-model="originUrl" placeholder="http://www.coolmathgames.com">
+                        <input type="text" id="origin-url" class="mono-input" v-model="originUrl" placeholder="http://www.coolmathgames.com  or  http://host/path/to/game.swf">
                     </div>
                 </div>
             </div>

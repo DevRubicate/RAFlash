@@ -213,6 +213,44 @@ const FLASH_PORT = 18081;
 const PROXY_PORT = 18082;
 const RAFLASH_DOMAIN = "raflash.local"; // Fake domain for proxy routing (127.0.0.1 bypasses WinInet proxy)
 
+/**
+ * Resolve the configured origin URL into the full URL Flash Player should
+ * launch the game from, the request path our HTTP handlers should match
+ * against to serve the game SWF, and the host that satisfies the sitelock
+ * check.
+ *
+ * Two supported forms for `gameConfig.originUrl`:
+ *   - Bare origin (e.g. `http://ninjakiwifiles.com`) → game served at
+ *     `<origin>/game.swf`. Equivalent to the legacy behavior.
+ *   - Full SWF URL (e.g. `http://ninjakiwifiles.com/Games/gameswfs/bloonstd_moved.swf`)
+ *     → that exact URL is used; the path mirrors the real-world location
+ *     the game expects to load itself from. Some sitelock checks compare
+ *     against the full URL, not just the host.
+ *
+ * Empty / invalid → fall back to `http://raflash.local/game.swf`.
+ */
+function resolveGameUrl(): { url: string; path: string; domain: string } {
+    const origin = AppData.data.gameConfig.originUrl;
+    if (origin) {
+        try {
+            const u = new URL(origin);
+            if (u.pathname.toLowerCase().endsWith(".swf")) {
+                // Full SWF URL — use as-is
+                return { url: origin, path: u.pathname, domain: u.host };
+            }
+            // Bare origin — append /game.swf, strip any trailing slash first
+            return {
+                url: `${origin.replace(/\/$/, "")}/game.swf`,
+                path: "/game.swf",
+                domain: u.host,
+            };
+        } catch {
+            // Malformed URL — fall through to default
+        }
+    }
+    return { url: `http://${RAFLASH_DOMAIN}/game.swf`, path: "/game.swf", domain: RAFLASH_DOMAIN };
+}
+
 // Global settings (persisted to RACache/settings.json)
 interface Settings {
     // Which firmware approach to use for the AVM1 game launch:
@@ -1232,7 +1270,7 @@ function startHttpServerInner() {
 
                 if (avmConfig && url.pathname === avmConfig.firmwareUrl) {
                     filePath = avmConfig.firmwareSwf;
-                } else if (url.pathname === "/game.swf" && selectedGamePath) {
+                } else if ((url.pathname === "/game.swf" || url.pathname === resolveGameUrl().path) && selectedGamePath) {
                     filePath = selectedGamePath;
                 } else {
                     // Serve from assets directory for UI
@@ -1555,8 +1593,7 @@ async function handleApiRequest(
         }
         case "initializeData": {
             // Send current app data to firmware
-            const originUrl = AppData.data.gameConfig.originUrl;
-            const gameUrl = originUrl ? originUrl + "/game.swf" : null;
+            const gameUrl = AppData.data.gameConfig.originUrl ? resolveGameUrl().url : null;
             const response = await sendToFirmware("setup", { data: AppData.data, gameUrl, settings });
             return response;
         }
@@ -1728,8 +1765,7 @@ async function handleApiRequest(
         }
 
         case "resetGame": {
-            const originUrl = AppData.data.gameConfig.originUrl;
-            const gameUrl = originUrl ? originUrl + "/game.swf" : null;
+            const gameUrl = AppData.data.gameConfig.originUrl ? resolveGameUrl().url : null;
             emitLog("engine", "info", "Resetting game...");
 
             // Clear accumulated runtime state on every asset so the new run
@@ -1952,8 +1988,11 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
 
         // HTTP request for game SWF — optionally inject firmware loader
         // bytecode in child mode so the firmware loads as a child of the
-        // game's _root.
-        if (httpBuffer.startsWith("GET /game.swf")) {
+        // game's _root. Accepts both `/game.swf` and the full path the user
+        // configured in originUrl (e.g. `/Games/gameswfs/bloonstd_moved.swf`)
+        // since some sitelock checks compare the full URL, not just the host.
+        const expectedGamePath = resolveGameUrl().path;
+        if (httpBuffer.startsWith("GET /game.swf") || httpBuffer.startsWith(`GET ${expectedGamePath} `) || httpBuffer.startsWith(`GET ${expectedGamePath}?`)) {
             const rawSwfData = await Deno.readFile(selectedGamePath!);
             let swfData: Uint8Array = rawSwfData;
             if (resolveFirmwareMode() === "child") {
@@ -2121,8 +2160,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
         firmwareConnected = true;
         emitLog("engine", "info", "Firmware connected");
         // Send app data to firmware (don't await - would deadlock before read loop starts)
-        const originUrl = AppData.data.gameConfig.originUrl;
-        const gameUrl = originUrl ? originUrl + "/game.swf" : null;
+        const gameUrl = AppData.data.gameConfig.originUrl ? resolveGameUrl().url : null;
         sendToFirmware("setup", { data: AppData.data, gameUrl, settings }).catch(() => {});
 
         // Process initial data
@@ -2317,12 +2355,11 @@ function handleFirmwareData(data: string): void {
 function launchFlashPlayer(): Deno.ChildProcess {
     const fpPath = `${Deno.cwd()}/vendor/adobe/fp-32.0.0.380.exe`;
     // Note: cwd is .build/ during development (make run) and the exe's directory when distributed
-    const originUrl = AppData.data.gameConfig.originUrl;
-    const domain = originUrl ? new URL(originUrl).host : RAFLASH_DOMAIN;
+    const resolved = resolveGameUrl();
     const mode = resolveFirmwareMode();
     const launchUrl = (mode === "child" || mode === "none")
-        ? `http://${domain}/game.swf`
-        : `http://${domain}${avmConfig.firmwareUrl}`;
+        ? resolved.url
+        : `http://${resolved.domain}${avmConfig.firmwareUrl}`;
 
     const command = new Deno.Command(fpPath, {
         args: [launchUrl],
