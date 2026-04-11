@@ -29,6 +29,9 @@
                         <template v-if="mode === 'value' || mode === 'unknown'">
                             <tr v-for="(entry, index) in log" :key="index">
                                 <td class="value-column">{{ formatValue(entry.value) }}</td>
+                                <td class="count-column">
+                                    <span v-if="entry.count >= 2">×{{ entry.count }}</span>
+                                </td>
                             </tr>
                         </template>
 
@@ -146,6 +149,13 @@
     }
 
     .value-column { width: 100%; color: var(--c-text); }
+    .count-column {
+        width: 1%;
+        white-space: nowrap;
+        text-align: right;
+        color: var(--c-text-muted);
+        font-size: 0.75rem;
+    }
     .key-column { width: 100%; color: var(--c-text); }
 
     .no-results {
@@ -263,9 +273,11 @@
                 const formattedValue = formatValue(entry.value);
                 const lastEntry = log.value[log.value.length - 1];
 
-                // Only add if different from previous value
+                // Only add if different from previous value; otherwise increment count
                 if (!lastEntry || formatValue(lastEntry.value) !== formattedValue) {
-                    log.value.push({ value: entry.value });
+                    log.value.push({ value: entry.value, count: 1 });
+                } else {
+                    lastEntry.count++;
                 }
             }
         }
