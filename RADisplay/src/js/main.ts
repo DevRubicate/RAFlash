@@ -144,4 +144,12 @@ async function mountApp() {
   }
 }
 
+// Block F12 from opening Chrome DevTools — F12 is used to toggle the
+// devtools menu from inside Flash Player, not the browser inspector.
+window.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key === 'F12') {
+        e.preventDefault();
+    }
+});
+
 mountApp();
