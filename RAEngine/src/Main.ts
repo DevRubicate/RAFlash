@@ -964,6 +964,9 @@ let fileSelectedResolver: ((result: { gamePath: string; user: string }) => void)
 let selectedUserName: string | null = null;
 let httpServer: Deno.HttpServer | null = null;
 
+// Flash socket policy file server (port 843)
+let policyListener: Deno.Listener | null = null;
+
 // Flash socket connection and communication
 let firmwareWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
 let firmwareConnected = false;
@@ -1000,6 +1003,10 @@ let richPresenceCheckInterval: number | null = null;
  * Called after a game closes before showing the file picker again.
  */
 function resetGameState(): void {
+    if (policyListener) {
+        try { policyListener.close(); } catch { /* already closed */ }
+        policyListener = null;
+    }
     firmwareWriter = null;
     firmwareConnected = false;
     pendingRequests.clear();
@@ -1868,7 +1875,7 @@ async function startFlashServer(): Promise<void> {
 
     // Serve policy on port 843 (Flash's default policy port) to avoid ~3s timeout
     try {
-        const policyListener = Deno.listen({ port: 843 });
+        policyListener = Deno.listen({ port: 843 });
         const encoder = new TextEncoder();
         (async () => {
             for await (const conn of policyListener) {
