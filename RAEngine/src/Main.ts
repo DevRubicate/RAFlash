@@ -22,7 +22,7 @@ import { AppData } from "./AppData.ts";
 import { UserProfile } from "./UserProfile.ts";
 import { WindowManager } from "./WindowManager.ts";
 import type { Requirement } from "./types.ts";
-import { dirname, isAbsolute, join, SEPARATOR } from "https://deno.land/std/path/mod.ts";
+import { dirname, isAbsolute, join, resolve, SEPARATOR } from "https://deno.land/std/path/mod.ts";
 import { Buffer } from "node:buffer";
 import { PNG } from "npm:pngjs";
 import jpeg from "npm:jpeg-js";
@@ -1337,9 +1337,14 @@ async function handleApiRequest(
             };
         }
         case "readDirectory": {
-            const path = String(input.params.path || ".");
+            const rawPath = String(input.params.path || ".");
+            const resolvedPath = resolve(rawPath);
+            // Reject paths that aren't absolute after resolution (defense-in-depth)
+            if (!isAbsolute(resolvedPath)) {
+                return { success: false, error: "Path must be absolute" };
+            }
             try {
-                const entries = Array.from(Deno.readDirSync(path)).map((entry: Deno.DirEntry) => ({
+                const entries = Array.from(Deno.readDirSync(resolvedPath)).map((entry: Deno.DirEntry) => ({
                     name: entry.name,
                     type: entry.isDirectory ? "directory" : "file",
                 }));
