@@ -810,10 +810,11 @@ class Main {
                     pathPrefix = "stage";
                 }
 
+                _visitedStamp++;
                 if (params.searchMode == "name") {
-                    searchTargetForName(startTarget, find.toLowerCase(), pathPrefix, searchResult, []);
+                    searchTargetForName(startTarget, find.toLowerCase(), pathPrefix, searchResult, _visitedStamp);
                 } else {
-                    searchTargetForValue(startTarget, find, pathPrefix, searchResult, []);
+                    searchTargetForValue(startTarget, find, pathPrefix, searchResult, _visitedStamp);
                 }
                 var searchFormatted:Object = formatOutput(searchResult, 0);
                 sendResponse(id, { success: true, result: searchFormatted });
@@ -2538,21 +2539,20 @@ class Main {
      * Recursively search for a value in a target object
      * @param visited Array to track visited objects (prevents infinite loops from circular references)
      */
-    private static function searchTargetForValue(target:Object, value:String, path:String, output:Array, visited:Array):Void {
+    private static var _visitedStamp:Number = 0;
+
+    private static function searchTargetForValue(target:Object, value:String, path:String, output:Array, stamp:Number):Void {
         try {
-            // Circular reference protection for objects and movieclips
+            // Circular reference protection: stamp objects with a unique marker
+            // per search invocation for O(1) lookup instead of linear array scan
             if (typeof(target) == "movieclip" || typeof(target) == "object") {
-                for (var v:Number = 0; v < visited.length; v++) {
-                    if (visited[v] === target) {
-                        return; // Already visited, skip to prevent infinite loop
-                    }
-                }
-                visited.push(target);
+                if (target.__raVisited === stamp) return;
+                target.__raVisited = stamp;
             }
 
             if (typeof(target) == "movieclip") {
                 for (var key:String in target) {
-                    searchTargetForValue(target[key], value, path + "." + key, output, visited);
+                    searchTargetForValue(target[key], value, path + "." + key, output, stamp);
                 }
             } else if (target instanceof TextField) {
                 if (matchesWildcard(target.text, value)) {
@@ -2572,7 +2572,7 @@ class Main {
                 }
             } else if (target instanceof Array) {
                 for (var j:Number = 0, len:Number = target.length; j < len; ++j) {
-                    searchTargetForValue(target[j], value, path + "[" + j + "]", output, visited);
+                    searchTargetForValue(target[j], value, path + "[" + j + "]", output, stamp);
                 }
             } else if (target == null) {
                 if ("null" == value) {
@@ -2588,7 +2588,7 @@ class Main {
                 }
             } else if (typeof(target) == "object") {
                 for (var key2:String in target) {
-                    searchTargetForValue(target[key2], value, path + "." + key2, output, visited);
+                    searchTargetForValue(target[key2], value, path + "." + key2, output, stamp);
                 }
             } else if (typeof(target) == "boolean") {
                 if (matchesWildcard(String(target), value.toLowerCase())) {
@@ -2606,16 +2606,13 @@ class Main {
      * Recursively search for property names containing a substring
      * @param visited Array to track visited objects (prevents infinite loops from circular references)
      */
-    private static function searchTargetForName(target:Object, nameLower:String, path:String, output:Array, visited:Array):Void {
+    private static function searchTargetForName(target:Object, nameLower:String, path:String, output:Array, stamp:Number):Void {
         try {
-            // Circular reference protection for objects and movieclips
+            // Circular reference protection: stamp objects with a unique marker
+            // per search invocation for O(1) lookup instead of linear array scan
             if (typeof(target) == "movieclip" || typeof(target) == "object") {
-                for (var v:Number = 0; v < visited.length; v++) {
-                    if (visited[v] === target) {
-                        return;
-                    }
-                }
-                visited.push(target);
+                if (target.__raVisited === stamp) return;
+                target.__raVisited = stamp;
             }
 
             if (typeof(target) == "movieclip" || typeof(target) == "object") {
@@ -2624,11 +2621,11 @@ class Main {
                     if (key.toLowerCase().indexOf(nameLower) >= 0) {
                         output.push(childPath);
                     }
-                    searchTargetForName(target[key], nameLower, childPath, output, visited);
+                    searchTargetForName(target[key], nameLower, childPath, output, stamp);
                 }
             } else if (target instanceof Array) {
                 for (var j:Number = 0, len:Number = target.length; j < len; ++j) {
-                    searchTargetForName(target[j], nameLower, path + "[" + j + "]", output, visited);
+                    searchTargetForName(target[j], nameLower, path + "[" + j + "]", output, stamp);
                 }
             }
         } catch (e:Error) { /* skip this subtree */ }

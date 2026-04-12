@@ -436,15 +436,11 @@ class Evaluate {
      * @param output  Array to collect matching path strings
      * @param visited Array for circular reference protection
      */
-    public static function searchTargetForValue(target:Dynamic, value:String, path:String, output:Array<Dynamic>, visited:Array<Dynamic>):Void {
-        // Circular reference protection for objects
+    public static function searchTargetForValue(target:Dynamic, value:String, path:String, output:Array<Dynamic>, visited:flash.utils.Dictionary):Void {
+        // Circular reference protection for objects (Dictionary uses identity keys for O(1) lookup)
         if (#if flash Std.isOfType(target, DisplayObjectContainer) || #end (untyped __typeof__(target) == "object" && target != null)) {
-            var v:Int = 0;
-            while (v < visited.length) {
-                if (untyped visited[v] == target) return;
-                v++;
-            }
-            visited.push(target);
+            if (untyped visited[target] == true) return;
+            untyped visited[target] = true;
         }
 
         #if flash
@@ -510,15 +506,11 @@ class Evaluate {
     /**
      * Recursively search for property names containing a substring.
      */
-    public static function searchTargetForName(target:Dynamic, nameLower:String, path:String, output:Array<Dynamic>, visited:Array<Dynamic>):Void {
-        // Circular reference protection for objects
+    public static function searchTargetForName(target:Dynamic, nameLower:String, path:String, output:Array<Dynamic>, visited:flash.utils.Dictionary):Void {
+        // Circular reference protection for objects (Dictionary uses identity keys for O(1) lookup)
         if (#if flash Std.isOfType(target, DisplayObjectContainer) || #end (untyped __typeof__(target) == "object" && target != null)) {
-            var v:Int = 0;
-            while (v < visited.length) {
-                if (untyped visited[v] == target) return;
-                v++;
-            }
-            visited.push(target);
+            if (untyped visited[target] == true) return;
+            untyped visited[target] = true;
         }
 
         #if flash
