@@ -191,8 +191,8 @@
             message: params.message || '',
         });
 
-        while (entries.value.length > MAX_ENTRIES) {
-            entries.value.shift();
+        if (entries.value.length > MAX_ENTRIES) {
+            entries.value.splice(0, entries.value.length - MAX_ENTRIES);
         }
 
         await nextTick();
