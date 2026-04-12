@@ -272,6 +272,10 @@ class Main {
     }
 
     private static function connectToServer():Void {
+        // Close previous socket to prevent handle leaks across reconnects
+        if (socket != null) {
+            try { socket.close(); } catch (e:Error) { /* already closed */ }
+        }
         socket = new XMLSocket();
         receiveBuffer = "";
 
