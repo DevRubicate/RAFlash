@@ -480,16 +480,20 @@ export class JSONDiff {
         for (const path of pathsToCheck) {
             for (const watcher of this.watchers) {
                 // The onMatch callback now directly passes the collected segments to the watcher's callback.
-                this._traverse(
-                    target,
-                    watcher.pattern.split('/'),
-                    path.split('/'),
-                    (segments: any[]) => {
-                        watcher.callback(segments);
-                    },
-                    [],
-                    [target] // Start the segment accumulation with the root object.
-                );
+                try {
+                    this._traverse(
+                        target,
+                        watcher.pattern.split('/'),
+                        path.split('/'),
+                        (segments: any[]) => {
+                            watcher.callback(segments);
+                        },
+                        [],
+                        [target] // Start the segment accumulation with the root object.
+                    );
+                } catch (e) {
+                    console.error(`Watcher error for pattern "${watcher.pattern}" on path "${path}":`, e);
+                }
             }
         }
     }
