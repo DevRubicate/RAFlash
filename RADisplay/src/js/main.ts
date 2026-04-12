@@ -22,16 +22,29 @@ function displayError(title: string, message: string, stack: string): void {
         user-select: text;
     `;
 
-    // Sanitize HTML to prevent rendering issues
-    const sanitize = (str: string): string => str.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const style = document.createElement('style');
+    style.textContent = '* { user-select: text !important; }';
 
-    errorContainer.innerHTML = `
-        <style>* { user-select: text !important; }</style>
-        <h2>${sanitize(title)}</h2>
-        <br />
-        <div><strong>Message:</strong> ${sanitize(message)}</div>
-        <pre style="white-space: pre-wrap; word-wrap: break-word;"><strong>Stack Trace:</strong><br>${sanitize(stack)}</pre>
-    `;
+    const h2 = document.createElement('h2');
+    h2.textContent = title;
+
+    const br = document.createElement('br');
+
+    const msgDiv = document.createElement('div');
+    const msgLabel = document.createElement('strong');
+    msgLabel.textContent = 'Message:';
+    msgDiv.appendChild(msgLabel);
+    msgDiv.appendChild(document.createTextNode(' ' + message));
+
+    const pre = document.createElement('pre');
+    pre.style.cssText = 'white-space: pre-wrap; word-wrap: break-word;';
+    const stackLabel = document.createElement('strong');
+    stackLabel.textContent = 'Stack Trace:';
+    pre.appendChild(stackLabel);
+    pre.appendChild(document.createElement('br'));
+    pre.appendChild(document.createTextNode(stack));
+
+    errorContainer.append(style, h2, br, msgDiv, pre);
 
     document.body.innerHTML = '';
     document.body.appendChild(errorContainer);
@@ -85,11 +98,7 @@ window.addEventListener('error', (event: ErrorEvent) => {
         error
     } = event;
     const stackTrace = error ? error.stack : 'Stack trace not available.';
-    const formattedMessage = `
-        ${message}
-        <br>
-        Source: ${filename}:${lineno}:${colno}
-    `;
+    const formattedMessage = `${message}\nSource: ${filename}:${lineno}:${colno}`;
 
     displayError('An Uncaught Error Occurred', formattedMessage, stackTrace);
 });
