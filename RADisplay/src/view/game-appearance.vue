@@ -1,7 +1,7 @@
 <template>
     <div class="container" v-if="App.ready">
         <header class="editor-header">
-            <h2 class="header-title">Game Appearance</h2>
+            <h2 class="header-title">Game Info</h2>
         </header>
 
         <div v-if="!App.flashConnected" class="flash-disconnected-banner">
