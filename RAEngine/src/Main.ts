@@ -791,16 +791,15 @@ function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8A
 
     const enc = new TextEncoder();
     const CHILD_NAME = "__raflash";
-    // Negative depth keeps us out of the game's getNextHighestDepth() path:
-    // AS2 returns max(used_depths)+1, so sitting at the legal max (1048575)
-    // poisons every subsequent dynamic-clip allocation in the game (the game
-    // gets 1048576, which is out of range, and createEmptyMovieClip / attachMovie
-    // silently fail). Sitting below every game clip means getNextHighestDepth
-    // returns whatever the game's own max is + 1 — identical to no-firmware mode.
-    // -16383 is in Flash's IDE-reserved range but createEmptyMovieClip from
-    // script accepts it without complaint, and collision with a statically
-    // placed clip at that exact depth is vanishingly unlikely.
-    const CHILD_DEPTH = -16383;
+    // High arbitrary depth that avoids two pitfalls:
+    // - 1048575 (legal max) poisons getNextHighestDepth() — games get 1048576
+    //   which is out of range, breaking all dynamic clip allocation.
+    // - Negative depths (reserved range) get auto-removed by Flash when the
+    //   timeline navigates, killing the firmware's onEnterFrame loop.
+    // 983741 is high enough that no game naturally reaches it, leaves ~65k
+    // headroom for getNextHighestDepth, and is arbitrary enough to avoid
+    // collision with hardcoded depths in games.
+    const CHILD_DEPTH = 983741;
     const urlBytes = enc.encode(firmwareUrl);
     const childNameBytes = enc.encode(CHILD_NAME);
     const rootBytes = enc.encode("_root");
