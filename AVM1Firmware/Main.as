@@ -1034,7 +1034,7 @@ class Main {
             try {
                 // Evict oldest cached badge if cache is full
                 if (Main.badgeImageOrder.length >= Main.MAX_BADGE_CACHE_SIZE) {
-                    var evictId:Number = Main.badgeImageOrder.shift();
+                    var evictId:Number = Number(Main.badgeImageOrder.shift());
                     var evicted:MovieClip = Main.badgeImageCache[evictId];
                     if (evicted != null) evicted.removeMovieClip();
                     delete Main.badgeImageCache[evictId];
