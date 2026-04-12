@@ -1455,12 +1455,10 @@ async function handleApiRequest(
                     }
                 }
 
-                // Relaunch via bat — cmd window flashes briefly, but this is the most reliable approach
+                // Relaunch the new exe as a detached process
                 const newExe = join(installDir, "RAFlash.exe");
-                const batPath = join(installDir, "relaunch.bat");
-                await Deno.writeTextFile(batPath, `@echo off\r\ncd /d "${installDir}"\r\nstart "" "${newExe}"\r\ndel "%~f0"\r\n`);
                 new Deno.Command("cmd.exe", {
-                    args: ["/c", batPath],
+                    args: ["/c", "start", "", newExe],
                     cwd: installDir,
                     stdout: "null", stderr: "null", stdin: "null",
                 }).spawn();
