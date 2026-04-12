@@ -963,6 +963,7 @@ let flashConnected = false;
 // Set when devtools are opened during a game session — disables the
 // quick-exit shortcut for drag-drop launches so we return to the picker.
 let devtoolsOpened = false;
+let gameResetting = false;
 
 // Rich Presence title updates
 let lastRichPresenceTime = 0;
@@ -990,6 +991,7 @@ function resetGameState(): void {
     selectedGamePath = null;
     selectedUserName = null;
     devtoolsOpened = false;
+    gameResetting = false;
     appState = AppState.FILE_PICKER;
     // Deliberately do NOT clear AppData here. After Flash exits the user
     // may still be editing per-game settings in the auto-opened devtools
@@ -1864,6 +1866,10 @@ async function handleApiRequest(
         }
 
         case "resetGame": {
+            if (gameResetting) {
+                return { success: false, error: "Reset already in progress" };
+            }
+            gameResetting = true;
             const gameUrl = AppData.data.gameConfig.originUrl ? resolveGameUrl().url : null;
             emitLog("engine", "info", "Resetting game...");
 
@@ -1905,6 +1911,7 @@ async function handleApiRequest(
             }
 
             const response = await sendToFirmware("resetGame", { gameUrl });
+            gameResetting = false;
             emitLog("engine", "info", "Game reset complete");
             return response;
         }
@@ -2315,7 +2322,11 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
         }
     } catch (e) {
         if (isXMLSocket) {
-            console.error(`XMLSocket error: ${e}`);
+            // ConnectionReset is expected when Flash Player closes — suppress it.
+            const msg = String(e);
+            if (!msg.includes("ConnectionReset") && !msg.includes("ConnectionAborted")) {
+                console.error(`XMLSocket error: ${e}`);
+            }
         }
     } finally {
         if (isXMLSocket) {
