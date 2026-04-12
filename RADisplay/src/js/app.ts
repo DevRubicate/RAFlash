@@ -2,8 +2,27 @@ import { reactive }                            from 'vue';
 import { JSONDiff }                     from './JSONDiff.js';
 import { Network }                      from './network.js';
 
-// deno-lint-ignore no-explicit-any -- App.data is deeply dynamic JSON from server
-export const App: Record<string, any> = reactive({
+interface AppState {
+    ready: boolean;
+    gameId: number;
+    windowId: number;
+    flashConnected: boolean;
+    // deno-lint-ignore no-explicit-any -- deeply dynamic JSON from server
+    data: Record<string, any>;
+    // deno-lint-ignore no-explicit-any
+    originalData: Record<string, any>;
+    windowParams: Record<string, unknown>;
+    // deno-lint-ignore no-explicit-any
+    selectedAsset: Record<string, any> | null;
+    selectedAssetId: number | null;
+    selectedGroupId?: number;
+    initialize(): Promise<void>;
+    getFakeId(): number;
+    setData(key: string, value: unknown): void;
+    save(): Promise<void>;
+}
+
+export const App: AppState = reactive({
     ready: false,
     gameId: 1686,
     windowId: 0,  // Set during network initialization
