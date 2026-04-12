@@ -1615,6 +1615,33 @@ class Main {
         var stack:Array = [];
         for (var i:Number = start; i < end; ++i) {
             var token:String = formula[i];
+            // Stack underflow guard for binary operators — a malformed formula
+            // with more operators than operands would pop undefined from an
+            // empty stack and silently produce NaN/type-error results.
+            if (token == "ADD" || token == "SUB" || token == "MUL" || token == "DIV" ||
+                token == "MOD" || token == "POW" || token == "EQUAL" || token == "NOT_EQUAL" ||
+                token == "GREATER" || token == "GREATER_EQUAL" || token == "LESSER" ||
+                token == "LESSER_EQUAL" || token == "AND" || token == "OR" || token == "XOR") {
+                if (stack.length < 2) {
+                    log("Stack underflow for " + token + " (need 2, have " + stack.length + ")");
+                    return null;
+                }
+            } else if (token == "NOT" || token == "READ_GLOBAL") {
+                if (stack.length < 1) {
+                    log("Stack underflow for " + token + " (need 1, have 0)");
+                    return null;
+                }
+            } else if (token == "OBJECT_ACCESS" || token == "ARRAY_ACCESS") {
+                if (stack.length < 1) {
+                    log("Stack underflow for " + token + " (need 1, have 0)");
+                    return null;
+                }
+            } else if (token == "TERNARY") {
+                if (stack.length < 1) {
+                    log("Stack underflow for TERNARY (need 1, have 0)");
+                    return null;
+                }
+            }
             switch (token) {
                 case "VALUE": {
                     stack.push([formula[++i]]);
