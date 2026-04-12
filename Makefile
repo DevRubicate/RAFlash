@@ -123,9 +123,9 @@ $(TEST_AVM1_SWF): FORCE
 test-engine:
 	@$(DENO) test RAEngine/tests/
 
-# RADisplay tests (Vitest)
+# RADisplay tests (Deno)
 test-display:
-	@cd RADisplay && npx vitest run
+	@$(DENO) test RADisplay/tests/
 
 # AVM2Firmware tests (Haxe/Neko)
 TEST_AVM2_NEKO=.tests/AVM2Tests.n
