@@ -96,6 +96,9 @@ class Main {
     // Socket receive buffer for fragmented messages
     private static var receiveBuffer:String = "";
 
+    // F12 key listener reference (parent mode only), so we can remove it on reset
+    private static var f12KeyListener:Object = null;
+
     // Reconnection
     private static var reconnectTimer:Number = -1;
     private static var reconnectAttempts:Number = 0;
@@ -221,6 +224,12 @@ class Main {
 
             // F12 key listener (parent mode sets this up after the game loads;
             // in child mode the game is already loaded so we set it now).
+            // Remove any prior listener surviving from a previous child-mode
+            // reset — the Key global persists across _level0.loadMovie reloads,
+            // so without this, listeners accumulate on every reset.
+            if (_global.__raF12Listener != null) {
+                Key.removeListener(_global.__raF12Listener);
+            }
             var keyListener:Object = {};
             keyListener.onKeyDown = function():Void {
                 try {
@@ -229,6 +238,7 @@ class Main {
                     }
                 } catch (e:Error) { Main.logError("onKeyDown", e); }
             };
+            _global.__raF12Listener = keyListener;
             Key.addListener(keyListener);
 
             connectToServer();
@@ -627,16 +637,20 @@ class Main {
             gameLoaded = true;
             sendMessage("gameLoaded", { bytes: bytesTotal });
 
-            // Set up F12 key listener after game loads
-            var keyListener:Object = {};
-            keyListener.onKeyDown = function():Void {
+            // Set up F12 key listener after game loads (remove any prior
+            // listener first so resets don't accumulate duplicates).
+            if (f12KeyListener != null) {
+                Key.removeListener(f12KeyListener);
+            }
+            f12KeyListener = {};
+            f12KeyListener.onKeyDown = function():Void {
                 try {
                     if (Key.getCode() == 123) { // F12
                         Main.sendMessage("keypress", { keyCode: 123 });
                     }
                 } catch (e:Error) { Main.logError("onKeyDown", e); }
             };
-            Key.addListener(keyListener);
+            Key.addListener(f12KeyListener);
 
             // Start preloading badge images in background
             startBadgePreload();
