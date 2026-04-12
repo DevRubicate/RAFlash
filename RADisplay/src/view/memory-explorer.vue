@@ -747,7 +747,7 @@
 
     const runDSL = async () => {
         const reply = await Network.send({ command: 'evaluate', params: { input: memoryInput.value } });
-        if (reply.success) return reply.params.result.output;
+        if (reply.success && reply.params?.result?.output) return reply.params.result.output;
         return null;
     };
 
