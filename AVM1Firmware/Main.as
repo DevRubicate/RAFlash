@@ -61,6 +61,8 @@ class Main {
 
     // Badge image preload cache
     private static var badgeImageCache:Object = {};
+    private static var badgeImageOrder:Array = [];  // insertion order for LRU eviction
+    private static var MAX_BADGE_CACHE_SIZE:Number = 200;
     private static var preloadQueue:Array = [];
     private static var currentPreloadId:Number = 0;
     private static var preloadContainer:MovieClip;
@@ -899,6 +901,7 @@ class Main {
                     _global.__raHookPending = {};
                     _global.__raHookNextId = 0;
                     badgeImageCache = {};
+                    badgeImageOrder = [];
                     preloadQueue = [];
                     currentPreloadId = 0;
                     if (preloadContainer != null) {
@@ -1020,7 +1023,15 @@ class Main {
 
         listener.onLoadInit = function(target:MovieClip):Void {
             try {
+                // Evict oldest cached badge if cache is full
+                if (Main.badgeImageOrder.length >= Main.MAX_BADGE_CACHE_SIZE) {
+                    var evictId:Number = Main.badgeImageOrder.shift();
+                    var evicted:MovieClip = Main.badgeImageCache[evictId];
+                    if (evicted != null) evicted.removeMovieClip();
+                    delete Main.badgeImageCache[evictId];
+                }
                 Main.badgeImageCache[Main.currentPreloadId] = target;
+                Main.badgeImageOrder.push(Main.currentPreloadId);
                 Main.preloadNext();
             } catch (e:Error) { Main.logError("preloadNext.onLoadInit", e); }
         };
