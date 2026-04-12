@@ -94,6 +94,10 @@
         overflow-y: auto;
     }
 
+    .editor-body .form-group {
+        flex: none;
+    }
+
     .editor-body .mono-input {
         font-family: var(--font-mono);
     }
