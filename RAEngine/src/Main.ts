@@ -1383,11 +1383,19 @@ async function handleApiRequest(
         }
         case "listUsers": {
             const users = await UserProfile.listUsers();
-            return { success: true, params: { users } };
+            return { success: true, params: { users, lastUser: settings.lastUser } };
         }
         case "createUser": {
             const name = String(input.params.name || "");
             await UserProfile.createUser(name);
+            return { success: true };
+        }
+        case "setLastUser": {
+            const name = String(input.params.name || "");
+            if (name && name !== settings.lastUser) {
+                settings.lastUser = name;
+                await saveSettings(settings);
+            }
             return { success: true };
         }
         case "getSettings": {

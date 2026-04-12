@@ -7,7 +7,7 @@
                      v-for="name in users"
                      :key="name"
                      :class="{ selected: selectedUser === name }"
-                     @click="selectedUser = name">
+                     @click="selectUser(name)">
                     {{ name }}
                 </div>
                 <div class="user-item new-user"
@@ -396,14 +396,24 @@ async function loadUsers() {
         });
         if (response.success) {
             users.value = response.params.users;
-            // Auto-select if only one user
-            if (users.value.length === 1) {
+            const last = response.params.lastUser;
+            if (last && users.value.includes(last)) {
+                selectedUser.value = last;
+            } else if (users.value.includes("Guest")) {
+                selectedUser.value = "Guest";
+            } else if (users.value.length > 0) {
                 selectedUser.value = users.value[0];
             }
         }
     } catch (err) {
         console.error('Failed to load users:', err);
     }
+}
+
+// Select a user and persist the choice
+function selectUser(name) {
+    selectedUser.value = name;
+    Network.send({ command: 'setLastUser', params: { name } });
 }
 
 // Create a new user
