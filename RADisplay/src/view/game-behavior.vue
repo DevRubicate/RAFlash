@@ -14,7 +14,7 @@
 
         <div class="editor-body">
             <div class="form-group">
-                <label for="origin-url">Origin URL</label>
+                <label for="origin-url">Origin URL (to defeat sitelocks)</label>
                 <input type="text" id="origin-url" class="mono-input" v-model="originUrl"
                        :disabled="!isRaflash"
                        placeholder="http://www.coolmathgames.com  or  http://host/path/to/game.swf">
