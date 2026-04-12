@@ -95,6 +95,7 @@ class Main extends MovieClip {
             socket.removeEventListener(IOErrorEvent.IO_ERROR, onError);
             socket.removeEventListener(SecurityErrorEvent.SECURITY_ERROR, onError);
             socket.removeEventListener(Event.CLOSE, onClose);
+            try { socket.close(); } catch (e:Dynamic) { /* already closed */ }
         }
 
         socket = new Socket();
