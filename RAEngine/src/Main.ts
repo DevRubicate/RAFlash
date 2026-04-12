@@ -1435,38 +1435,24 @@ async function handleApiRequest(
                 const exePath = Deno.execPath();
                 const installDir = exePath.replace(/[/\\][^/\\]+$/, "");
 
-                // Extract zip in memory
+                // Save the zip to disk so the NEW version can extract it on
+                // startup. This ensures update logic always runs in the latest
+                // code, making us resilient to bugs in older extractors.
+                const zipPath = join(installDir, "update.zip");
+                await Deno.writeFile(zipPath, zipData);
+
+                // Extract only the exe from the zip — we can't overwrite it
+                // while running, so the old version must handle this part.
                 const files = unzipSync(zipData);
-
-                // Known app paths to update (everything else is left untouched)
-                const appPaths = ["vendor/", "firmware/", "internals/", "assets/"];
-
                 for (const [rawPath, content] of Object.entries(files)) {
-                    // Normalize backslashes and strip the top-level "RAFlash/" folder
                     const normalized = rawPath.replace(/\\/g, "/");
                     const relative = normalized.replace(/^RAFlash\//, "");
-                    if (!relative) continue;
-
-                    // Only copy known app paths
-                    const isAppFile = relative === "RAFlash.exe" || appPaths.some(p => relative.startsWith(p));
-                    if (!isAppFile) continue;
-
-                    const destPath = join(installDir, relative);
-
-                    // Directory entries end with /
-                    if (normalized.endsWith("/")) {
-                        await Deno.mkdir(destPath, { recursive: true });
-                        continue;
-                    }
-
-                    // For the exe: can't overwrite while running, so rename current one out
                     if (relative === "RAFlash.exe") {
                         try { await Deno.remove(join(installDir, "RAFlash.exe.old")); } catch { /* */ }
                         await Deno.rename(exePath, join(installDir, "RAFlash.exe.old"));
+                        await Deno.writeFile(join(installDir, "RAFlash.exe"), content);
+                        break;
                     }
-
-                    await Deno.mkdir(destPath.replace(/[/\\][^/\\]+$/, ""), { recursive: true });
-                    await Deno.writeFile(destPath, content);
                 }
 
                 // Relaunch via bat — cmd window flashes briefly, but this is the most reliable approach
@@ -2449,9 +2435,32 @@ async function main(): Promise<void> {
         }
     }
 
-    // Clean up leftover from self-update (delay to let old process fully exit)
+    // Post-update: the old version saved update.zip and replaced only the
+    // exe. The NEW version (us) extracts everything else, ensuring the
+    // latest extraction logic is always used.
     if (isPostUpdateLaunch) {
-        // File exists — retry deletion a few times in case old process is still exiting
+        const installDir = Deno.execPath().replace(/[/\\][^/\\]+$/, "");
+        const zipPath = join(installDir, "update.zip");
+        try {
+            const zipData = await Deno.readFile(zipPath);
+            const files = unzipSync(zipData);
+            for (const [rawPath, content] of Object.entries(files)) {
+                const normalized = rawPath.replace(/\\/g, "/");
+                const relative = normalized.replace(/^RAFlash\//, "");
+                if (!relative || relative === "RAFlash.exe") continue;
+
+                const destPath = join(installDir, relative);
+                if (normalized.endsWith("/")) {
+                    await Deno.mkdir(destPath, { recursive: true });
+                    continue;
+                }
+                await Deno.mkdir(destPath.replace(/[/\\][^/\\]+$/, ""), { recursive: true });
+                await Deno.writeFile(destPath, content);
+            }
+            await Deno.remove(zipPath);
+        } catch { /* no update.zip — old-style update or already processed */ }
+
+        // Clean up old exe (retry in case old process is still exiting)
         for (let i = 0; i < 10; i++) {
             try { await Deno.remove(oldExe); break; } catch { await new Promise(r => setTimeout(r, 500)); }
         }
