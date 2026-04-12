@@ -46,13 +46,6 @@
                     <option value="neutral">Neutral (game decides)</option>
                 </select>
             </div>
-
-            <div class="form-group checkbox-group">
-                <label>
-                    <input type="checkbox" v-model="shrinkHeight" :disabled="!isRaflash">
-                    Shrink height by 20px (menu bar compensation)
-                </label>
-            </div>
         </div>
 
         <footer class="editor-footer" v-if="isRaflash">
@@ -143,20 +136,17 @@
     const originUrl = ref('');
     const scaleMode = ref('noScale');
     const align = ref('TL');
-    const shrinkHeight = ref(true);
     const dirty = ref(false);
     const isRaflash = ref(false);
 
     let savedOriginUrl = '';
     let savedScaleMode = 'noScale';
     let savedAlign = 'TL';
-    let savedShrinkHeight = true;
 
-    watch([originUrl, scaleMode, align, shrinkHeight], () => {
+    watch([originUrl, scaleMode, align], () => {
         dirty.value = originUrl.value !== savedOriginUrl
             || scaleMode.value !== savedScaleMode
-            || align.value !== savedAlign
-            || shrinkHeight.value !== savedShrinkHeight;
+            || align.value !== savedAlign;
     });
 
     const save = async () => {
@@ -167,7 +157,6 @@
                 originUrl: originUrl.value,
                 scaleMode: scaleMode.value,
                 align: align.value,
-                shrinkHeight: shrinkHeight.value,
             }
         });
         // Also update in-memory gameConfig so the engine and firmware pick it up
@@ -182,7 +171,6 @@
                         badgeImage: config.badgeImage || '',
                         scaleMode: scaleMode.value,
                         align: align.value,
-                        shrinkHeight: shrinkHeight.value,
                     }]
                 ]
             }
@@ -190,7 +178,6 @@
         savedOriginUrl = originUrl.value;
         savedScaleMode = scaleMode.value;
         savedAlign = align.value;
-        savedShrinkHeight = shrinkHeight.value;
         dirty.value = false;
     };
 
@@ -199,11 +186,9 @@
         savedOriginUrl = config.originUrl || '';
         savedScaleMode = config.scaleMode || 'noScale';
         savedAlign = (config.align != null) ? config.align : 'TL';
-        savedShrinkHeight = config.shrinkHeight !== false;
         originUrl.value = savedOriginUrl;
         scaleMode.value = savedScaleMode;
         align.value = savedAlign;
-        shrinkHeight.value = savedShrinkHeight;
 
         const response = await Network.send({ command: 'getSettings', params: {} });
         if (response.success) {

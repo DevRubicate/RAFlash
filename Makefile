@@ -36,12 +36,24 @@ stage:
 clean:
 	rm -rf .build/firmware .build/internals .build/vendor .build/assets .build/RAFlash .build/RAFlash.exe .tests
 
+# === AVM1 Bootstrap (menu bar setup before game loads) ===
+
+AVM1_BOOTSTRAP_SWF=.build/firmware/AVM1Bootstrap.swf
+AVM1_BOOTSTRAP_MAIN=AVM1Firmware/BootstrapEntry.as
+
+avm1-bootstrap-build: $(AVM1_BOOTSTRAP_SWF)
+
+$(AVM1_BOOTSTRAP_SWF): FORCE
+	@mkdir -p $(dir $@)
+	@rm -f $@
+	@$(MTASC) -cp AVM1Firmware -swf $@ -main $(AVM1_BOOTSTRAP_MAIN) -header $(MTASC_HEADER) 2>&1 | grep -v -e "32 KiB" -e "overlength jumps" -e "island insertion"; test -f $@
+
 # === AVM1 Firmware ===
 
 AVM1_SWF=.build/firmware/AVM1.swf
 AVM1_MAIN=AVM1Firmware/AVM1Entry.as
 
-avm1-build: $(AVM1_SWF)
+avm1-build: $(AVM1_SWF) $(AVM1_BOOTSTRAP_SWF)
 
 $(AVM1_SWF): FORCE
 	@mkdir -p $(dir $@)
@@ -72,7 +84,7 @@ $(AVM2_SWF): FORCE
 # === Compile to standalone executable ===
 
 DENO_PERMISSIONS=--allow-ffi --allow-net --allow-run --allow-read --allow-write --allow-env
-DENO_INCLUDES=--include=$(AVM1_SWF) --include=$(AVM1_WRAPPER_SWF) --include=$(AVM2_SWF) --include=.build/internals/assets --include=assets/icon.png --include=assets/icon.ico
+DENO_INCLUDES=--include=$(AVM1_SWF) --include=$(AVM1_BOOTSTRAP_SWF) --include=$(AVM1_WRAPPER_SWF) --include=$(AVM2_SWF) --include=.build/internals/assets --include=assets/icon.png --include=assets/icon.ico
 
 compile: avm1-build avm1-wrapper-build avm2-build assets stage
 	@rm -f .build/RAFlash .build/RAFlash.exe

@@ -312,6 +312,7 @@ interface AVMConfig {
     firmwareUrl: string; // URL path Flash Player loads (e.g. "/avm1-wrapper.swf")
     firmwareSwf: string;
     innerFirmwareSwf?: string; // AVM1 firmware loaded by AVM2 wrapper
+    bootstrapSwf?: string; // Child-mode bootstrap SWF (hides menu bar before game loads)
     messageTerminator: string;
     patchFirmware: boolean;
     convertPngToJpeg: boolean;
@@ -351,7 +352,6 @@ function patchFirmwareSwf(
     targetBgColor: string | null,
     targetWidth: number,
     targetHeight: number,
-    gameHidesMenuBar: boolean
 ): Uint8Array {
     // 1. Check if compressed (CWS = zlib, ZWS = lzma)
     const signature = String.fromCharCode(firmwareBytes[0], firmwareBytes[1], firmwareBytes[2]);
@@ -380,12 +380,9 @@ function patchFirmwareSwf(
     }
 
     // 3. Rewrite RECT structure with game dimensions
-    // Compensate for Flash Player's menu bar (20px) which fscommand("showmenu","false") removes.
-    // Games that already hide the menu bar themselves don't need compensation.
-    const menuBarCompensation = gameHidesMenuBar ? 0 : 20;
     // RECT format: [Nbits:5][Xmin:N][Xmax:N][Ymin:N][Ymax:N] (bit-packed)
     const xMaxTwips = targetWidth * 20;
-    const yMaxTwips = (targetHeight - menuBarCompensation) * 20;
+    const yMaxTwips = targetHeight * 20;
     // Nbits must hold the largest value (unsigned) plus a sign bit
     const maxVal = Math.max(xMaxTwips, yMaxTwips);
     const newNbits = maxVal > 0 ? Math.ceil(Math.log2(maxVal + 1)) + 1 : 1;
@@ -485,47 +482,6 @@ function patchFirmwareSwf(
     }
 
     return data;
-}
-
-/**
- * Check if a SWF contains fscommand("showmenu") by scanning for the string.
- * Games that hide the menu bar themselves don't need menu bar height compensation.
- */
-function swfHidesMenuBar(swfBytes: Uint8Array): boolean {
-    // Decompress if needed to search actual content
-    let data: Uint8Array;
-    const sig = String.fromCharCode(swfBytes[0], swfBytes[1], swfBytes[2]);
-    if (sig === "CWS") {
-        try {
-            const decompressed = pako.inflate(swfBytes.slice(8));
-            data = new Uint8Array(8 + decompressed.length);
-            data.set(swfBytes.slice(0, 8));
-            data.set(decompressed, 8);
-        } catch {
-            data = swfBytes;
-        }
-    } else {
-        data = swfBytes;
-    }
-
-    // Search for "FSCommand:showMenu" — the compiled form of fscommand("showmenu").
-    // Case-insensitive on the "showMenu" part since Flash accepts any casing.
-    const prefix = new TextEncoder().encode("FSCommand:");
-    const suffix = [115, 104, 111, 119, 109, 101, 110, 117]; // "showmenu" lowercase
-    const needleLen = prefix.length + suffix.length;
-    for (let i = 0; i <= data.length - needleLen; i++) {
-        let match = true;
-        for (let j = 0; j < prefix.length; j++) {
-            if (data[i + j] !== prefix[j]) { match = false; break; }
-        }
-        if (!match) continue;
-        match = true;
-        for (let j = 0; j < suffix.length; j++) {
-            if ((data[i + prefix.length + j] | 0x20) !== suffix[j]) { match = false; break; }
-        }
-        if (match) return true;
-    }
-    return false;
 }
 
 /**
@@ -975,6 +931,15 @@ let firmwareMessageBuffer = "";
 const pendingRequests = new Map<string, (response: Record<string, unknown>) => void>();
 let requestIdCounter = 0;
 
+// Resolves when firmware (re)connects. Callers can await this to wait for
+// a brief reconnect window instead of failing immediately.
+let firmwareConnectResolve: (() => void) | null = null;
+let firmwareConnectPromise: Promise<void> | null = null;
+function resetFirmwareConnectPromise(): void {
+    firmwareConnectPromise = new Promise<void>(resolve => { firmwareConnectResolve = resolve; });
+}
+resetFirmwareConnectPromise();
+
 // Connected devtools WebSocket clients
 const devtoolsClients: Set<WebSocket> = new Set();
 
@@ -1014,6 +979,7 @@ function resetGameState(): void {
     }
     firmwareWriter = null;
     firmwareConnected = false;
+    resetFirmwareConnectPromise();
     pendingRequests.clear();
     requestIdCounter = 0;
     watcherSockets.clear();
@@ -1042,11 +1008,24 @@ function generateRequestId(): string {
 }
 
 /**
- * Send a command to the firmware and wait for response
+ * Send a command to the firmware and wait for response.
+ * If firmware is temporarily disconnected (e.g. during a child-mode reset),
+ * waits up to `reconnectTimeout` ms for it to reconnect before giving up.
  */
-async function sendToFirmware(command: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+async function sendToFirmware(command: string, params: Record<string, unknown> = {}, reconnectTimeout = 5000): Promise<Record<string, unknown>> {
     if (!firmwareWriter || !firmwareConnected) {
-        return { success: false, error: "Firmware not connected" };
+        if (reconnectTimeout > 0 && flashConnected && firmwareConnectPromise) {
+            // Flash Player is still alive — firmware may be reconnecting (e.g. after reset)
+            const reconnected = await Promise.race([
+                firmwareConnectPromise.then(() => true),
+                new Promise<false>(r => setTimeout(() => r(false), reconnectTimeout)),
+            ]);
+            if (!reconnected || !firmwareWriter || !firmwareConnected) {
+                return { success: false, error: "Firmware not connected" };
+            }
+        } else {
+            return { success: false, error: "Firmware not connected" };
+        }
     }
 
     const id = generateRequestId();
@@ -1225,7 +1204,6 @@ function startHttpServerInner() {
                             gameMetadata.backgroundColor,
                             gameMetadata.width,
                             gameMetadata.height,
-                            AppData.data.gameConfig.shrinkHeight !== true
                         );
                         return new Response(new Uint8Array(patchedFirmware) as BodyInit, {
                             status: 200,
@@ -1262,9 +1240,27 @@ function startHttpServerInner() {
                         gameMetadata.backgroundColor,
                         gameMetadata.width,
                         gameMetadata.height,
-                        AppData.data.gameConfig.shrinkHeight !== true
                     );
                     return new Response(new Uint8Array(patchedFirmware) as BodyInit, {
+                        status: 200,
+                        headers: { "Content-Type": "application/x-shockwave-flash" },
+                    });
+                }
+
+                // Serve bootstrap SWF (child mode: hides menu bar before game loads)
+                if (url.pathname === "/avm1-bootstrap.swf" && avmConfig?.bootstrapSwf && selectedGamePath) {
+                    const gameSwfBuffer = await Deno.readFile(selectedGamePath);
+                    const gameMetadata = parseSwfMetadata(gameSwfBuffer);
+                    const bootstrapBytes = await Deno.readFile(avmConfig.bootstrapSwf);
+                    // Patch RECT to match game dimensions so Flash Player sizes the window correctly
+                    const patchedBootstrap = patchFirmwareSwf(
+                        bootstrapBytes,
+                        gameMetadata.frameRate,
+                        gameMetadata.backgroundColor,
+                        gameMetadata.width,
+                        gameMetadata.height,
+                    );
+                    return new Response(new Uint8Array(patchedBootstrap) as BodyInit, {
                         status: 200,
                         headers: { "Content-Type": "application/x-shockwave-flash" },
                     });
@@ -1410,7 +1406,7 @@ async function handleApiRequest(
                 sendToFirmware("setRuntimeSetting", {
                     key: "benchmarkingEnabled",
                     value: settings.benchmarkingEnabled
-                }).catch(() => {});
+                }, 0).catch(() => {});
             }
             return { success: true };
         }
@@ -1440,7 +1436,6 @@ async function handleApiRequest(
                     if (gc.badgeImage) dataJson.badgeImage = gc.badgeImage;
                     dataJson.scaleMode = 'showAll';
                     dataJson.align = 'TL';
-                    dataJson.shrinkHeight = true;
 
                     const zipped = zipSync({
                         "start.swf": swfBytes,
@@ -1489,7 +1484,6 @@ async function handleApiRequest(
                 if ("badgeImage" in params) dataJson.badgeImage = params.badgeImage as string;
                 if ("scaleMode" in params) dataJson.scaleMode = params.scaleMode as string;
                 if ("align" in params) dataJson.align = params.align as string;
-                if ("shrinkHeight" in params) dataJson.shrinkHeight = params.shrinkHeight as string;
 
                 // Rewrite the zip with updated data.json
                 files["data.json"] = new TextEncoder().encode(JSON.stringify(dataJson, null, 2));
@@ -1601,14 +1595,14 @@ async function handleApiRequest(
             const rawInput = String(input.params.input || "");
             const compiled = compileFormula(rawInput);
             const response = await sendToFirmware("evaluate", { formula: compiled });
-            return { success: response.success, params: response };
+            return { success: response.success, error: response.error, params: response };
         }
         case "evaluateMultiple": {
             // Compile all input strings to bytecode
             const inputs = (input.params.inputs || []) as string[];
             const compiled = inputs.map(inp => compileFormula(inp || ""));
             const response = await sendToFirmware("evaluateMultiple", { formulas: compiled });
-            return { success: response.success, params: response };
+            return { success: response.success, error: response.error, params: response };
         }
         case "getRichPresenceResult": {
             const response = await sendToFirmware("getRichPresenceResult", {
@@ -1907,7 +1901,7 @@ async function handleApiRequest(
                 // parent mode where the firmware persists across the reset; in
                 // child mode the firmware is destroyed and resyncs from engine
                 // on reconnect anyway, but sending is harmless).
-                sendToFirmware("editData", { changes: resetDiff }).catch(() => {});
+                sendToFirmware("editData", { changes: resetDiff }, 0).catch(() => {});
             }
 
             const response = await sendToFirmware("resetGame", { gameUrl });
@@ -2040,11 +2034,39 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
                 const gameSwfBuffer = await Deno.readFile(selectedGamePath!);
                 const gameMetadata = parseSwfMetadata(gameSwfBuffer);
                 const firmwareBytes = await Deno.readFile(avmConfig.firmwareSwf);
-                swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height, AppData.data.gameConfig.shrinkHeight !== true);
+                swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height);
             } else {
                 swfData = await Deno.readFile(avmConfig.firmwareSwf);
             }
 
+            const response = [
+                "HTTP/1.1 200 OK",
+                "Content-Type: application/x-shockwave-flash",
+                `Content-Length: ${swfData.length}`,
+                "Connection: close",
+                "",
+                "",
+            ].join("\r\n");
+            await writer.write(encoder.encode(response));
+            await writer.write(swfData);
+            writer.releaseLock();
+            reader.releaseLock();
+            conn.close();
+            return;
+        }
+
+        // HTTP request for bootstrap SWF (child mode: sets up stage before game loads)
+        if (httpBuffer.startsWith("GET /avm1-bootstrap.swf") && avmConfig.bootstrapSwf) {
+            const gameSwfBuffer = await Deno.readFile(selectedGamePath!);
+            const gameMetadata = parseSwfMetadata(gameSwfBuffer);
+            const bootstrapBytes = await Deno.readFile(avmConfig.bootstrapSwf);
+            const swfData = patchFirmwareSwf(
+                bootstrapBytes,
+                gameMetadata.frameRate,
+                gameMetadata.backgroundColor,
+                gameMetadata.width,
+                gameMetadata.height,
+            );
             const response = [
                 "HTTP/1.1 200 OK",
                 "Content-Type: application/x-shockwave-flash",
@@ -2072,7 +2094,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
                 const gameSwfBuffer = await Deno.readFile(selectedGamePath!);
                 const gameMetadata = parseSwfMetadata(gameSwfBuffer);
                 const firmwareBytes = await Deno.readFile(avmConfig.innerFirmwareSwf);
-                swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height, AppData.data.gameConfig.shrinkHeight !== true);
+                swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height);
             }
 
             const response = [
@@ -2101,7 +2123,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
             const rawSwfData = await Deno.readFile(selectedGamePath!);
             let swfData: Uint8Array = rawSwfData;
             if (resolveFirmwareMode() === "child") {
-                // Patch game SWF RECT to compensate for menu bar removal
+                // Patch game SWF RECT to match game dimensions and inject firmware loader
                 const gameMetadata = parseSwfMetadata(rawSwfData);
                 swfData = patchFirmwareSwf(
                     rawSwfData,
@@ -2109,7 +2131,6 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
                     gameMetadata.backgroundColor,
                     gameMetadata.width,
                     gameMetadata.height,
-                    AppData.data.gameConfig.shrinkHeight !== true
                 );
 
                 const rsOriginUrl = AppData.data.gameConfig.originUrl;
@@ -2274,10 +2295,11 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
         isXMLSocket = true;
         firmwareWriter = writer;
         firmwareConnected = true;
+        if (firmwareConnectResolve) firmwareConnectResolve();
         emitLog("engine", "info", "Firmware connected");
         // Send app data to firmware (don't await - would deadlock before read loop starts)
         const gameUrl = AppData.data.gameConfig.originUrl ? resolveGameUrl().url : null;
-        sendToFirmware("setup", { data: AppData.data, gameUrl, settings }).catch(() => {});
+        sendToFirmware("setup", { data: AppData.data, gameUrl, settings }, 0).catch(() => {});
 
         // Process initial data
         if (httpBuffer.trim()) {
@@ -2301,6 +2323,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
             firmwareConnected = false;
             firmwareWriter = null;
             firmwareMessageBuffer = "";
+            resetFirmwareConnectPromise();
             // Clear any in-flight requests so their promises don't dangle when
             // the firmware reconnects (e.g. after a child-mode resetGame).
             for (const [, resolver] of pendingRequests) {
@@ -2364,7 +2387,7 @@ function handleFirmwareData(data: string): void {
                     label: "",
                     align: "right",
                     imageUrl,
-                }).catch(() => {});
+                }, 0).catch(() => {});
             } else if (parsed.type === "keypress") {
                 // F12 key pressed - open devtools
                 if (parsed.data?.keyCode === 123) {
@@ -2397,7 +2420,7 @@ function handleFirmwareData(data: string): void {
 
                     // Send derivedDiff (watcher changes only) back to firmware
                     if (derivedDiff.edited && derivedDiff.edited.length > 0) {
-                        sendToFirmware("editData", { changes: derivedDiff }).catch(() => {});
+                        sendToFirmware("editData", { changes: derivedDiff }, 0).catch(() => {});
                     }
 
                     // Persist changes to disk
@@ -2473,9 +2496,25 @@ function launchFlashPlayer(): Deno.ChildProcess {
     // Note: cwd is .build/ during development (make run) and the exe's directory when distributed
     const resolved = resolveGameUrl();
     const mode = resolveFirmwareMode();
-    const launchUrl = (mode === "child" || mode === "none")
-        ? resolved.url
-        : `http://${resolved.domain}${avmConfig.firmwareUrl}`;
+    let launchUrl: string;
+    if (avmConfig.bootstrapSwf && mode !== "none") {
+        // Bootstrap sets up the stage environment (menu bar, scaleMode, align)
+        // before loading the next SWF into _level0. In child mode that's
+        // game.swf; in parent mode that's the firmware wrapper.
+        const gc = AppData.data.gameConfig;
+        const nextUrl = (mode === "child")
+            ? resolved.url
+            : `http://${resolved.domain}${avmConfig.firmwareUrl}`;
+        // Build query string manually — Flash Player's FlashVar parser
+        // doesn't URL-decode values, so we must not encode them.
+        const qScaleMode = gc.scaleMode || "neutral";
+        const qAlign = gc.align ?? "neutral";
+        launchUrl = `http://${resolved.domain}/avm1-bootstrap.swf?gameUrl=${nextUrl}&scaleMode=${qScaleMode}&align=${qAlign}`;
+    } else if (mode === "child" || mode === "none") {
+        launchUrl = resolved.url;
+    } else {
+        launchUrl = `http://${resolved.domain}${avmConfig.firmwareUrl}`;
+    }
 
     const command = new Deno.Command(fpPath, {
         args: [launchUrl],
@@ -2695,7 +2734,7 @@ async function main(): Promise<void> {
         selectedGamePath = resolvedGamePath;
 
         // --- .raflash handling: extract start.swf and data.json from zip ---
-        let raflashData: { title?: string; originUrl?: string; badgeImage?: string } | null = null;
+        let raflashData: { title?: string; originUrl?: string; badgeImage?: string; scaleMode?: string; align?: string } | null = null;
         let extractedSwfBytes: Uint8Array | null = null;
 
         if (resolvedGamePath.toLowerCase().endsWith(".raflash")) {
@@ -2725,10 +2764,7 @@ async function main(): Promise<void> {
 
         avmConfig = gameMetadata.useAS3
             ? { mode: "AVM2", firmwareUrl: "/avm2-firmware.swf", firmwareSwf: "firmware/AVM2.swf", messageTerminator: "\n", patchFirmware: true, convertPngToJpeg: false }
-            : { mode: "AVM1", firmwareUrl: "/avm1-wrapper.swf", firmwareSwf: "firmware/AVM1Wrapper.swf", innerFirmwareSwf: "firmware/AVM1.swf", messageTerminator: "\0", patchFirmware: true, convertPngToJpeg: true };
-
-        // Menu bar height compensation is applied after AppData loads (below)
-        // since it depends on the gameConfig.shrinkHeight setting.
+            : { mode: "AVM1", firmwareUrl: "/avm1-wrapper.swf", firmwareSwf: "firmware/AVM1Wrapper.swf", innerFirmwareSwf: "firmware/AVM1.swf", bootstrapSwf: "firmware/AVM1Bootstrap.swf", messageTerminator: "\0", patchFirmware: true, convertPngToJpeg: true };
 
         // Load game-specific state (identified by MD5 hash of the file — .swf or .raflash)
         await AppData.setGamePath(resolvedGamePath);
@@ -2753,17 +2789,9 @@ async function main(): Promise<void> {
             // (not neutral) when the data.json doesn't specify them.
             const raScale = raflashData.scaleMode ?? 'showAll';
             const raAlign = (raflashData.align != null) ? raflashData.align : 'TL';
-            const raShrink = (raflashData.shrinkHeight != null) ? raflashData.shrinkHeight : true;
             if (gc.scaleMode !== raScale) { gc.scaleMode = raScale; changed = true; }
             if (gc.align !== raAlign) { gc.align = raAlign; changed = true; }
-            if (gc.shrinkHeight !== raShrink) { gc.shrinkHeight = raShrink; changed = true; }
             if (changed) await AppData.saveData();
-        }
-
-        // Compensate window height for menu bar removal if configured.
-        // The firmware hides the menu bar; shrinkHeight removes the 20px gap.
-        if (AppData.data.gameConfig.shrinkHeight === true) {
-            gameWindowHeight -= 20;
         }
 
         // Load user and apply previously unlocked achievements

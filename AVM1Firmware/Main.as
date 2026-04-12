@@ -188,15 +188,11 @@ class Main {
             // child clip (e.g. _level0.__raflash) of the game's _root. The
             // game IS _level0 and is already running.
             //
-            // Set up player chrome (no menu bar, no right-click items, no
-            // auto-scale) so the player presents the same way in child mode
-            // as it does in parent mode. Most games disable chrome
-            // themselves on their first frame, but doing it here too means
-            // games that don't bother still get a consistent presentation.
-            // fscommand calls work from any clip; they go to the player,
-            // not the enclosing scope.
-            Stage.scaleMode = "noScale";
-            Stage.align = "TL";
+            // Hide menu bar and right-click items so the player presents
+            // cleanly. Stage.scaleMode/align are NOT set here — they are
+            // enforced per-frame by onFrame() once the setup command arrives
+            // with the gameConfig. Setting them here would override a
+            // "neutral" config that wants the game to decide its own scaling.
             fscommand("showmenu", "false");
             fscommand("allowscale", "false");
             // Apply the trimmed menu via the prototype chain so every existing
@@ -247,9 +243,9 @@ class Main {
             return;
         }
 
-        // Parent mode (existing behavior — unchanged)
-        Stage.scaleMode = "noScale";
-        Stage.align = "TL";
+        // Parent mode: hide menu bar and right-click items.
+        // Stage.scaleMode/align are enforced per-frame by onFrame() once
+        // the setup command delivers the gameConfig.
         fscommand("showmenu", "false");
         // See child-mode comment above for why this uses prototype assignment.
         var cm:ContextMenu = new ContextMenu();
@@ -733,7 +729,14 @@ class Main {
 
             case "setup":
                 if (initialSetupDone) {
-                    // Reconnect: firmware state is authoritative, push it back to Deno
+                    // Reconnect: firmware's runtime state (assets with live hit
+                    // counts etc.) is authoritative — push it back to Deno.
+                    // But always accept gameConfig from Deno since it owns
+                    // config fields like scaleMode/align/shrinkHeight that the
+                    // firmware doesn't modify.
+                    if (params.data != undefined && params.data.gameConfig != undefined) {
+                        AppData.data.gameConfig = params.data.gameConfig;
+                    }
                     sendResponse(id, { success: true });
                     sendMessage("syncState", { appData: AppData.data });
                 } else {
@@ -899,11 +902,22 @@ class Main {
                     // injected bootstrap on frame 1 of the fresh game will load
                     // a new firmware that reconnects and re-handshakes.
                     sendResponse(id, { success: true });
+                    // Reset Stage properties to Flash Player defaults before
+                    // reload. loadMovie does NOT reset these, so without this
+                    // the reloaded game would inherit whatever scaleMode/align
+                    // the previous run left behind — causing different behavior
+                    // after reset vs fresh launch.
+                    Stage.scaleMode = "showAll";
+                    Stage.align = "";
                     var resetUrl:String = String(_level0._url);
                     sendMessage("log", { message: "[reset] reloading _level0 from " + resetUrl });
                     _level0.loadMovie(resetUrl);
                 } else {
-                    // Parent mode: unload game and reset all runtime state
+                    // Parent mode: unload game and reset all runtime state.
+                    // Restore Flash Player default Stage properties so the
+                    // reloaded game starts with the same state as a fresh launch.
+                    Stage.scaleMode = "showAll";
+                    Stage.align = "";
                     gameRoot.unloadMovie();
                     gameContainer.removeMovieClip();
                     gameLoaded = false;

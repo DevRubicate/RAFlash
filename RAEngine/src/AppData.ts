@@ -6,7 +6,7 @@ export class AppData {
     static data: AppDataStructure = {
         assets: [],
         codeNotes: [],
-        gameConfig: { title: '', originUrl: '', badgeImage: '', scaleMode: 'neutral', align: 'neutral', shrinkHeight: false },
+        gameConfig: { title: '', originUrl: '', badgeImage: '', scaleMode: 'neutral', align: 'neutral' },
     };
 
     // Game-specific state file path
@@ -58,6 +58,13 @@ export class AppData {
 
             const diff = JSONDiff.getDataDiff(AppData.data, loadedData);
             JSONDiff.processIncomingDiff(AppData.data, diff);
+
+            // Backfill defaults for fields added after existing state files
+            // were created. The diff-based load strips fields not present in
+            // the saved file, so we restore them to their defaults here.
+            const gc = AppData.data.gameConfig;
+            if (gc.scaleMode == null) gc.scaleMode = 'neutral';
+            if (gc.align == null) gc.align = 'neutral';
         } catch (error) {
             if (error instanceof Deno.errors.NotFound) {
                 // New game, start fresh
@@ -325,7 +332,6 @@ export class AppData {
             badgeImage: { type: 'string' },
             scaleMode: { type: 'string' },
             align: { type: 'string' },
-            shrinkHeight: { type: 'boolean' },
         }
     };
 
