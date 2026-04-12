@@ -1797,25 +1797,31 @@ class Main {
                     var b = stack.pop();
                     var a = stack.pop();
                     if (a.length == 1 && b.length == 1) {
-                        stack.push([a[0] / b[0]]);
+                        stack.push([b[0] == 0 ? 0 : a[0] / b[0]]);
                         break;
                     }
                     if (a.length == 1) {
                         var result = [];
                         for (var j = 0; j < b.length; ++j) {
-                            result.push(a[0] / b[j]);
+                            result.push(b[j] == 0 ? 0 : a[0] / b[j]);
                         }
                         stack.push(result);
                     } else if (b.length == 1) {
-                        var result = [];
-                        for (var j = 0; j < a.length; ++j) {
-                            result.push(a[j] / b[0]);
+                        if (b[0] == 0) {
+                            var result = [];
+                            for (var j = 0; j < a.length; ++j) result.push(0);
+                            stack.push(result);
+                        } else {
+                            var result = [];
+                            for (var j = 0; j < a.length; ++j) {
+                                result.push(a[j] / b[0]);
+                            }
+                            stack.push(result);
                         }
-                        stack.push(result);
                     } else if (a.length == b.length) {
                         var result = [];
                         for (var j = 0; j < a.length; ++j) {
-                            result.push(a[j] / b[j]);
+                            result.push(b[j] == 0 ? 0 : a[j] / b[j]);
                         }
                         stack.push(result);
                     } else {
