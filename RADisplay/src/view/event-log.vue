@@ -195,9 +195,13 @@
             entries.value.splice(0, entries.value.length - MAX_ENTRIES);
         }
 
+        // Auto-scroll only if the user is already at (or near) the bottom.
+        // This preserves their scroll position when reviewing older entries.
+        const el = logContainer.value;
+        const wasAtBottom = el && (el.scrollHeight - el.scrollTop - el.clientHeight < 40);
         await nextTick();
-        if (logContainer.value) {
-            logContainer.value.scrollTop = logContainer.value.scrollHeight;
+        if (el && wasAtBottom) {
+            el.scrollTop = el.scrollHeight;
         }
     };
 
