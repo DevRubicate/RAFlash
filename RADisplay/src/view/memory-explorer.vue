@@ -512,6 +512,7 @@
     const dropdownOpen = ref(false);
 
     // History stack for undo/redo navigation
+    const MAX_HISTORY = 50;
     const history = ref([]);
     const historyIndex = ref(-1);
     let restoringHistory = false;
@@ -543,6 +544,10 @@
             leavesResults: JSON.parse(JSON.stringify(leavesResults.value)),
             filterText: filterText.value,
         });
+        // Prune oldest entries if history exceeds limit
+        if (history.value.length > MAX_HISTORY) {
+            history.value.splice(0, history.value.length - MAX_HISTORY);
+        }
         historyIndex.value = history.value.length - 1;
     };
 
