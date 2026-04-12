@@ -450,7 +450,15 @@ class Main {
             // become irrelevant by the time the game settles.
             if (childMode) {
                 try {
-                    if (gameRoot == null || countGameChildren(gameRoot) == 0) {
+                    // Re-resolve if gameRoot is empty/null, OR periodically
+                    // (every 60 frames) to catch orphaned levels where the
+                    // game moved its content to a different _level.
+                    var needsRescan:Boolean = (gameRoot == null || countGameChildren(gameRoot) == 0);
+                    if (!needsRescan && frameCount % 60 == 0) {
+                        var candidate:MovieClip = resolveChildModeGameRoot(_self);
+                        needsRescan = (candidate != null && candidate != gameRoot);
+                    }
+                    if (needsRescan) {
                         var newRoot:MovieClip = resolveChildModeGameRoot(_self);
                         if (newRoot != null && newRoot != gameRoot) {
                             gameRoot = newRoot;
