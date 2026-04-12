@@ -6,7 +6,7 @@ export class AppData {
     static data: AppDataStructure = {
         assets: [],
         codeNotes: [],
-        gameConfig: { title: '', originUrl: '', badgeImage: '' },
+        gameConfig: { title: '', originUrl: '', badgeImage: '', scaleMode: 'neutral', align: 'neutral', shrinkHeight: false },
     };
 
     // Game-specific state file path
@@ -61,7 +61,7 @@ export class AppData {
         } catch (error) {
             if (error instanceof Deno.errors.NotFound) {
                 // New game, start fresh
-                this.data = { assets: [], codeNotes: [], gameConfig: { title: '', originUrl: '', badgeImage: '' } };
+                this.data = { assets: [], codeNotes: [], gameConfig: { title: '', originUrl: '', badgeImage: '', scaleMode: 'neutral', align: 'neutral', shrinkHeight: false } };
             } else {
                 throw error;
             }
@@ -323,6 +323,9 @@ export class AppData {
             title: { type: 'string' },
             originUrl: { type: 'string' },
             badgeImage: { type: 'string' },
+            scaleMode: { type: 'string' },
+            align: { type: 'string' },
+            shrinkHeight: { type: 'boolean' },
         }
     };
 

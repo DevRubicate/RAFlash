@@ -1225,7 +1225,7 @@ function startHttpServerInner() {
                             gameMetadata.backgroundColor,
                             gameMetadata.width,
                             gameMetadata.height,
-                            swfHidesMenuBar(gameSwfBuffer)
+                            AppData.data.gameConfig.shrinkHeight !== true
                         );
                         return new Response(new Uint8Array(patchedFirmware) as BodyInit, {
                             status: 200,
@@ -1262,7 +1262,7 @@ function startHttpServerInner() {
                         gameMetadata.backgroundColor,
                         gameMetadata.width,
                         gameMetadata.height,
-                        swfHidesMenuBar(gameSwfBuffer)
+                        AppData.data.gameConfig.shrinkHeight !== true
                     );
                     return new Response(new Uint8Array(patchedFirmware) as BodyInit, {
                         status: 200,
@@ -1394,7 +1394,14 @@ async function handleApiRequest(
         }
         case "getSettings": {
             const isRaflash = AppData.gamePath?.toLowerCase().endsWith(".raflash") ?? false;
-            return { success: true, params: { ...settings, version: VERSION, isRaflash } };
+            let hasRaflash = false;
+            if (!isRaflash && AppData.gamePath?.toLowerCase().endsWith(".swf")) {
+                try {
+                    await Deno.stat(AppData.gamePath.replace(/\.swf$/i, ".raflash"));
+                    hasRaflash = true;
+                } catch { /* doesn't exist */ }
+            }
+            return { success: true, params: { ...settings, version: VERSION, isRaflash, hasRaflash } };
         }
         case "saveSettings": {
             const oldBenchmarking = settings.benchmarkingEnabled;
@@ -1427,10 +1434,13 @@ async function handleApiRequest(
                 if (!alreadyExists) {
                     const swfBytes = await Deno.readFile(gamePath);
                     const gc = AppData.data.gameConfig;
-                    const dataJson: Record<string, string> = {};
+                    const dataJson: Record<string, unknown> = {};
                     if (gc.title) dataJson.title = gc.title;
                     if (gc.originUrl) dataJson.originUrl = gc.originUrl;
                     if (gc.badgeImage) dataJson.badgeImage = gc.badgeImage;
+                    dataJson.scaleMode = 'showAll';
+                    dataJson.align = 'TL';
+                    dataJson.shrinkHeight = true;
 
                     const zipped = zipSync({
                         "start.swf": swfBytes,
@@ -1473,10 +1483,13 @@ async function handleApiRequest(
                 }
 
                 // Update with provided fields
-                const params = input.params as Record<string, string>;
-                if ("originUrl" in params) dataJson.originUrl = params.originUrl;
-                if ("title" in params) dataJson.title = params.title;
-                if ("badgeImage" in params) dataJson.badgeImage = params.badgeImage;
+                const params = input.params as Record<string, unknown>;
+                if ("originUrl" in params) dataJson.originUrl = params.originUrl as string;
+                if ("title" in params) dataJson.title = params.title as string;
+                if ("badgeImage" in params) dataJson.badgeImage = params.badgeImage as string;
+                if ("scaleMode" in params) dataJson.scaleMode = params.scaleMode as string;
+                if ("align" in params) dataJson.align = params.align as string;
+                if ("shrinkHeight" in params) dataJson.shrinkHeight = params.shrinkHeight as string;
 
                 // Rewrite the zip with updated data.json
                 files["data.json"] = new TextEncoder().encode(JSON.stringify(dataJson, null, 2));
@@ -2027,7 +2040,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
                 const gameSwfBuffer = await Deno.readFile(selectedGamePath!);
                 const gameMetadata = parseSwfMetadata(gameSwfBuffer);
                 const firmwareBytes = await Deno.readFile(avmConfig.firmwareSwf);
-                swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height, swfHidesMenuBar(gameSwfBuffer));
+                swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height, AppData.data.gameConfig.shrinkHeight !== true);
             } else {
                 swfData = await Deno.readFile(avmConfig.firmwareSwf);
             }
@@ -2059,7 +2072,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
                 const gameSwfBuffer = await Deno.readFile(selectedGamePath!);
                 const gameMetadata = parseSwfMetadata(gameSwfBuffer);
                 const firmwareBytes = await Deno.readFile(avmConfig.innerFirmwareSwf);
-                swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height, swfHidesMenuBar(gameSwfBuffer));
+                swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height, AppData.data.gameConfig.shrinkHeight !== true);
             }
 
             const response = [
@@ -2088,10 +2101,21 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
             const rawSwfData = await Deno.readFile(selectedGamePath!);
             let swfData: Uint8Array = rawSwfData;
             if (resolveFirmwareMode() === "child") {
+                // Patch game SWF RECT to compensate for menu bar removal
+                const gameMetadata = parseSwfMetadata(rawSwfData);
+                swfData = patchFirmwareSwf(
+                    rawSwfData,
+                    gameMetadata.frameRate,
+                    gameMetadata.backgroundColor,
+                    gameMetadata.width,
+                    gameMetadata.height,
+                    AppData.data.gameConfig.shrinkHeight !== true
+                );
+
                 const rsOriginUrl = AppData.data.gameConfig.originUrl;
                 const rsDomain = rsOriginUrl ? new URL(rsOriginUrl).host : RAFLASH_DOMAIN;
                 const rsFirmwareUrl = `http://${rsDomain}/avm1-firmware.swf`;
-                swfData = injectFirmwareLoader(rawSwfData, rsFirmwareUrl);
+                swfData = injectFirmwareLoader(swfData, rsFirmwareUrl);
             }
             const response = [
                 "HTTP/1.1 200 OK",
@@ -2703,6 +2727,9 @@ async function main(): Promise<void> {
             ? { mode: "AVM2", firmwareUrl: "/avm2-firmware.swf", firmwareSwf: "firmware/AVM2.swf", messageTerminator: "\n", patchFirmware: true, convertPngToJpeg: false }
             : { mode: "AVM1", firmwareUrl: "/avm1-wrapper.swf", firmwareSwf: "firmware/AVM1Wrapper.swf", innerFirmwareSwf: "firmware/AVM1.swf", messageTerminator: "\0", patchFirmware: true, convertPngToJpeg: true };
 
+        // Menu bar height compensation is applied after AppData loads (below)
+        // since it depends on the gameConfig.shrinkHeight setting.
+
         // Load game-specific state (identified by MD5 hash of the file — .swf or .raflash)
         await AppData.setGamePath(resolvedGamePath);
         await AppData.loadData();
@@ -2722,7 +2749,21 @@ async function main(): Promise<void> {
             if (!gc.title && raflashData.title) { gc.title = raflashData.title; changed = true; }
             if (!gc.originUrl && raflashData.originUrl) { gc.originUrl = raflashData.originUrl; changed = true; }
             if (!gc.badgeImage && raflashData.badgeImage) { gc.badgeImage = raflashData.badgeImage; changed = true; }
+            // For .raflash files, behavior fields default to enforced values
+            // (not neutral) when the data.json doesn't specify them.
+            const raScale = raflashData.scaleMode ?? 'showAll';
+            const raAlign = (raflashData.align != null) ? raflashData.align : 'TL';
+            const raShrink = (raflashData.shrinkHeight != null) ? raflashData.shrinkHeight : true;
+            if (gc.scaleMode !== raScale) { gc.scaleMode = raScale; changed = true; }
+            if (gc.align !== raAlign) { gc.align = raAlign; changed = true; }
+            if (gc.shrinkHeight !== raShrink) { gc.shrinkHeight = raShrink; changed = true; }
             if (changed) await AppData.saveData();
+        }
+
+        // Compensate window height for menu bar removal if configured.
+        // The firmware hides the menu bar; shrinkHeight removes the 20px gap.
+        if (AppData.data.gameConfig.shrinkHeight === true) {
+            gameWindowHeight -= 20;
         }
 
         // Load user and apply previously unlocked achievements

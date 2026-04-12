@@ -433,6 +433,16 @@ class Main {
     private static var _soundFixState:Number = 0; // 0=scanning, 1=done
     private static var _soundFixDeadline:Number = 0;
     private static function onFrame():Void {
+        // Re-enforce stage settings if configured (skip when "neutral" — let the game decide).
+        var cfgScaleMode:String = AppData.data.gameConfig.scaleMode;
+        if (cfgScaleMode != "neutral" && cfgScaleMode != undefined && Stage.scaleMode != cfgScaleMode) {
+            Stage.scaleMode = cfgScaleMode;
+        }
+        var cfgAlign:String = AppData.data.gameConfig.align;
+        if (cfgAlign != "neutral" && cfgAlign != undefined && Stage.align != cfgAlign) {
+            Stage.align = cfgAlign;
+        }
+
         // Function-call hook snapshot. Move "pending" → "seen" so all
         // formula evaluations within this onFrame see a consistent view
         // of which hooked functions fired since the previous snapshot.

@@ -69,6 +69,9 @@ export interface GameConfig {
     title: string;
     originUrl: string;
     badgeImage: string;
+    scaleMode: string;  // "neutral", "showAll", "noBorder", "exactFit", "noScale"
+    align: string;      // "neutral", "", "T", "B", "L", "R", "TL", "TR", "BL", "BR"
+    shrinkHeight: boolean;
     [key: string]: unknown;
 }
 

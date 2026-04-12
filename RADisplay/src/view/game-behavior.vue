@@ -19,6 +19,40 @@
                        :disabled="!isRaflash"
                        placeholder="http://www.coolmathgames.com  or  http://host/path/to/game.swf">
             </div>
+
+            <div class="form-group">
+                <label for="scale-mode">Scale Mode</label>
+                <select id="scale-mode" v-model="scaleMode" :disabled="!isRaflash">
+                    <option value="noScale">No Scale</option>
+                    <option value="showAll">Show All</option>
+                    <option value="noBorder">No Border</option>
+                    <option value="exactFit">Exact Fit</option>
+                    <option value="neutral">Neutral (game decides)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="align">Alignment</label>
+                <select id="align" v-model="align" :disabled="!isRaflash">
+                    <option value="TL">Top Left</option>
+                    <option value="T">Top Center</option>
+                    <option value="TR">Top Right</option>
+                    <option value="L">Center Left</option>
+                    <option value="">Center</option>
+                    <option value="R">Center Right</option>
+                    <option value="BL">Bottom Left</option>
+                    <option value="B">Bottom Center</option>
+                    <option value="BR">Bottom Right</option>
+                    <option value="neutral">Neutral (game decides)</option>
+                </select>
+            </div>
+
+            <div class="form-group checkbox-group">
+                <label>
+                    <input type="checkbox" v-model="shrinkHeight" :disabled="!isRaflash">
+                    Shrink height by 20px (menu bar compensation)
+                </label>
+            </div>
         </div>
 
         <footer class="editor-footer" v-if="isRaflash">
@@ -71,6 +105,19 @@
         font-family: var(--font-mono);
     }
 
+    .checkbox-group label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.8125rem;
+        color: var(--c-text);
+        cursor: pointer;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+        margin: 0;
+    }
+
     .editor-footer {
         flex-shrink: 0;
         display: flex;
@@ -94,39 +141,69 @@
     import { App } from '../js/app.ts';
 
     const originUrl = ref('');
+    const scaleMode = ref('noScale');
+    const align = ref('TL');
+    const shrinkHeight = ref(true);
     const dirty = ref(false);
     const isRaflash = ref(false);
 
     let savedOriginUrl = '';
+    let savedScaleMode = 'noScale';
+    let savedAlign = 'TL';
+    let savedShrinkHeight = true;
 
-    watch(originUrl, () => {
-        dirty.value = originUrl.value !== savedOriginUrl;
+    watch([originUrl, scaleMode, align, shrinkHeight], () => {
+        dirty.value = originUrl.value !== savedOriginUrl
+            || scaleMode.value !== savedScaleMode
+            || align.value !== savedAlign
+            || shrinkHeight.value !== savedShrinkHeight;
     });
 
     const save = async () => {
-        // Save originUrl into the .raflash data.json
+        // Save behavior settings into the .raflash data.json
         await Network.send({
             command: 'saveRaflashData',
-            params: { originUrl: originUrl.value }
+            params: {
+                originUrl: originUrl.value,
+                scaleMode: scaleMode.value,
+                align: align.value,
+                shrinkHeight: shrinkHeight.value,
+            }
         });
-        // Also update in-memory gameConfig so the engine picks it up
+        // Also update in-memory gameConfig so the engine and firmware pick it up
         const config = App.data.gameConfig || {};
         await Network.send({
             command: 'editData',
             params: {
                 edited: [
-                    ['gameConfig', { title: config.title || '', originUrl: originUrl.value, badgeImage: config.badgeImage || '' }]
+                    ['gameConfig', {
+                        title: config.title || '',
+                        originUrl: originUrl.value,
+                        badgeImage: config.badgeImage || '',
+                        scaleMode: scaleMode.value,
+                        align: align.value,
+                        shrinkHeight: shrinkHeight.value,
+                    }]
                 ]
             }
         });
         savedOriginUrl = originUrl.value;
+        savedScaleMode = scaleMode.value;
+        savedAlign = align.value;
+        savedShrinkHeight = shrinkHeight.value;
         dirty.value = false;
     };
 
     App.initialize().then(async () => {
-        const config = App.data.gameConfig || { originUrl: '' };
+        const config = App.data.gameConfig || {};
         savedOriginUrl = config.originUrl || '';
+        savedScaleMode = config.scaleMode || 'noScale';
+        savedAlign = (config.align != null) ? config.align : 'TL';
+        savedShrinkHeight = config.shrinkHeight !== false;
         originUrl.value = savedOriginUrl;
+        scaleMode.value = savedScaleMode;
+        align.value = savedAlign;
+        shrinkHeight.value = savedShrinkHeight;
 
         const response = await Network.send({ command: 'getSettings', params: {} });
         if (response.success) {
