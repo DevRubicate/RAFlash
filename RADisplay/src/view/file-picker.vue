@@ -39,11 +39,12 @@
                      :key="item.name"
                      :class="{ directory: item.type === 'directory' }"
                      @dblclick="handleDoubleClick(item)">
-                    <span class="icon">{{ item.type === 'directory' ? '📁' : '📄' }}</span>
+                    <span class="icon" v-if="item.type === 'directory'">📁</span>
+                    <img class="icon file-icon" v-else :src="item.name.toLowerCase().endsWith('.raflash') ? '/raflash-icon.png' : '/flash-icon.png'" alt="">
                     <span class="name">{{ item.name }}</span>
                 </div>
                 <div class="empty-message" v-if="items.length === 0">
-                    No .swf files found in this directory
+                    No .swf or .raflash files found in this directory
                 </div>
             </div>
 
@@ -224,6 +225,12 @@
         flex-shrink: 0;
     }
 
+    .file-item .file-icon {
+        width: 1.125rem;
+        height: 1.125rem;
+        object-fit: contain;
+    }
+
     .file-item .name {
         flex: 1;
         overflow: hidden;
@@ -372,7 +379,7 @@ async function loadDirectory(path) {
             // Filter to only show directories and .swf files
             items.value = response.params.filter(item =>
                 item.type === 'directory' ||
-                item.name.toLowerCase().endsWith('.swf')
+                item.name.toLowerCase().endsWith('.swf') || item.name.toLowerCase().endsWith('.raflash')
             );
         }
     } catch (err) {

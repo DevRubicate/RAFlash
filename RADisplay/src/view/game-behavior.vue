@@ -4,33 +4,24 @@
             <h2 class="header-title">Game Behavior</h2>
         </header>
 
-        <div v-if="!App.flashConnected" class="flash-disconnected-banner">
+        <div v-if="!isRaflash" class="disabled-banner">
+            Only available for .raflash files. Use "Convert to .raflash" from the devtools menu.
+        </div>
+
+        <div v-if="!App.flashConnected && isRaflash" class="flash-disconnected-banner">
             Flash Player is not running. Your edits are still saved &mdash; relaunch the game to apply them.
         </div>
 
         <div class="editor-body">
-            <div class="badge-row">
-                <div class="badge-image-wrapper">
-                    <img v-if="badgeImage" :src="badgeImage" alt="Game Badge">
-                    <div v-else class="badge-placeholder">No image</div>
-                    <input type="file" ref="fileInput" accept="image/*" @change="onFileSelected" style="display: none">
-                    <button class="btn btn-secondary btn-compact" @click="fileInput.click()">Upload</button>
-                </div>
-                <div class="badge-fields">
-                    <div class="form-group">
-                        <label for="game-title">Title</label>
-                        <input type="text" id="game-title" v-model="title" placeholder="Game title" spellcheck="true">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="origin-url">Origin URL</label>
-                        <input type="text" id="origin-url" class="mono-input" v-model="originUrl" placeholder="http://www.coolmathgames.com  or  http://host/path/to/game.swf">
-                    </div>
-                </div>
+            <div class="form-group">
+                <label for="origin-url">Origin URL</label>
+                <input type="text" id="origin-url" class="mono-input" v-model="originUrl"
+                       :disabled="!isRaflash"
+                       placeholder="http://www.coolmathgames.com  or  http://host/path/to/game.swf">
             </div>
         </div>
 
-        <footer class="editor-footer">
+        <footer class="editor-footer" v-if="isRaflash">
             <span class="save-hint" v-if="dirty">Unsaved changes</span>
             <button class="btn btn-primary" :disabled="!dirty" @click="save">Save</button>
         </footer>
@@ -47,7 +38,7 @@
         flex-shrink: 0;
     }
 
-    .flash-disconnected-banner {
+    .flash-disconnected-banner, .disabled-banner {
         flex-shrink: 0;
         margin: 0.5rem 0.875rem 0;
         padding: 0.4375rem 0.625rem;
@@ -80,50 +71,6 @@
         font-family: var(--font-mono);
     }
 
-    .badge-row {
-        display: flex;
-        gap: 1rem;
-    }
-
-    .badge-image-wrapper {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.375rem;
-        flex-shrink: 0;
-    }
-
-    .badge-image-wrapper img {
-        width: 96px;
-        height: 96px;
-        object-fit: contain;
-        border: 1px solid var(--c-border);
-        border-radius: var(--radius-lg);
-        padding: 0.375rem;
-        background-color: var(--c-surface);
-        box-shadow: var(--shadow-xs);
-    }
-
-    .badge-placeholder {
-        width: 96px;
-        height: 96px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border: 1px dashed var(--c-border);
-        border-radius: var(--radius-lg);
-        background-color: var(--c-surface);
-        color: var(--c-text-muted);
-        font-size: 0.6875rem;
-    }
-
-    .badge-fields {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-    }
-
     .editor-footer {
         flex-shrink: 0;
         display: flex;
@@ -146,56 +93,46 @@
     import { Network } from '../js/network.ts';
     import { App } from '../js/app.ts';
 
-    const title = ref('');
     const originUrl = ref('');
-    const badgeImage = ref('');
     const dirty = ref(false);
-    const fileInput = ref(null);
+    const isRaflash = ref(false);
 
-    // Snapshot of saved values for dirty comparison
-    let savedTitle = '';
     let savedOriginUrl = '';
-    let savedBadgeImage = '';
 
-    watch([title, originUrl, badgeImage], () => {
-        dirty.value = title.value !== savedTitle
-            || originUrl.value !== savedOriginUrl
-            || badgeImage.value !== savedBadgeImage;
+    watch(originUrl, () => {
+        dirty.value = originUrl.value !== savedOriginUrl;
     });
 
-    const onFileSelected = (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            badgeImage.value = e.target.result;
-        };
-        reader.readAsDataURL(file);
-    };
-
     const save = async () => {
+        // Save originUrl into the .raflash data.json
+        await Network.send({
+            command: 'saveRaflashData',
+            params: { originUrl: originUrl.value }
+        });
+        // Also update in-memory gameConfig so the engine picks it up
+        const config = App.data.gameConfig || {};
         await Network.send({
             command: 'editData',
             params: {
                 edited: [
-                    ['gameConfig', { title: title.value, originUrl: originUrl.value, badgeImage: badgeImage.value }]
+                    ['gameConfig', { title: config.title || '', originUrl: originUrl.value, badgeImage: config.badgeImage || '' }]
                 ]
             }
         });
-        savedTitle = title.value;
         savedOriginUrl = originUrl.value;
-        savedBadgeImage = badgeImage.value;
         dirty.value = false;
     };
 
-    App.initialize().then(() => {
-        const config = App.data.gameConfig || { title: '', originUrl: '', badgeImage: '' };
-        savedTitle = config.title || '';
+    App.initialize().then(async () => {
+        const config = App.data.gameConfig || { originUrl: '' };
         savedOriginUrl = config.originUrl || '';
-        savedBadgeImage = config.badgeImage || '';
-        title.value = savedTitle;
         originUrl.value = savedOriginUrl;
-        badgeImage.value = savedBadgeImage;
+
+        const response = await Network.send({ command: 'getSettings', params: {} });
+        if (response.success) {
+            isRaflash.value = !!response.params.isRaflash;
+        }
+
         App.ready = true;
     });
 </script>

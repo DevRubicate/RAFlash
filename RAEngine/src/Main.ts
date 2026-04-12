@@ -28,7 +28,7 @@ import { PNG } from "npm:pngjs";
 import jpeg from "npm:jpeg-js";
 // @deno-types="npm:@types/pako"
 import * as pako from "npm:pako";
-import { unzipSync } from "npm:fflate";
+import { unzipSync, zipSync } from "npm:fflate";
 import { startSitelockProxy, stopSitelockProxy } from "./SitelockProxy.ts";
 
 const VERSION = "0.0.12";
@@ -962,6 +962,7 @@ let gameWindowWidth = 800;  // Will be updated from game SWF metadata
 let gameWindowHeight = 600; // Will be updated from game SWF metadata
 let fileSelectedResolver: ((result: { gamePath: string; user: string }) => void) | null = null;
 let selectedUserName: string | null = null;
+let pendingRelaunch: string | null = null;  // Path to relaunch after current game closes
 let httpServer: Deno.HttpServer | null = null;
 
 // Flash socket policy file server (port 843)
@@ -994,6 +995,10 @@ let flashProcess: Deno.ChildProcess | null = null;
 // broadcast on the cleanup path of the game loop.
 let flashConnected = false;
 
+// Set when devtools are opened during a game session — disables the
+// quick-exit shortcut for drag-drop launches so we return to the picker.
+let devtoolsOpened = false;
+
 // Rich Presence title updates
 let lastRichPresenceTime = 0;
 let richPresenceCheckInterval: number | null = null;
@@ -1018,6 +1023,7 @@ function resetGameState(): void {
     lastRichPresenceTime = 0;
     selectedGamePath = null;
     selectedUserName = null;
+    devtoolsOpened = false;
     appState = AppState.FILE_PICKER;
     // Deliberately do NOT clear AppData here. After Flash exits the user
     // may still be editing per-game settings in the auto-opened devtools
@@ -1111,6 +1117,7 @@ function emitLog(source: string, level: string, message: string): void {
  * Open the devtools menu window
  */
 async function openDevtoolsMenu(): Promise<void> {
+    devtoolsOpened = true;
     const windowId = Math.floor(Math.random() * 0xFFFFFF);
     await HTMLWindow.create("menu.html", 300, 600, windowId, undefined, 0, 0);
 }
@@ -1263,9 +1270,16 @@ function startHttpServerInner() {
                     });
                 }
 
-                // Serve favicon from assets directory
-                if (url.pathname === "/favicon.png") {
+                // Serve icons from assets directory
+                if (url.pathname === "/favicon.png" || url.pathname === "/raflash-icon.png") {
                     const icon = await Deno.readFile("assets/icon.png");
+                    return new Response(icon, {
+                        status: 200,
+                        headers: { "Content-Type": "image/png" },
+                    });
+                }
+                if (url.pathname === "/flash-icon.png") {
+                    const icon = await Deno.readFile("assets/flash.png");
                     return new Response(icon, {
                         status: 200,
                         headers: { "Content-Type": "image/png" },
@@ -1379,7 +1393,8 @@ async function handleApiRequest(
             return { success: true };
         }
         case "getSettings": {
-            return { success: true, params: { ...settings, version: VERSION } };
+            const isRaflash = AppData.gamePath?.toLowerCase().endsWith(".raflash") ?? false;
+            return { success: true, params: { ...settings, version: VERSION, isRaflash } };
         }
         case "saveSettings": {
             const oldBenchmarking = settings.benchmarkingEnabled;
@@ -1391,6 +1406,88 @@ async function handleApiRequest(
                 }).catch(() => {});
             }
             return { success: true };
+        }
+        case "convertToRaflash": {
+            const gamePath = AppData.gamePath;
+            if (!gamePath) return { success: false, error: "No game loaded" };
+            if (gamePath.toLowerCase().endsWith(".raflash")) {
+                return { success: false, error: "Game is already a .raflash file" };
+            }
+
+            try {
+                const outputPath = gamePath.replace(/\.swf$/i, ".raflash");
+
+                // If a matching .raflash already exists, just relaunch with it
+                let alreadyExists = false;
+                try {
+                    await Deno.stat(outputPath);
+                    alreadyExists = true;
+                } catch { /* doesn't exist — create it */ }
+
+                if (!alreadyExists) {
+                    const swfBytes = await Deno.readFile(gamePath);
+                    const gc = AppData.data.gameConfig;
+                    const dataJson: Record<string, string> = {};
+                    if (gc.title) dataJson.title = gc.title;
+                    if (gc.originUrl) dataJson.originUrl = gc.originUrl;
+                    if (gc.badgeImage) dataJson.badgeImage = gc.badgeImage;
+
+                    const zipped = zipSync({
+                        "start.swf": swfBytes,
+                        "data.json": new TextEncoder().encode(JSON.stringify(dataJson, null, 2)),
+                    });
+
+                    await Deno.writeFile(outputPath, zipped);
+                    emitLog("engine", "info", `Created ${outputPath}`);
+                } else {
+                    emitLog("engine", "info", `Found existing ${outputPath}`);
+                }
+
+                // Relaunch with the .raflash file
+                pendingRelaunch = outputPath;
+                await HTMLWindow.shutdown(true);
+                try { flashProcess?.kill(); } catch { /* already exited */ }
+
+                return { success: true, params: { path: outputPath } };
+            } catch (e) {
+                return { success: false, error: `Failed to convert to .raflash: ${e}` };
+            }
+        }
+        case "saveRaflashData": {
+            const gamePath = AppData.gamePath;
+            if (!gamePath || !gamePath.toLowerCase().endsWith(".raflash")) {
+                return { success: false, error: "Not a .raflash file" };
+            }
+
+            try {
+                // Read existing .raflash zip
+                const zipData = await Deno.readFile(gamePath);
+                const files = unzipSync(zipData);
+
+                // Parse existing data.json or start fresh
+                let dataJson: Record<string, string> = {};
+                if (files["data.json"]) {
+                    try {
+                        dataJson = JSON.parse(new TextDecoder().decode(files["data.json"]));
+                    } catch { /* start fresh */ }
+                }
+
+                // Update with provided fields
+                const params = input.params as Record<string, string>;
+                if ("originUrl" in params) dataJson.originUrl = params.originUrl;
+                if ("title" in params) dataJson.title = params.title;
+                if ("badgeImage" in params) dataJson.badgeImage = params.badgeImage;
+
+                // Rewrite the zip with updated data.json
+                files["data.json"] = new TextEncoder().encode(JSON.stringify(dataJson, null, 2));
+                const newZip = zipSync(files);
+                await Deno.writeFile(gamePath, newZip);
+
+                emitLog("engine", "info", "Updated .raflash data.json");
+                return { success: true };
+            } catch (e) {
+                return { success: false, error: `Failed to update .raflash: ${e}` };
+            }
         }
         case "syncAssets": {
             try {
@@ -2515,8 +2612,8 @@ async function main(): Promise<void> {
             const stat = await Deno.stat(resolved);
             if (!stat.isFile) {
                 invalidDropMessage = `Not a file: ${arg}`;
-            } else if (!resolved.toLowerCase().endsWith(".swf")) {
-                invalidDropMessage = `Not a .swf file: ${arg}`;
+            } else if (!resolved.toLowerCase().endsWith(".swf") && !resolved.toLowerCase().endsWith(".raflash")) {
+                invalidDropMessage = `Not a .swf or .raflash file: ${arg}`;
             } else {
                 initialDrop = { gamePath: resolved };
             }
@@ -2532,7 +2629,10 @@ async function main(): Promise<void> {
         // After that game closes we exit instead of falling back to the picker
         // — drag-drop is a "launch one game" verb, not "enter the launcher".
         let launchedFromArg = false;
-        if (initialDrop) {
+        if (pendingRelaunch) {
+            pickerResult = { gamePath: pendingRelaunch, user: selectedUserName || settings.lastUser };
+            pendingRelaunch = null;
+        } else if (initialDrop) {
             pickerResult = { gamePath: initialDrop.gamePath, user: settings.lastUser };
             initialDrop = null;  // Subsequent iterations always use the picker
             launchedFromArg = true;
@@ -2564,14 +2664,37 @@ async function main(): Promise<void> {
         try {
             await Deno.stat(resolvedGamePath);
         } catch {
-            console.error(`ERROR: Game SWF not found: ${resolvedGamePath}`);
+            console.error(`ERROR: Game file not found: ${resolvedGamePath}`);
             continue; // Back to file picker
         }
 
         selectedGamePath = resolvedGamePath;
 
+        // --- .raflash handling: extract start.swf and data.json from zip ---
+        let raflashData: { title?: string; originUrl?: string; badgeImage?: string } | null = null;
+        let extractedSwfBytes: Uint8Array | null = null;
+
+        if (resolvedGamePath.toLowerCase().endsWith(".raflash")) {
+            const zipData = await Deno.readFile(resolvedGamePath);
+            const files = unzipSync(zipData);
+
+            if (!files["start.swf"]) {
+                emitLog("engine", "error", "Invalid .raflash: missing start.swf");
+                continue;
+            }
+            extractedSwfBytes = files["start.swf"];
+
+            if (files["data.json"]) {
+                try {
+                    raflashData = JSON.parse(new TextDecoder().decode(files["data.json"]));
+                } catch (e) {
+                    emitLog("engine", "warn", `Failed to parse data.json in .raflash: ${e}`);
+                }
+            }
+        }
+
         // Parse game SWF to get window dimensions and detect AVM version
-        const gameSwfBuffer = await Deno.readFile(resolvedGamePath);
+        const gameSwfBuffer = extractedSwfBytes ?? await Deno.readFile(resolvedGamePath);
         const gameMetadata = parseSwfMetadata(gameSwfBuffer);
         gameWindowWidth = gameMetadata.width;
         gameWindowHeight = gameMetadata.height;
@@ -2580,9 +2703,27 @@ async function main(): Promise<void> {
             ? { mode: "AVM2", firmwareUrl: "/avm2-firmware.swf", firmwareSwf: "firmware/AVM2.swf", messageTerminator: "\n", patchFirmware: true, convertPngToJpeg: false }
             : { mode: "AVM1", firmwareUrl: "/avm1-wrapper.swf", firmwareSwf: "firmware/AVM1Wrapper.swf", innerFirmwareSwf: "firmware/AVM1.swf", messageTerminator: "\0", patchFirmware: true, convertPngToJpeg: true };
 
-        // Load game-specific state (identified by MD5 hash of SWF)
+        // Load game-specific state (identified by MD5 hash of the file — .swf or .raflash)
         await AppData.setGamePath(resolvedGamePath);
         await AppData.loadData();
+
+        // For .raflash: write extracted SWF to cache so the HTTP server can serve it
+        if (extractedSwfBytes) {
+            const extractDir = join("RACache", "extracted", AppData.gameHash!);
+            await Deno.mkdir(extractDir, { recursive: true });
+            selectedGamePath = join(extractDir, "start.swf");
+            await Deno.writeFile(selectedGamePath, extractedSwfBytes);
+        }
+
+        // Pre-populate empty gameConfig fields from .raflash metadata
+        if (raflashData) {
+            const gc = AppData.data.gameConfig;
+            let changed = false;
+            if (!gc.title && raflashData.title) { gc.title = raflashData.title; changed = true; }
+            if (!gc.originUrl && raflashData.originUrl) { gc.originUrl = raflashData.originUrl; changed = true; }
+            if (!gc.badgeImage && raflashData.badgeImage) { gc.badgeImage = raflashData.badgeImage; changed = true; }
+            if (changed) await AppData.saveData();
+        }
 
         // Load user and apply previously unlocked achievements
         selectedUserName = user;
@@ -2665,11 +2806,7 @@ async function main(): Promise<void> {
         // game closes. But we DO keep RAFlash alive while degraded windows
         // are still open so the user can finish editing settings before
         // exit. Once every Chrome window has closed, we can quit cleanly.
-        if (launchedFromArg) {
-            const open = HTMLWindow.instances.filter(w => !w.isClosed);
-            if (open.length > 0) {
-                await Promise.all(open.map(w => w.process.status));
-            }
+        if (launchedFromArg && !pendingRelaunch && !devtoolsOpened) {
             await HTMLWindow.shutdown();
             for (const ws of devtoolsClients) {
                 try { ws.close(); } catch { /* already closed */ }
