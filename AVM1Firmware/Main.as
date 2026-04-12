@@ -2432,6 +2432,9 @@ class Main {
                     var thenResult:Array = evaluate(formula, thenStart, thenEnd, context, keys);
                     var elseResult:Array = evaluate(formula, elseStart, elseEnd, context, keys);
 
+                    if (thenResult == null) thenResult = [];
+                    if (elseResult == null) elseResult = [];
+
                     // Element-wise selection based on condition
                     var result:Array = [];
                     var len:Number = condition.length;
