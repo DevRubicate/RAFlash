@@ -1876,25 +1876,27 @@ class Main {
                         break;
                     }
                     if (a.length == 1 && b.length == 1) {
-                        stack.push([a[0] == b[0] ? 1 : 0]);
+                        stack.push([String(a[0]) === String(b[0]) ? 1 : 0]);
                         break;
                     }
                     if (a.length == 1) {
                         var result = [];
+                        var sa:String = String(a[0]);
                         for (var j = 0; j < b.length; ++j) {
-                            result.push(a[0] == b[j] ? 1 : 0);
+                            result.push(sa === String(b[j]) ? 1 : 0);
                         }
                         stack.push(result);
                     } else if (b.length == 1) {
                         var result = [];
+                        var sb:String = String(b[0]);
                         for (var j = 0; j < a.length; ++j) {
-                            result.push(a[j] == b[0] ? 1 : 0);
+                            result.push(String(a[j]) === sb ? 1 : 0);
                         }
                         stack.push(result);
                     } else if (a.length == b.length) {
                         var result = [];
                         for (var j = 0; j < a.length; ++j) {
-                            result.push(a[j] == b[j] ? 1 : 0);
+                            result.push(String(a[j]) === String(b[j]) ? 1 : 0);
                         }
                         stack.push(result);
                     } else {
@@ -1916,25 +1918,27 @@ class Main {
                         break;
                     }
                     if (a.length == 1 && b.length == 1) {
-                        stack.push([a[0] != b[0] ? 1 : 0]);
+                        stack.push([String(a[0]) !== String(b[0]) ? 1 : 0]);
                         break;
                     }
                     if (a.length == 1) {
                         var result = [];
+                        var sa:String = String(a[0]);
                         for (var j = 0; j < b.length; ++j) {
-                            result.push(a[0] != b[j] ? 1 : 0);
+                            result.push(sa !== String(b[j]) ? 1 : 0);
                         }
                         stack.push(result);
                     } else if (b.length == 1) {
                         var result = [];
+                        var sb:String = String(b[0]);
                         for (var j = 0; j < a.length; ++j) {
-                            result.push(a[j] != b[0] ? 1 : 0);
+                            result.push(String(a[j]) !== sb ? 1 : 0);
                         }
                         stack.push(result);
                     } else if (a.length == b.length) {
                         var result = [];
                         for (var j = 0; j < a.length; ++j) {
-                            result.push(a[j] != b[j] ? 1 : 0);
+                            result.push(String(a[j]) !== String(b[j]) ? 1 : 0);
                         }
                         stack.push(result);
                     } else {
