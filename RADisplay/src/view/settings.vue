@@ -335,7 +335,7 @@ async function save() {
 
 onMounted(async () => {
     App.windowId = Number(new URL(window.location.href).searchParams.get('windowId'));
-    Network.connect();
+    await Network.connect();
 
     const response = await Network.send({ command: 'getSettings', params: {} });
     if (response.success) {

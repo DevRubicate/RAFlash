@@ -158,7 +158,15 @@ export class Network {
                 Network.messageHandlers.set(id, resolve);
                 Network.socket!.send(JSON.stringify(['REQUEST', id, message])+'\n');
             } else {
-                Network.messageQueue.push([message, resolve]);
+                const timeout = setTimeout(() => {
+                    const idx = Network.messageQueue.findIndex(([, cb]) => cb === resolve);
+                    if (idx !== -1) Network.messageQueue.splice(idx, 1);
+                    resolve({ success: false, error: 'Queued message timed out waiting for connection' });
+                }, 30000);
+                Network.messageQueue.push([message, (response) => {
+                    clearTimeout(timeout);
+                    resolve(response);
+                }]);
             }
         });
     }
