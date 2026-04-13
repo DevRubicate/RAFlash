@@ -1455,6 +1455,17 @@ async function handleApiRequest(
 
                     await Deno.writeFile(outputPath, zipped);
                     emitLog("engine", "info", `Created ${outputPath}`);
+
+                    // Copy the current state file to the new .raflash's hash so
+                    // assets, code notes, and config carry over to the converted file.
+                    if (AppData.stateFilePath) {
+                        const newHash = await AppData.hashFile(outputPath);
+                        const newStateFile = `RACache/games/${newHash}.json`;
+                        try {
+                            await Deno.copyFile(AppData.stateFilePath, newStateFile);
+                            emitLog("engine", "info", "Copied game state to .raflash");
+                        } catch { /* state file may not exist yet (no edits made) */ }
+                    }
                 } else {
                     emitLog("engine", "info", `Found existing ${outputPath}`);
                 }
