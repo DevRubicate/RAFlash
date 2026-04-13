@@ -426,6 +426,8 @@
         // Assign new IDs and mark as unsaved
         cloned.id = App.getFakeId();
         cloned.name = sourceAsset.name + ' (Copy)';
+        cloned.state = 'ACTIVE';
+        cloned._primed = false;
         cloned.category = 'LOCAL';
         cloned.published = false;
         cloned._saved = false;
