@@ -4,7 +4,7 @@ import { Network }                      from './network.js';
 
 interface AppState {
     ready: boolean;
-    gameId: number;
+    gameId: string;
     windowId: number;
     flashConnected: boolean;
     // deno-lint-ignore no-explicit-any -- deeply dynamic JSON from server
@@ -24,7 +24,7 @@ interface AppState {
 
 export const App: AppState = reactive({
     ready: false,
-    gameId: 1686,
+    gameId: "local",
     windowId: 0,  // Set during network initialization
     // True until RAEngine broadcasts `flashDisconnected` (i.e. Flash Player
     // exited or crashed). Components bind `:disabled="!App.flashConnected"`
