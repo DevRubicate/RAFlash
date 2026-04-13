@@ -2140,16 +2140,12 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
             const rawSwfData = await Deno.readFile(selectedGamePath!);
             let swfData: Uint8Array = rawSwfData;
             if (resolveFirmwareMode() === "child") {
-                // Patch game SWF RECT to match game dimensions and inject firmware loader
-                const gameMetadata = parseSwfMetadata(rawSwfData);
-                swfData = patchFirmwareSwf(
-                    rawSwfData,
-                    gameMetadata.frameRate,
-                    gameMetadata.backgroundColor,
-                    gameMetadata.width,
-                    gameMetadata.height,
-                );
-
+                // Inject firmware loader bytecode into the game SWF.
+                // injectFirmwareLoader handles CWS→FWS decompression internally.
+                // The game SWF is NOT run through patchFirmwareSwf — that function
+                // rewrites the RECT/frameRate/backgroundColor which can corrupt the
+                // game (e.g. zeroing the frameRate fraction, changing RECT Nbits
+                // and shifting the tag stream, forcing Xmin/Ymin to zero).
                 const rsOriginUrl = AppData.data.gameConfig.originUrl;
                 const rsDomain = rsOriginUrl ? new URL(rsOriginUrl).host : RAFLASH_DOMAIN;
                 const rsFirmwareUrl = `http://${rsDomain}/avm1-firmware.swf`;
@@ -2313,6 +2309,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
         myConnectionId = ++firmwareConnectionId;
         firmwareWriter = writer;
         firmwareConnected = true;
+        firmwareMessageBuffer = ""; // Drain stale partial data from previous connection
         if (firmwareConnectResolve) firmwareConnectResolve();
         emitLog("engine", "info", "Firmware connected");
         // Send app data to firmware (don't await - would deadlock before read loop starts)

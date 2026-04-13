@@ -239,6 +239,9 @@ class Main {
             _global.__raF12Listener = keyListener;
             Key.addListener(keyListener);
 
+            Toast.setHostClip(_self);
+            Measure.setHostClip(_self);
+            PrimedBadges.setHostClip(_self);
             connectToServer();
             return;
         }
@@ -405,7 +408,8 @@ class Main {
         var barHeight:Number = permanent ? 50 : 30;
         var bgAlpha:Number = permanent ? 90 : 75;
 
-        var mc:MovieClip = _root.createEmptyMovieClip("_disconnectOverlay", 999800);
+        var overlayHost:MovieClip = (_self != null) ? _self : _root;
+        var mc:MovieClip = overlayHost.createEmptyMovieClip("_disconnectOverlay", 999800);
         mc.beginFill(0x1F2937, bgAlpha);
         mc.moveTo(0, 0);
         mc.lineTo(stageW, 0);
@@ -1065,7 +1069,8 @@ class Main {
      */
     private static function startBadgePreload():Void {
         // Create off-screen container for preloaded images
-        preloadContainer = _root.createEmptyMovieClip("preloadContainer", -16383);
+        var preloadHost:MovieClip = (_self != null) ? _self : _root;
+        preloadContainer = preloadHost.createEmptyMovieClip("preloadContainer", -16383);
         preloadContainer._visible = false;
 
         // Queue all assets with badge images

@@ -43,6 +43,14 @@ class Measure {
     // Track measures by asset ID for timer resets
     private static var measureByAsset:Object = {};
 
+    // Host clip — set to the firmware's own clip in child mode so we don't
+    // create clips on the game's _root (which can stop its timeline).
+    private static var hostClip:MovieClip;
+
+    public static function setHostClip(clip:MovieClip):Void {
+        hostClip = clip;
+    }
+
     /**
      * Show a measure notification
      * @param title Main title text (white, large)
@@ -116,7 +124,8 @@ class Measure {
      */
     private static function createMeasure(title:String, description:String, progress:String, imageUrl:String, assetId:Number):MovieClip {
         // Create container MovieClip at a very high depth (above game content)
-        var container:MovieClip = _root.createEmptyMovieClip("measure_" + measureDepth, measureDepth++);
+        var host:MovieClip = (hostClip != null) ? hostClip : _root;
+        var container:MovieClip = host.createEmptyMovieClip("measure_" + measureDepth, measureDepth++);
         container.assetId = assetId;
 
         // Create text formats

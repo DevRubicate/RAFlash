@@ -18,6 +18,14 @@ class PrimedBadges {
     private static var badgeOrder:Array = [];     // assetIds in display order (right to left)
     private static var badgeDepth:Number = 999500;
 
+    // Host clip — set to the firmware's own clip in child mode so we don't
+    // create clips on the game's _root (which can stop its timeline).
+    private static var hostClip:MovieClip;
+
+    public static function setHostClip(clip:MovieClip):Void {
+        hostClip = clip;
+    }
+
     /**
      * Show a primed badge for an achievement
      * @param assetId The achievement ID
@@ -30,7 +38,8 @@ class PrimedBadges {
         }
 
         // Create container MovieClip
-        var container:MovieClip = _root.createEmptyMovieClip("primedBadge_" + assetId, badgeDepth++);
+        var host:MovieClip = (hostClip != null) ? hostClip : _root;
+        var container:MovieClip = host.createEmptyMovieClip("primedBadge_" + assetId, badgeDepth++);
         container._alpha = ALPHA;
 
         // Draw background (dark gray rounded square)

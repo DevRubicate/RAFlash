@@ -42,6 +42,19 @@ class Toast {
     private static var activeToastsRight:Array = [];
     private static var toastDepth:Number = 999999;
 
+    // Host clip for toast containers. In parent mode this is _root (the
+    // firmware owns _level0). In child mode this must be the firmware's own
+    // clip (__raflash) — creating clips on the game's _root at high depths
+    // can stop the game's timeline and interfere with its display list.
+    private static var hostClip:MovieClip;
+
+    /**
+     * Set the clip that toast containers will be created on.
+     */
+    public static function setHostClip(clip:MovieClip):Void {
+        hostClip = clip;
+    }
+
     /**
      * Show a toast notification
      * @param title Main title text (white, large)
@@ -65,7 +78,8 @@ class Toast {
         var activeToasts:Array = isRight ? activeToastsRight : activeToastsLeft;
 
         // Create container MovieClip at a very high depth (above game content)
-        var container:MovieClip = _root.createEmptyMovieClip("toast_" + toastDepth, toastDepth++);
+        var host:MovieClip = (hostClip != null) ? hostClip : _root;
+        var container:MovieClip = host.createEmptyMovieClip("toast_" + toastDepth, toastDepth++);
 
         // Create text fields to measure sizes
         var titleFormat:TextFormat = new TextFormat();
