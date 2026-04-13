@@ -27,6 +27,7 @@ export default defineConfig({
         'event-log': resolve(__dirname, 'src/html/event-log.html'),
         'benchmark': resolve(__dirname, 'src/html/benchmark.html'),
         'settings': resolve(__dirname, 'src/html/settings.html'),
+        'resource-explorer': resolve(__dirname, 'src/html/resource-explorer.html'),
       },
     },
   },

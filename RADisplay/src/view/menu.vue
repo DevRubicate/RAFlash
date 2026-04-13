@@ -33,6 +33,10 @@
                 <svg fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
                 Code Notes
             </button>
+            <button class="menu-button" @click="openResourceExplorer()">
+                <svg fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+                Resource Explorer
+            </button>
 
         </div>
 
@@ -191,6 +195,10 @@
 
     const openEventLog = async () => {
         await Network.send({ command: 'showPopup', params: { url: 'internals/assets/event-log.html', width: 700, height: 500, params: {}, parentWindowId: App.windowId } });
+    };
+
+    const openResourceExplorer = async () => {
+        await Network.send({ command: 'showPopup', params: { url: 'internals/assets/resource-explorer.html', width: 750, height: 600, params: {}, parentWindowId: App.windowId } });
     };
 
     const openDocumentation = async () => {

@@ -633,6 +633,225 @@ function parseSwfMetadata(swfBytes: Uint8Array): { frameRate: number; background
 }
 
 /**
+ * Scan a SWF file for embedded resources: strings from AS2 bytecode constant
+ * pools, frame labels, export asset names, and text field variable bindings.
+ * This is static analysis — it reads the binary, not runtime state.
+ */
+function scanSwfResources(swfBytes: Uint8Array): {
+    strings: string[];
+    frameLabels: string[];
+    exports: string[];
+    textFields: { variable: string; text: string }[];
+} {
+    const stringSet = new Set<string>();
+    const frameLabels: string[] = [];
+    const exports: string[] = [];
+    const textFields: { variable: string; text: string }[] = [];
+
+    try {
+        // Decompress SWF (same pattern as parseSwfMetadata)
+        const signature = String.fromCharCode(swfBytes[0], swfBytes[1], swfBytes[2]);
+        let data: Uint8Array;
+        if (signature === "CWS") {
+            const compressed = swfBytes.slice(8);
+            const decompressed = pako.inflate(compressed);
+            data = new Uint8Array(8 + decompressed.length);
+            data.set(swfBytes.slice(0, 8));
+            data.set(decompressed, 8);
+        } else if (signature === "FWS") {
+            data = swfBytes;
+        } else {
+            return { strings: [], frameLabels, exports, textFields };
+        }
+
+        // Parse RECT to find tags offset (same as parseSwfMetadata)
+        const rectNBits = (data[8] >> 3) & 0x1F;
+        const rectTotalBits = 5 + rectNBits * 4;
+        const rectBytes = Math.ceil(rectTotalBits / 8);
+        const frameRateOffset = 8 + rectBytes;
+        const tagsOffset = frameRateOffset + 4; // +2 frameRate, +2 frameCount
+
+        // Helper: read a null-terminated string from the data buffer
+        const readString = (start: number, end: number): { str: string; nextOffset: number } => {
+            let str = "";
+            let i = start;
+            while (i < end && data[i] !== 0) {
+                str += String.fromCharCode(data[i]);
+                i++;
+            }
+            return { str, nextOffset: i + 1 }; // skip null terminator
+        };
+
+        // Helper: check if a string is "printable" (worth showing to the user)
+        const isPrintable = (s: string): boolean => {
+            if (s.length === 0) return false;
+            for (let i = 0; i < s.length; i++) {
+                const c = s.charCodeAt(i);
+                // Allow printable ASCII, common Latin-1 supplement, and whitespace
+                if (c === 9 || c === 10 || c === 13) continue; // tab, LF, CR
+                if (c < 0x20 || (c > 0x7E && c < 0xA0)) return false;
+            }
+            return true;
+        };
+
+        // Helper: extract strings from an AS2 action bytecode block
+        const extractAS2Strings = (blockStart: number, blockEnd: number) => {
+            let pos = blockStart;
+            while (pos < blockEnd) {
+                const opcode = data[pos];
+                pos++;
+                if (opcode === 0) break; // End of actions
+
+                if (opcode < 0x80) continue; // Single-byte opcodes have no data
+
+                // Multi-byte opcodes: read UI16 length
+                if (pos + 2 > blockEnd) break;
+                const actionLength = data[pos] | (data[pos + 1] << 8);
+                pos += 2;
+                const actionEnd = pos + actionLength;
+                if (actionEnd > blockEnd) break;
+
+                if (opcode === 0x88 && actionLength >= 2) {
+                    // ActionConstantPool: UI16 count, then count null-terminated strings
+                    const count = data[pos] | (data[pos + 1] << 8);
+                    let sPos = pos + 2;
+                    for (let i = 0; i < count && sPos < actionEnd; i++) {
+                        const { str, nextOffset } = readString(sPos, actionEnd);
+                        if (isPrintable(str)) stringSet.add(str);
+                        sPos = nextOffset;
+                    }
+                } else if (opcode === 0x96) {
+                    // ActionPush: sequence of typed values
+                    let pPos = pos;
+                    while (pPos < actionEnd) {
+                        const type = data[pPos];
+                        pPos++;
+                        if (type === 0) {
+                            // String: null-terminated
+                            const { str, nextOffset } = readString(pPos, actionEnd);
+                            if (isPrintable(str)) stringSet.add(str);
+                            pPos = nextOffset;
+                        } else if (type === 1) { pPos += 4; }      // Float
+                        else if (type === 2) { /* null */ }
+                        else if (type === 3) { /* undefined */ }
+                        else if (type === 4) { pPos += 1; }        // Register
+                        else if (type === 5) { pPos += 1; }        // Boolean
+                        else if (type === 6) { pPos += 8; }        // Double
+                        else if (type === 7) { pPos += 4; }        // Integer
+                        else if (type === 8) { pPos += 1; }        // Constant8
+                        else if (type === 9) { pPos += 2; }        // Constant16
+                        else break; // Unknown type, bail
+                    }
+                }
+
+                pos = actionEnd;
+            }
+        };
+
+        // Helper: iterate SWF tags in a range and extract resources.
+        // Recurses into DefineSprite sub-tags.
+        const iterateTags = (start: number, end: number, depth: number) => {
+            if (depth > 4) return; // Guard against excessive nesting
+            let offset = start;
+
+            while (offset + 2 <= end) {
+                const tagCodeAndLength = data[offset] | (data[offset + 1] << 8);
+                const tagType = tagCodeAndLength >> 6;
+                let tagLength = tagCodeAndLength & 0x3F;
+                let headerSize = 2;
+
+                if (tagLength === 0x3F) {
+                    if (offset + 6 > end) break;
+                    tagLength = data[offset + 2] | (data[offset + 3] << 8) |
+                               (data[offset + 4] << 16) | (data[offset + 5] << 24);
+                    headerSize = 6;
+                }
+
+                const tagDataStart = offset + headerSize;
+                const tagDataEnd = tagDataStart + tagLength;
+                if (tagDataEnd > end) break;
+
+                if (tagType === 0) break; // End tag
+
+                if (tagType === 43 && tagLength >= 1) {
+                    // FrameLabel: null-terminated string
+                    const { str } = readString(tagDataStart, tagDataEnd);
+                    if (str.length > 0) frameLabels.push(str);
+                }
+
+                if (tagType === 56 && tagLength >= 2) {
+                    // ExportAssets: UI16 count, then pairs of (UI16 charId, string name)
+                    let eaOffset = tagDataStart;
+                    const count = data[eaOffset] | (data[eaOffset + 1] << 8);
+                    eaOffset += 2;
+                    for (let i = 0; i < count && eaOffset + 2 <= tagDataEnd; i++) {
+                        eaOffset += 2; // skip charId
+                        const { str, nextOffset } = readString(eaOffset, tagDataEnd);
+                        if (str.length > 0) exports.push(str);
+                        eaOffset = nextOffset;
+                    }
+                }
+
+                if (tagType === 37 && tagLength >= 6) {
+                    // DefineEditText: scan for null-terminated printable strings.
+                    // The tag contains a variable name and optional initial text,
+                    // but fully parsing the bit-packed structure is complex.
+                    // Instead, scan for null-terminated printable strings in the tag body.
+                    let scanPos = tagDataStart + 2; // skip character ID
+                    const foundStrings: string[] = [];
+                    while (scanPos < tagDataEnd) {
+                        // Look for start of a printable string
+                        if (data[scanPos] >= 0x20 && data[scanPos] <= 0x7E) {
+                            const { str, nextOffset } = readString(scanPos, tagDataEnd);
+                            if (str.length >= 2 && isPrintable(str)) {
+                                foundStrings.push(str);
+                            }
+                            scanPos = nextOffset;
+                        } else {
+                            scanPos++;
+                        }
+                    }
+                    // DefineEditText typically has variable name first, then initial text
+                    if (foundStrings.length >= 2) {
+                        textFields.push({ variable: foundStrings[foundStrings.length - 2], text: foundStrings[foundStrings.length - 1] });
+                    } else if (foundStrings.length === 1) {
+                        textFields.push({ variable: foundStrings[0], text: '' });
+                    }
+                }
+
+                if (tagType === 12) {
+                    // DoAction: AS2 bytecode
+                    extractAS2Strings(tagDataStart, tagDataEnd);
+                }
+
+                if (tagType === 59 && tagLength > 2) {
+                    // DoInitAction: skip 2-byte character ID, then AS2 bytecode
+                    extractAS2Strings(tagDataStart + 2, tagDataEnd);
+                }
+
+                if (tagType === 39 && tagLength > 4) {
+                    // DefineSprite: skip charID (2) + frameCount (2), then sub-tags
+                    iterateTags(tagDataStart + 4, tagDataEnd, depth + 1);
+                }
+
+                offset = tagDataEnd;
+            }
+        };
+
+        iterateTags(tagsOffset, data.length, 0);
+    } catch (err) {
+        console.error(`scanSwfResources error: ${err}`);
+    }
+
+    // Sort strings alphabetically, deduplicate frameLabels/exports
+    const strings = [...stringSet].sort((a, b) => a.localeCompare(b));
+    const uniqueFrameLabels = [...new Set(frameLabels)];
+    const uniqueExports = [...new Set(exports)];
+
+    return { strings, frameLabels: uniqueFrameLabels, exports: uniqueExports, textFields };
+}
+
+/**
  * Splice a DoAction tag at the start of frame 1 of a game SWF that performs
  * the equivalent of:
  *
@@ -1963,6 +2182,12 @@ async function handleApiRequest(
             // Forward to firmware
             await sendToFirmware("stopWatch", { watcherId });
             return { success: true };
+        }
+
+        case "scanSwfResources": {
+            const swfBytes = await readGameSwf();
+            const resources = scanSwfResources(swfBytes);
+            return { success: true, params: { resources } };
         }
 
         default:
