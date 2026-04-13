@@ -930,6 +930,7 @@ let firmwareConnected = false;
 let firmwareMessageBuffer = "";
 const pendingRequests = new Map<string, (response: Record<string, unknown>) => void>();
 let requestIdCounter = 0;
+let firmwareConnectionId = 0;
 
 // Resolves when firmware (re)connects. Callers can await this to wait for
 // a brief reconnect window instead of failing immediately.
@@ -2033,6 +2034,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
     const encoder = new TextEncoder();
     let httpBuffer = "";
     let isXMLSocket = false;
+    let myConnectionId = 0;
 
     const reader = conn.readable.getReader();
     const writer = conn.writable.getWriter();
@@ -2308,6 +2310,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
 
         // Socket connection from firmware
         isXMLSocket = true;
+        myConnectionId = ++firmwareConnectionId;
         firmwareWriter = writer;
         firmwareConnected = true;
         if (firmwareConnectResolve) firmwareConnectResolve();
@@ -2337,7 +2340,11 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
             }
         }
     } finally {
-        if (isXMLSocket) {
+        if (isXMLSocket && myConnectionId === firmwareConnectionId) {
+            // Only clean up global state if this is still the active connection.
+            // During child-mode reset, the new firmware can connect before the old
+            // connection's TCP close completes — without this guard, the old
+            // connection's cleanup would wipe the new connection's state.
             emitLog("engine", "warn", "Firmware disconnected");
             firmwareConnected = false;
             firmwareWriter = null;

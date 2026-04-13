@@ -269,6 +269,49 @@ class Main {
         }
     }
 
+    /**
+     * Reset all runtime state to initial values. Called during game reset
+     * in both child and parent mode so the next game run starts clean.
+     *
+     * In child mode this is critical because AS2 static variables survive
+     * _level0.loadMovie() — without this, the fresh firmware instance would
+     * inherit stale hit counts, delta values, watchers, etc. from the
+     * previous run.
+     */
+    private static function resetRuntimeState():Void {
+        gameLoaded = false;
+        _soundFixState = 0;
+        _soundFixDeadline = 0;
+        deltaValues = {};
+        rememberedValues = {};
+        memoryWatchers = {};
+        memoryWatchFrameCount = 0;
+        _global.__raHookSeen = {};
+        _global.__raHookPending = {};
+        _global.__raHookNextId = 0;
+        badgeImageCache = {};
+        badgeImageOrder = [];
+        preloadQueue = [];
+        currentPreloadId = 0;
+        if (preloadContainer != null) {
+            preloadContainer.removeMovieClip();
+            preloadContainer = null;
+        }
+        lastRichPresenceTime = 0;
+        profilingData = {};
+        lastProfilingReport = 0;
+        objAccessOptimized = 0;
+        objAccessGeneric = 0;
+        arrAccessOptimized = 0;
+        arrAccessGeneric = 0;
+        totalFrameTimeMs = 0;
+        diffOpsTimeMs = 0;
+        stageCountTimeMs = 0;
+        frameCount = 0;
+        _rescanFailFrames = 0;
+        _rescanWarned = false;
+    }
+
     private static function connectToServer():Void {
         // Close previous socket to prevent handle leaks across reconnects
         if (socket != null) {
@@ -893,6 +936,14 @@ class Main {
                 break;
 
             case "resetGame":
+                // Restore Flash Player default Stage properties before reload.
+                // loadMovie does NOT reset these, so without this the reloaded
+                // game would inherit whatever scaleMode/align the previous run
+                // left behind — causing different behavior after reset vs fresh
+                // launch.
+                Stage.scaleMode = "showAll";
+                Stage.align = "";
+                resetRuntimeState();
                 if (childMode) {
                     // In child mode the firmware is a clip inside _level0 (the
                     // game), so we cannot unload the game from here without
@@ -901,47 +952,26 @@ class Main {
                     // destroys this firmware along with the game tree, and the
                     // injected bootstrap on frame 1 of the fresh game will load
                     // a new firmware that reconnects and re-handshakes.
+                    //
+                    // Clear initialSetupDone so the fresh firmware instance
+                    // takes the first-connect path in onConnect/setup — accepting
+                    // the engine's AppData (with cleared hit counts) as
+                    // authoritative instead of pushing stale static data back.
+                    initialSetupDone = false;
+                    connected = false;
                     sendResponse(id, { success: true });
-                    // Reset Stage properties to Flash Player defaults before
-                    // reload. loadMovie does NOT reset these, so without this
-                    // the reloaded game would inherit whatever scaleMode/align
-                    // the previous run left behind — causing different behavior
-                    // after reset vs fresh launch.
-                    Stage.scaleMode = "showAll";
-                    Stage.align = "";
                     var resetUrl:String = String(_level0._url);
                     sendMessage("log", { message: "[reset] reloading _level0 from " + resetUrl });
+                    // Close the socket explicitly before loadMovie so the engine
+                    // processes the TCP close before the new firmware connects.
+                    // Without this, loadMovie destroys the socket implicitly and
+                    // the TCP FIN races against the new firmware's connection.
+                    try { socket.close(); } catch (e:Error) { /* already closed */ }
                     _level0.loadMovie(resetUrl);
                 } else {
-                    // Parent mode: unload game and reset all runtime state.
-                    // Restore Flash Player default Stage properties so the
-                    // reloaded game starts with the same state as a fresh launch.
-                    Stage.scaleMode = "showAll";
-                    Stage.align = "";
+                    // Parent mode: unload game and reload.
                     gameRoot.unloadMovie();
                     gameContainer.removeMovieClip();
-                    gameLoaded = false;
-                    _soundFixState = 0;
-                    _soundFixDeadline = 0;
-                    deltaValues = {};
-                    rememberedValues = {};
-                    memoryWatchers = {};
-                    memoryWatchFrameCount = 0;
-                    // Drop function-call hook state. Wrappers still
-                    // installed on the (now-unloading) game tree will
-                    // become unreachable along with the tree itself.
-                    _global.__raHookSeen = {};
-                    _global.__raHookPending = {};
-                    _global.__raHookNextId = 0;
-                    badgeImageCache = {};
-                    badgeImageOrder = [];
-                    preloadQueue = [];
-                    currentPreloadId = 0;
-                    if (preloadContainer != null) {
-                        preloadContainer.removeMovieClip();
-                        preloadContainer = null;
-                    }
-                    lastRichPresenceTime = 0;
                     sendResponse(id, { success: true });
                     loadGame(params.gameUrl);
                 }
