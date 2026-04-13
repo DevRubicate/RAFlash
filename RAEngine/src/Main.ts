@@ -31,7 +31,7 @@ import * as pako from "npm:pako";
 import { unzipSync, zipSync } from "npm:fflate";
 import { startSitelockProxy, stopSitelockProxy } from "./SitelockProxy.ts";
 
-const VERSION = "0.0.15";
+const VERSION = "0.0.16";
 
 // Compile a formula and emit an error log if compilation fails
 function compileFormula(input: string): unknown[] {
