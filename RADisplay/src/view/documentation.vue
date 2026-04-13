@@ -78,17 +78,152 @@
             <section id="tool-asset-list">
                 <h1>Asset List</h1>
                 <p>
-                    The main achievement management view. Lists all achievement assets for the current game,
-                    organized by tabs for different asset types. Each asset has a title, description, badge image,
-                    and a set of conditions written in the Formula DSL.
+                    The main achievement management view. Lists all assets for the current game.
+                    Tabs at the top switch between <strong>Achievements</strong> and <strong>Rich Presence</strong> assets.
+                    A dropdown filter narrows by state: All, Active, Inactive, Triggered, or Modified.
                 </p>
                 <p>
-                    Use the <strong>+</strong> button to create new assets. Click any asset to open it in the
-                    <strong>Asset Editor</strong>, where you can define conditions, set point values, and configure behavior.
+                    The header shows the Game ID, total achievement count, and total points.
+                    The <strong>Processing Active</strong> checkbox controls whether the engine is evaluating
+                    conditions each frame. Use the <strong>Activate/Deactivate</strong> button to toggle
+                    the state of selected assets in bulk.
+                </p>
+                <p>
+                    Use <strong>New</strong> to create an asset, <strong>Clone</strong> to duplicate the selection,
+                    and <strong>Delete</strong> to remove selected assets. Double-click any asset to open it
+                    in the <strong>Asset Editor</strong> (for achievements) or
+                    <strong>Rich Presence Editor</strong> (for rich presence).
+                </p>
+                <p>
+                    <strong>Save</strong> writes modified assets to the game file. <strong>Reset</strong>
+                    discards unsaved changes and reloads from disk. Both buttons show the count of
+                    affected assets.
                 </p>
                 <p>
                     Assets with negative IDs are local/unpromoted &mdash; they only exist in your local game file
                     and haven't been submitted to a server yet.
+                </p>
+            </section>
+
+            <section id="tool-asset-editor">
+                <h1>Asset Editor</h1>
+                <p>
+                    Opens when you double-click an achievement in the Asset List.
+                    The header contains the asset's <strong>Title</strong>, <strong>Description</strong>,
+                    <strong>ID</strong>, <strong>Type</strong>, <strong>Points</strong>, and a
+                    <strong>Badge Image</strong>.
+                </p>
+
+                <h2>Type</h2>
+                <p>
+                    Classifies the achievement for display purposes. Options:
+                </p>
+                <dl>
+                    <dt>(None)</dt>
+                    <dd>Standard achievement with no special classification.</dd>
+                    <dt>Missable</dt>
+                    <dd>Can be permanently missed during a playthrough.</dd>
+                    <dt>Progression</dt>
+                    <dd>Unlocked through normal game progression.</dd>
+                    <dt>Win</dt>
+                    <dd>Awarded for completing or winning the game.</dd>
+                </dl>
+
+                <h2>Points</h2>
+                <p>
+                    Point value for the achievement. Available values:
+                    0, 1, 2, 3, 4, 5, 10, 25, 50, 100.
+                </p>
+
+                <h2>Groups</h2>
+                <p>
+                    Each achievement has a <strong>Core</strong> group and optional <strong>Alt</strong>
+                    groups. The Core group's requirements must all be satisfied. Alt groups provide
+                    alternative paths &mdash; if any single Alt group is fully satisfied, it counts as
+                    meeting that part of the achievement. Use the <strong>+</strong> / <strong>-</strong>
+                    buttons to add or remove Alt groups. The Core group cannot be removed.
+                </p>
+
+                <h2>Requirements</h2>
+                <p>
+                    Each group contains a table of requirements. A requirement compares two values
+                    using DSL expressions. The columns are:
+                </p>
+                <dl>
+                    <dt>Flag</dt>
+                    <dd>
+                        Modifies how the requirement is evaluated. Leave blank for a normal condition.
+                        Available flags:
+                        <table>
+                            <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>Pause If</code></td><td>Pauses the entire group while this condition is true. Hits are frozen, not reset.</td></tr>
+                                <tr><td><code>Reset If</code></td><td>Resets all hit counts in the group to zero when this condition is true.</td></tr>
+                                <tr><td><code>Reset Next If</code></td><td>Resets only the <em>next</em> requirement's hit count when true.</td></tr>
+                                <tr><td><code>Add Source</code></td><td>Adds this requirement's value to a running accumulator instead of comparing.</td></tr>
+                                <tr><td><code>Sub Source</code></td><td>Subtracts this requirement's value from the accumulator.</td></tr>
+                                <tr><td><code>Add Hits</code></td><td>Adds this requirement's hit count to the next terminal requirement's count.</td></tr>
+                                <tr><td><code>Sub Hits</code></td><td>Subtracts this requirement's hit count from the next terminal requirement's count.</td></tr>
+                                <tr><td><code>And Next</code></td><td>Combines with the next requirement using AND &mdash; both must be true in the same frame for either to count a hit.</td></tr>
+                                <tr><td><code>Or Next</code></td><td>Combines with the next requirement using OR &mdash; either being true counts a hit.</td></tr>
+                                <tr><td><code>Measured</code></td><td>Tracks this requirement's progress as a visible progress indicator.</td></tr>
+                                <tr><td><code>Measured If</code></td><td>Only shows the Measured progress when this condition is true.</td></tr>
+                                <tr><td><code>Trigger</code></td><td>Marks a requirement that must be true at the moment the achievement triggers, but doesn't accumulate hits.</td></tr>
+                            </tbody>
+                        </table>
+                    </dd>
+
+                    <dt>Type A / Type B</dt>
+                    <dd>
+                        <strong>Value</strong> reads the current value of the expression.
+                        <strong>Delta</strong> reads the value from the <em>previous</em> frame,
+                        useful for detecting changes (e.g. <code>Delta &lt; Value</code> means "increased this frame").
+                    </dd>
+
+                    <dt>Evaluate A / Evaluate B</dt>
+                    <dd>DSL expressions evaluated against the game state. Side A is typically the game value; side B is often a constant.</dd>
+
+                    <dt>Cmp</dt>
+                    <dd>Comparison operator: <code>==</code>, <code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>, <code>!=</code>.</dd>
+
+                    <dt>Hits</dt>
+                    <dd>
+                        The <strong>maxHits</strong> target. When set to 0, the condition must be true
+                        continuously. When set to N, the condition needs to have been true for N total frames
+                        (not necessarily consecutive). The number in parentheses shows the <strong>effective hits</strong>
+                        &mdash; the requirement's own hits plus any contiguous Add Hits/Sub Hits chain above it.
+                    </dd>
+                </dl>
+
+                <h2>Requirement Actions</h2>
+                <p>
+                    The footer provides buttons to <strong>New</strong> / <strong>Remove</strong> requirements,
+                    <strong>Copy</strong> / <strong>Paste</strong> via the clipboard (as JSON),
+                    and <strong>Move Up</strong> / <strong>Move Down</strong> to reorder.
+                    The <strong>Active</strong> checkbox in the panel header toggles whether this
+                    achievement is being evaluated.
+                </p>
+                <p>
+                    Clicking <strong>Save</strong> writes the asset to the game file and resets all
+                    accumulated hit counts to zero, giving a clean slate for the next evaluation pass.
+                </p>
+            </section>
+
+            <section id="tool-rich-presence">
+                <h1>Rich Presence Editor</h1>
+                <p>
+                    Opens when you double-click a Rich Presence asset in the Asset List.
+                    Rich Presence defines a text string that describes what the player is currently
+                    doing in the game, built from live game state using DSL expressions.
+                </p>
+                <p>
+                    Write a formula in the text area. The <strong>Preview</strong> row at the top
+                    shows the live evaluated result, updating every 500ms.
+                </p>
+                <p>
+                    The <strong>Active</strong> checkbox controls whether the engine evaluates this
+                    rich presence. Click <strong>Save</strong> to write changes to the game file.
+                    The formula auto-saves as you type (with a short debounce).
                 </p>
             </section>
 
@@ -124,6 +259,26 @@
                         Useful for finding properties that are transient or get removed.
                     </dd>
                 </dl>
+
+                <h2>Navigation</h2>
+                <p>
+                    The <strong>&lt;</strong> / <strong>&gt;</strong> history buttons let you step back and
+                    forward through previous evaluations (up to 50 entries).
+                </p>
+                <p>
+                    Rows whose values look like <code>[MovieClip ...N]</code>, <code>[Object ...N]</code>,
+                    or <code>[Array ...N]</code> are <strong>expandable</strong> &mdash; double-click them
+                    to drill into that object. The expression updates automatically
+                    (appending <code>.key</code> or <code>[index]</code>) and re-evaluates.
+                </p>
+
+                <h2>Editing Values</h2>
+                <p>
+                    Rows with simple values (numbers, strings, booleans) show a pencil button on hover.
+                    Click it to open an edit popup where you can change the value directly in the
+                    running game. Functions, MovieClips, and other complex types cannot be edited.
+                </p>
+
                 <p>
                     All modes support a text filter input to narrow results.
                     Key extraction uses the text before the first <code>: </code> separator in each row.
@@ -136,18 +291,30 @@
                     Recursively searches the game's entire stage tree for matching properties.
                     Returns the full path to each match, which you can then use in DSL expressions.
                 </p>
+                <p>
+                    The optional <strong>Starting path</strong> field lets you narrow the search to
+                    a subtree (e.g. <code>stage.enemies</code>) instead of scanning the entire stage.
+                </p>
                 <p>Two search modes are available via the radio toggle:</p>
                 <dl>
                     <dt>Value</dt>
-                    <dd>Find properties whose current value matches the search term.</dd>
+                    <dd>
+                        Find properties whose current value matches the search term.
+                        Supports wildcards: <code>M*io</code> matches "Mario".
+                    </dd>
 
                     <dt>Name</dt>
                     <dd>Find properties whose name contains the search substring (case-insensitive).</dd>
                 </dl>
                 <p>
                     The search button shows the result count in parentheses.
-                    Subsequent searches narrow within the previous result set &mdash; use <strong>Clear</strong> to reset
+                    Subsequent searches narrow within the previous result set &mdash; use <strong>Reset</strong> to clear
                     and search the full tree again.
+                </p>
+                <p>
+                    Each result row shows the full path and a <strong>live value</strong> column
+                    that updates every second (for the first 100 results). The path cells are
+                    selectable so you can copy them directly into DSL expressions.
                 </p>
             </section>
 
@@ -158,13 +325,26 @@
                     Enter a formula and click <strong>Watch</strong> to start.
                 </p>
                 <p>
-                    In <strong>value mode</strong> (when the expression returns a simple value),
-                    new entries are only added when the value changes, keeping the log clean.
-                    In <strong>structure mode</strong> (when the expression returns properties),
-                    it tracks which keys appear and marks removed keys with strikethrough.
+                    The mode is detected automatically from the expression's return type:
                 </p>
+                <dl>
+                    <dt>Value mode</dt>
+                    <dd>
+                        When the expression returns a simple value. New entries are only added
+                        when the value changes, keeping the log clean. Consecutive identical values
+                        are collapsed into a single entry with a <strong>&times;N</strong> count.
+                    </dd>
+
+                    <dt>Structure mode</dt>
+                    <dd>
+                        When the expression returns properties. Tracks which keys appear over time
+                        and marks removed keys with strikethrough.
+                    </dd>
+                </dl>
                 <p>
-                    Use <strong>Clear</strong> to clear the visible log without resetting the watch.
+                    Use <strong>Clear</strong> to clear the visible log without resetting the watch
+                    &mdash; the watch continues running and previously seen keys are still remembered,
+                    so only genuinely new keys will appear.
                     Click <strong>Stop</strong> to end monitoring.
                 </p>
             </section>
@@ -204,13 +384,19 @@
                 <h1>Code Notes</h1>
                 <p>
                     A table of annotations that map DSL paths to human-readable descriptions.
-                    Each note has a <strong>description</strong>, a <strong>path</strong> (a DSL expression),
-                    and a live <strong>value</strong> column that updates automatically.
+                    Each note has a <strong>Note</strong> column (description), a <strong>Path</strong>
+                    column (a DSL expression), and a live <strong>Value</strong> column that polls
+                    the game every second for visible rows.
                 </p>
                 <p>
                     Code notes serve as a reference sheet &mdash; document what you've discovered about the game's
-                    memory layout so you don't have to re-explore it later. Notes can be reordered with the
-                    arrow buttons and searched with the filter input.
+                    memory layout so you don't have to re-explore it later.
+                </p>
+                <p>
+                    Use the <strong>Search</strong> input to filter notes by description. The
+                    <strong>&#9650;</strong> / <strong>&#9660;</strong> buttons reorder notes, and the
+                    <strong>x</strong> button deletes a note. Click <strong>+ Add</strong> to create
+                    a new empty note.
                 </p>
             </section>
 
@@ -227,6 +413,80 @@
                     Click <strong>Clear</strong> to reset the log. The log auto-scrolls to
                     new entries only when you're already at the bottom &mdash; scrolling up
                     to review older entries won't be interrupted.
+                </p>
+            </section>
+
+            <section id="tool-settings">
+                <h1>Settings</h1>
+                <p>
+                    Configure RAFlash behavior. Accessed from the devtools menu gear icon.
+                    Settings are organized into two tabs:
+                </p>
+
+                <h2>Firmware</h2>
+                <p>
+                    Controls how the firmware loads and instruments the game. Three modes are available:
+                </p>
+                <dl>
+                    <dt>Child Injection</dt>
+                    <dd>
+                        Flash Player launches the game directly. RAEngine injects bytecode at frame 1
+                        that loads the firmware as a child clip of the game's <code>_root</code>, so the game
+                        runs as the true <code>_level0</code>. This gives the best compatibility since the game
+                        believes it owns the stage.
+                    </dd>
+
+                    <dt>Parent Wrapper</dt>
+                    <dd>
+                        Flash Player launches the firmware, which then loads the game into a child clip.
+                        Some games may need compatibility fixes (see below). Click <strong>Settings &rarr;</strong>
+                        to configure:
+                        <ul>
+                            <li><strong>Fix TextField variable bindings</strong> &mdash; Restores two-way AS2 TextField
+                            variable bindings that break under <code>loadMovie()</code>.</li>
+                            <li><strong>Fix Sound attachSound scope</strong> &mdash; Fixes sounds that fail because
+                            <code>attachSound</code> looks in the firmware's library instead of the game's.</li>
+                        </ul>
+                    </dd>
+
+                    <dt>No Firmware</dt>
+                    <dd>
+                        Flash Player launches the game directly with no firmware. No devtools or achievement support.
+                        Useful for testing how the game runs without any instrumentation.
+                    </dd>
+                </dl>
+                <p>
+                    Mode changes apply on the next game launch. For AVM2 (AS3) games, "Child Injection"
+                    silently falls back to "Parent Wrapper" since AVM2 child mode isn't implemented yet.
+                </p>
+
+                <h2>Developer</h2>
+                <dl>
+                    <dt>Enable Benchmarking</dt>
+                    <dd>
+                        Profiles firmware execution time per frame. When enabled, a <strong>Benchmarking</strong>
+                        button appears in the devtools menu. Has a minor performance cost when active.
+                    </dd>
+
+                    <dt>Open RAFlash dev tools when game opens</dt>
+                    <dd>
+                        Automatically opens the devtools menu every time a game launches. Useful for sitelocked
+                        or immediately-crashing games where you can't press F12 in time.
+                    </dd>
+                </dl>
+            </section>
+
+            <section id="tool-benchmarking">
+                <h1>Benchmarking</h1>
+                <p>
+                    A developer tool that profiles firmware execution time per frame. Only visible in
+                    the devtools menu when <strong>Enable Benchmarking</strong> is turned on in Settings.
+                </p>
+                <p>
+                    Displays a table of timing data with columns for the <strong>Kind</strong> of operation,
+                    <strong>Current</strong> frame time, <strong>Min</strong>, and <strong>Max</strong> observed times.
+                    Times are color-coded by severity. Use the <strong>Reset</strong> button to clear
+                    accumulated min/max values and start fresh.
                 </p>
             </section>
 
@@ -434,6 +694,7 @@ stage.menu.gotoMySite.triggered // 1 on frames the function fired, else 0</pre>
                     <thead><tr><th>State</th><th>Description</th></tr></thead>
                     <tbody>
                         <tr><td><code>ACTIVE</code></td><td>Not yet unlocked. Conditions are being evaluated every frame.</td></tr>
+                        <tr><td><code>INACTIVE</code></td><td>Disabled. Conditions are not evaluated. Toggle via the Active checkbox in the Asset Editor or the Activate/Deactivate button in the Asset List.</td></tr>
                         <tr><td><code>TRIGGERED</code></td><td>Unlocked. Persisted in the user profile. Conditions stop being evaluated.</td></tr>
                     </tbody>
                 </table>
@@ -652,12 +913,16 @@ stage.menu.gotoMySite.triggered // 1 on frames the function fired, else 0</pre>
         { id: 'tool-game-info',           title: 'Game Info' },
         { id: 'tool-game-behavior',       title: 'Game Behavior' },
         { id: 'tool-asset-list',          title: 'Asset List' },
+        { id: 'tool-asset-editor',        title: 'Asset Editor' },
+        { id: 'tool-rich-presence',       title: 'Rich Presence Editor' },
         { id: 'tool-memory-explorer',     title: 'Memory Explorer' },
         { id: 'tool-memory-search',       title: 'Memory Search' },
         { id: 'tool-memory-watch',        title: 'Memory Watch' },
         { id: 'tool-resource-explorer',   title: 'Resource Explorer' },
         { id: 'tool-code-notes',          title: 'Code Notes' },
         { id: 'tool-event-log',           title: 'Event Log' },
+        { id: 'tool-settings',            title: 'Settings' },
+        { id: 'tool-benchmarking',        title: 'Benchmarking' },
     ];
 
     const guidesChapters = [
