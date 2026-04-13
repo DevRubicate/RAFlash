@@ -18,7 +18,7 @@ import flash.text.TextField;
 class Evaluate {
 
     // Remembered values for {expr} syntax — persists across evaluation frames
-    static var rememberedValues:Map<String, Array<Dynamic>> = new Map();
+    public static var rememberedValues:Map<String, Array<Dynamic>> = new Map();
 
     // === Public API ===
 
@@ -436,7 +436,7 @@ class Evaluate {
      * @param output  Array to collect matching path strings
      * @param visited Array for circular reference protection
      */
-    public static function searchTargetForValue(target:Dynamic, value:String, path:String, output:Array<Dynamic>, visited:flash.utils.Dictionary):Void {
+    public static function searchTargetForValue(target:Dynamic, value:String, path:String, output:Array<Dynamic>, visited:#if flash flash.utils.Dictionary #else Dynamic #end):Void {
         // Circular reference protection for objects (Dictionary uses identity keys for O(1) lookup)
         if (#if flash Std.isOfType(target, DisplayObjectContainer) || #end (untyped __typeof__(target) == "object" && target != null)) {
             if (untyped visited[target] == true) return;
@@ -506,7 +506,7 @@ class Evaluate {
     /**
      * Recursively search for property names containing a substring.
      */
-    public static function searchTargetForName(target:Dynamic, nameLower:String, path:String, output:Array<Dynamic>, visited:flash.utils.Dictionary):Void {
+    public static function searchTargetForName(target:Dynamic, nameLower:String, path:String, output:Array<Dynamic>, visited:#if flash flash.utils.Dictionary #else Dynamic #end):Void {
         // Circular reference protection for objects (Dictionary uses identity keys for O(1) lookup)
         if (#if flash Std.isOfType(target, DisplayObjectContainer) || #end (untyped __typeof__(target) == "object" && target != null)) {
             if (untyped visited[target] == true) return;

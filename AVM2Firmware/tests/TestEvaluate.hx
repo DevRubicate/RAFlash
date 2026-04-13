@@ -236,5 +236,189 @@ class TestEvaluate {
         TestRunner.test("Evaluate - matchesWildcard prefix no match");
         TestRunner.assert(!Evaluate.matchesWildcard("goodbye world", "hello*"), "prefix no match");
         TestRunner.endTest();
+
+        // === Broadcasting (scalar x array, array x array, mismatched) ===
+
+        TestRunner.test("Evaluate - ADD scalar + array broadcasts");
+        // [5] + [1,2,3] -> [6,7,8]
+        // Push [5] via VALUE, push [1,2,3] via READ_GLOBAL this, ADD
+        var r = eval(["VALUE", "5", "IDENTIFIER", "this", "READ_GLOBAL", "ADD"], [1, 2, 3]);
+        TestRunner.assertEqual(r.length, 3, "result length");
+        TestRunner.assertEqual(r[0], 6, "5+1=6");
+        TestRunner.assertEqual(r[1], 7, "5+2=7");
+        TestRunner.assertEqual(r[2], 8, "5+3=8");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - ADD array + scalar broadcasts");
+        // [1,2,3] + [10] -> [11,12,13]
+        // Push [1,2,3] via READ_GLOBAL this, push [10] via VALUE, ADD
+        var r = eval(["IDENTIFIER", "this", "READ_GLOBAL", "VALUE", "10", "ADD"], [1, 2, 3]);
+        TestRunner.assertEqual(r.length, 3, "result length");
+        TestRunner.assertEqual(r[0], 11, "1+10=11");
+        TestRunner.assertEqual(r[1], 12, "2+10=12");
+        TestRunner.assertEqual(r[2], 13, "3+10=13");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - SUB scalar - array broadcasts");
+        // [10] - [1,2,3] -> [9,8,7]
+        var r = eval(["VALUE", "10", "IDENTIFIER", "this", "READ_GLOBAL", "SUB"], [1, 2, 3]);
+        TestRunner.assertEqual(r.length, 3, "result length");
+        TestRunner.assertEqual(r[0], 9, "10-1=9");
+        TestRunner.assertEqual(r[1], 8, "10-2=8");
+        TestRunner.assertEqual(r[2], 7, "10-3=7");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - MUL array x array element-wise");
+        // [1,2,3] * [10,20,30] -> [10,40,90]
+        // Push [1,2,3] via READ_GLOBAL this, push [10,20,30] via READ_GLOBAL key, MUL
+        var r = eval(["IDENTIFIER", "this", "READ_GLOBAL", "IDENTIFIER", "key", "READ_GLOBAL", "MUL"], [1, 2, 3], [10, 20, 30]);
+        TestRunner.assertEqual(r.length, 3, "result length");
+        TestRunner.assertEqual(r[0], 10, "1*10=10");
+        TestRunner.assertEqual(r[1], 40, "2*20=40");
+        TestRunner.assertEqual(r[2], 90, "3*30=90");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - EQUAL scalar vs array broadcasts");
+        // [5] == [5,3,5] -> [1,0,1]
+        var r = eval(["VALUE", "5", "IDENTIFIER", "this", "READ_GLOBAL", "EQUAL"], [5, 3, 5]);
+        TestRunner.assertEqual(r.length, 3, "result length");
+        TestRunner.assertEqual(r[0], 1, "5==5 is 1");
+        TestRunner.assertEqual(r[1], 0, "5==3 is 0");
+        TestRunner.assertEqual(r[2], 1, "5==5 is 1");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - NOT on array");
+        // NOT [1,0,1,0] -> [0,1,0,1]
+        var r = eval(["IDENTIFIER", "this", "READ_GLOBAL", "NOT"], [1, 0, 1, 0]);
+        TestRunner.assertEqual(r.length, 4, "result length");
+        TestRunner.assertEqual(r[0], 0, "NOT 1 = 0");
+        TestRunner.assertEqual(r[1], 1, "NOT 0 = 1");
+        TestRunner.assertEqual(r[2], 0, "NOT 1 = 0");
+        TestRunner.assertEqual(r[3], 1, "NOT 0 = 1");
+        TestRunner.endTest();
+
+        // === TERNARY with array condition (element-wise selection) ===
+
+        TestRunner.test("Evaluate - TERNARY array condition element-wise");
+        // condition [1,0,1], then 10, else 20 -> [10,20,10]
+        var r = eval(["IDENTIFIER", "this", "READ_GLOBAL", "TERNARY", "2", "VALUE", "10", "2", "VALUE", "20"], [1, 0, 1]);
+        TestRunner.assertEqual(r.length, 3, "result length");
+        TestRunner.assertEqual(r[0], 10, "truthy -> then branch");
+        TestRunner.assertEqual(r[1], 20, "falsy -> else branch");
+        TestRunner.assertEqual(r[2], 10, "truthy -> then branch");
+        TestRunner.endTest();
+
+        // === NOT edge cases ===
+
+        TestRunner.test("Evaluate - NOT of null is 1");
+        var r = eval(["NULL", "NOT"]);
+        TestRunner.assertEqual(r.length, 1, "result length");
+        TestRunner.assertEqual(r[0], 1, "NOT null = 1 (null is falsy)");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - NOT of empty string is 1");
+        var r = eval(["STRING", "", "NOT"]);
+        TestRunner.assertEqual(r.length, 1, "result length");
+        TestRunner.assertEqual(r[0], 1, "NOT empty string = 1 (empty string is falsy)");
+        TestRunner.endTest();
+
+        // === READ_GLOBAL stage ===
+
+        TestRunner.test("Evaluate - READ_GLOBAL stage returns gameRoot");
+        var gameRoot:Dynamic = {x: 1};
+        var r = eval(["IDENTIFIER", "stage", "READ_GLOBAL"], [], [], gameRoot);
+        TestRunner.assertEqual(r.length, 1, "result length");
+        TestRunner.assertEqual(r[0], gameRoot, "result is the gameRoot object");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - READ_GLOBAL stage_frame returns 0 on neko");
+        var r = eval(["IDENTIFIER", "stage_frame", "READ_GLOBAL"]);
+        TestRunner.assertEqual(r.length, 1, "result length");
+        TestRunner.assertEqual(r[0], 0, "stage_frame is 0 on non-flash target");
+        TestRunner.endTest();
+
+        // === Unknown token returns null ===
+
+        TestRunner.test("Evaluate - unknown token returns null");
+        var r = eval(["GARBAGE"]);
+        TestRunner.assertEqual(r, null, "unknown token returns null");
+        TestRunner.endTest();
+
+        // === REMEMBER ===
+
+        TestRunner.test("Evaluate - REMEMBER returns fresh result");
+        // REMEMBER 3, IDENTIFIER this, READ_GLOBAL
+        // Clear remembered values first
+        Evaluate.rememberedValues = new Map();
+        var r = eval(["REMEMBER", "3", "IDENTIFIER", "this", "READ_GLOBAL"], [42]);
+        TestRunner.assertEqual(r.length, 1, "result length");
+        TestRunner.assertEqual(r[0], 42, "returns fresh value");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - REMEMBER returns cached when inner is empty");
+        // Same bytecode but with empty context -> inner evaluates to []
+        // Should return cached [42] from previous call
+        var r = eval(["REMEMBER", "3", "IDENTIFIER", "this", "READ_GLOBAL"], []);
+        TestRunner.assertEqual(r.length, 1, "result length from cache");
+        TestRunner.assertEqual(r[0], 42, "returns cached value");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - REMEMBER returns empty when no cache and inner is empty");
+        Evaluate.rememberedValues = new Map();
+        var r = eval(["REMEMBER", "3", "IDENTIFIER", "this", "READ_GLOBAL"], []);
+        TestRunner.assertEqual(r.length, 0, "returns empty array when no cache");
+        TestRunner.endTest();
+
+        // === formatOutput ===
+
+        TestRunner.test("Evaluate - formatOutput number");
+        var result:Dynamic = Evaluate.formatOutput([42], 0);
+        TestRunner.assertEqual(result.output.length, 1, "one output item");
+        TestRunner.assertEqual(result.output[0].value, 42, "number value preserved");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - formatOutput string");
+        var result:Dynamic = Evaluate.formatOutput(["hello"], 0);
+        TestRunner.assertEqual(result.output.length, 1, "one output item");
+        TestRunner.assertEqual(result.output[0].value, "\"hello\"", "string value quoted");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - formatOutput null");
+        var result:Dynamic = Evaluate.formatOutput([null], 0);
+        TestRunner.assertEqual(result.output.length, 1, "one output item");
+        TestRunner.assertEqual(result.output[0].value, "null", "null formatted as string");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - formatOutput bool");
+        var result:Dynamic = Evaluate.formatOutput([true], 0);
+        TestRunner.assertEqual(result.output.length, 1, "one output item");
+        TestRunner.assertEqual(result.output[0].value, true, "bool value preserved");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - formatOutput multiple values");
+        var result:Dynamic = Evaluate.formatOutput([1, 2, 3], 0);
+        TestRunner.assertEqual(result.output.length, 3, "three output items");
+        TestRunner.assertEqual(result.output[0].value, 1, "first value");
+        TestRunner.assertEqual(result.output[1].value, 2, "second value");
+        TestRunner.assertEqual(result.output[2].value, 3, "third value");
+        TestRunner.endTest();
+
+        // === matchesWildcard additional cases ===
+
+        TestRunner.test("Evaluate - matchesWildcard multiple wildcards");
+        TestRunner.assert(Evaluate.matchesWildcard("abcdef", "a*c*f"), "multiple wildcards match");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - matchesWildcard empty string vs empty pattern");
+        TestRunner.assert(Evaluate.matchesWildcard("", ""), "empty matches empty");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - matchesWildcard empty string vs star");
+        TestRunner.assert(Evaluate.matchesWildcard("", "*"), "empty matches star");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - matchesWildcard middle match failure");
+        TestRunner.assert(!Evaluate.matchesWildcard("abc", "a*z"), "a*z does not match abc");
+        TestRunner.endTest();
     }
 }
