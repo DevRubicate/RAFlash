@@ -1445,6 +1445,9 @@ async function handleApiRequest(
                     if (gc.title) dataJson.title = gc.title;
                     if (gc.originUrl) dataJson.originUrl = gc.originUrl;
                     if (gc.badgeImage) dataJson.badgeImage = gc.badgeImage;
+                    // Set hash override to the .swf's hash so the .raflash
+                    // shares game state with the original .swf automatically.
+                    dataJson.hashOverride = AppData.gameHash;
                     dataJson.scaleMode = 'showAll';
                     dataJson.align = 'TL';
 
@@ -1455,17 +1458,6 @@ async function handleApiRequest(
 
                     await Deno.writeFile(outputPath, zipped);
                     emitLog("engine", "info", `Created ${outputPath}`);
-
-                    // Copy the current state file to the new .raflash's hash so
-                    // assets, code notes, and config carry over to the converted file.
-                    if (AppData.stateFilePath) {
-                        const newHash = await AppData.hashFile(outputPath);
-                        const newStateFile = `RACache/games/${newHash}.json`;
-                        try {
-                            await Deno.copyFile(AppData.stateFilePath, newStateFile);
-                            emitLog("engine", "info", "Copied game state to .raflash");
-                        } catch { /* state file may not exist yet (no edits made) */ }
-                    }
                 } else {
                     emitLog("engine", "info", `Found existing ${outputPath}`);
                 }
@@ -1504,6 +1496,7 @@ async function handleApiRequest(
                 if ("originUrl" in params) dataJson.originUrl = params.originUrl as string;
                 if ("title" in params) dataJson.title = params.title as string;
                 if ("badgeImage" in params) dataJson.badgeImage = params.badgeImage as string;
+                if ("hashOverride" in params) dataJson.hashOverride = params.hashOverride as string;
                 if ("scaleMode" in params) dataJson.scaleMode = params.scaleMode as string;
                 if ("align" in params) dataJson.align = params.align as string;
 
@@ -2770,7 +2763,7 @@ async function main(): Promise<void> {
         selectedGamePath = resolvedGamePath;
 
         // --- .raflash handling: extract start.swf and data.json from zip ---
-        let raflashData: { title?: string; originUrl?: string; badgeImage?: string; scaleMode?: string; align?: string } | null = null;
+        let raflashData: { title?: string; originUrl?: string; badgeImage?: string; hashOverride?: string; scaleMode?: string; align?: string } | null = null;
         let extractedSwfBytes: Uint8Array | null = null;
 
         if (resolvedGamePath.toLowerCase().endsWith(".raflash")) {
@@ -2802,8 +2795,11 @@ async function main(): Promise<void> {
             ? { mode: "AVM2", firmwareUrl: "/avm2-firmware.swf", firmwareSwf: "firmware/AVM2.swf", messageTerminator: "\n", patchFirmware: true, convertPngToJpeg: false }
             : { mode: "AVM1", firmwareUrl: "/avm1-wrapper.swf", firmwareSwf: "firmware/AVM1Wrapper.swf", innerFirmwareSwf: "firmware/AVM1.swf", bootstrapSwf: "firmware/AVM1Bootstrap.swf", messageTerminator: "\0", patchFirmware: true, convertPngToJpeg: true };
 
-        // Load game-specific state (identified by MD5 hash of the file — .swf or .raflash)
-        await AppData.setGamePath(resolvedGamePath);
+        // Load game-specific state. For .raflash files with a hashOverride in
+        // data.json, use the override as the game hash so the .raflash shares
+        // its state with the original .swf it was converted from.
+        const hashOverride = raflashData?.hashOverride || '';
+        await AppData.setGamePath(resolvedGamePath, hashOverride);
         await AppData.loadData();
 
         // For .raflash: write extracted SWF to cache so the HTTP server can serve it
@@ -2823,6 +2819,7 @@ async function main(): Promise<void> {
             if (!gc.badgeImage && raflashData.badgeImage) { gc.badgeImage = raflashData.badgeImage; changed = true; }
             // For .raflash files, behavior fields default to enforced values
             // (not neutral) when the data.json doesn't specify them.
+            if (raflashData.hashOverride && !gc.hashOverride) { gc.hashOverride = raflashData.hashOverride; changed = true; }
             const raScale = raflashData.scaleMode ?? 'showAll';
             const raAlign = (raflashData.align != null) ? raflashData.align : 'TL';
             if (gc.scaleMode !== raScale) { gc.scaleMode = raScale; changed = true; }

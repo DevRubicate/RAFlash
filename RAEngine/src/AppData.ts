@@ -6,7 +6,7 @@ export class AppData {
     static data: AppDataStructure = {
         assets: [],
         codeNotes: [],
-        gameConfig: { title: '', originUrl: '', badgeImage: '', scaleMode: 'neutral', align: 'neutral' },
+        gameConfig: { title: '', originUrl: '', badgeImage: '', hashOverride: '', scaleMode: 'neutral', align: 'neutral' },
     };
 
     // Game-specific state file path
@@ -24,11 +24,14 @@ export class AppData {
     }
 
     /**
-     * Set the game path and derive the state file path from MD5 hash of SWF contents
+     * Set the game path and derive the state file path from game hash.
+     * If hashOverride is provided, it is used as the hash instead of
+     * hashing the file — this lets .raflash files share state with
+     * the original .swf they were converted from.
      */
-    static async setGamePath(gamePath: string): Promise<void> {
+    static async setGamePath(gamePath: string, hashOverride?: string): Promise<void> {
         this.gamePath = gamePath;
-        this.gameHash = await this.hashFile(gamePath);
+        this.gameHash = hashOverride || await this.hashFile(gamePath);
         this.stateFilePath = `RACache/games/${this.gameHash}.json`;
     }
 
@@ -65,10 +68,11 @@ export class AppData {
             const gc = AppData.data.gameConfig;
             if (gc.scaleMode == null) gc.scaleMode = 'neutral';
             if (gc.align == null) gc.align = 'neutral';
+            if (gc.hashOverride == null) gc.hashOverride = '';
         } catch (error) {
             if (error instanceof Deno.errors.NotFound) {
                 // New game, start fresh
-                this.data = { assets: [], codeNotes: [], gameConfig: { title: '', originUrl: '', badgeImage: '', scaleMode: 'neutral', align: 'neutral', shrinkHeight: false } };
+                this.data = { assets: [], codeNotes: [], gameConfig: { title: '', originUrl: '', badgeImage: '', hashOverride: '', scaleMode: 'neutral', align: 'neutral' } };
             } else {
                 throw error;
             }

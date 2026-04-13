@@ -14,6 +14,13 @@
 
         <div class="editor-body">
             <div class="form-group">
+                <label for="hash-override">Hash Override</label>
+                <input type="text" id="hash-override" class="mono-input" v-model="hashOverride"
+                       :disabled="!isRaflash"
+                       placeholder="Leave empty to use the .raflash file's own hash">
+            </div>
+
+            <div class="form-group">
                 <label for="origin-url">Origin URL (to defeat sitelocks)</label>
                 <input type="text" id="origin-url" class="mono-input" v-model="originUrl"
                        :disabled="!isRaflash"
@@ -137,18 +144,21 @@
     import { Network } from '../js/network.ts';
     import { App } from '../js/app.ts';
 
+    const hashOverride = ref('');
     const originUrl = ref('');
     const scaleMode = ref('noScale');
     const align = ref('TL');
     const dirty = ref(false);
     const isRaflash = ref(false);
 
+    let savedHashOverride = '';
     let savedOriginUrl = '';
     let savedScaleMode = 'noScale';
     let savedAlign = 'TL';
 
-    watch([originUrl, scaleMode, align], () => {
-        dirty.value = originUrl.value !== savedOriginUrl
+    watch([hashOverride, originUrl, scaleMode, align], () => {
+        dirty.value = hashOverride.value !== savedHashOverride
+            || originUrl.value !== savedOriginUrl
             || scaleMode.value !== savedScaleMode
             || align.value !== savedAlign;
     });
@@ -158,6 +168,7 @@
         await Network.send({
             command: 'saveRaflashData',
             params: {
+                hashOverride: hashOverride.value,
                 originUrl: originUrl.value,
                 scaleMode: scaleMode.value,
                 align: align.value,
@@ -171,6 +182,7 @@
                 edited: [
                     ['gameConfig', {
                         title: config.title || '',
+                        hashOverride: hashOverride.value,
                         originUrl: originUrl.value,
                         badgeImage: config.badgeImage || '',
                         scaleMode: scaleMode.value,
@@ -179,6 +191,7 @@
                 ]
             }
         });
+        savedHashOverride = hashOverride.value;
         savedOriginUrl = originUrl.value;
         savedScaleMode = scaleMode.value;
         savedAlign = align.value;
@@ -187,9 +200,11 @@
 
     App.initialize().then(async () => {
         const config = App.data.gameConfig || {};
+        savedHashOverride = config.hashOverride || '';
         savedOriginUrl = config.originUrl || '';
         savedScaleMode = config.scaleMode || 'noScale';
         savedAlign = (config.align != null) ? config.align : 'TL';
+        hashOverride.value = savedHashOverride;
         originUrl.value = savedOriginUrl;
         scaleMode.value = savedScaleMode;
         align.value = savedAlign;

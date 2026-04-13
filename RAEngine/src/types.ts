@@ -69,6 +69,7 @@ export interface GameConfig {
     title: string;
     originUrl: string;
     badgeImage: string;
+    hashOverride: string; // If set, used as the game hash instead of the file's actual hash
     scaleMode: string;  // "neutral", "showAll", "noBorder", "exactFit", "noScale"
     align: string;      // "neutral", "", "T", "B", "L", "R", "TL", "TR", "BL", "BR"
     [key: string]: unknown;
