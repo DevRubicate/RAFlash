@@ -313,6 +313,14 @@ class Main {
     }
 
     private static function connectToServer():Void {
+        // Pause the reconnect timer while a connection attempt is in flight.
+        // Without this, the timer fires every 1s and calls connectToServer()
+        // again, closing the socket mid-handshake. onConnect re-schedules on
+        // failure or clears the timer on success.
+        if (reconnectTimer != -1) {
+            clearInterval(reconnectTimer);
+            reconnectTimer = -1;
+        }
         // Close previous socket to prevent handle leaks across reconnects
         if (socket != null) {
             try { socket.close(); } catch (e:Error) { /* already closed */ }
@@ -958,14 +966,14 @@ class Main {
                     // the engine's AppData (with cleared hit counts) as
                     // authoritative instead of pushing stale static data back.
                     initialSetupDone = false;
-                    connected = false;
                     sendResponse(id, { success: true });
                     var resetUrl:String = String(_level0._url);
                     sendMessage("log", { message: "[reset] reloading _level0 from " + resetUrl });
-                    // Close the socket explicitly before loadMovie so the engine
-                    // processes the TCP close before the new firmware connects.
-                    // Without this, loadMovie destroys the socket implicitly and
-                    // the TCP FIN races against the new firmware's connection.
+                    // Mark disconnected and close socket before loadMovie so the
+                    // engine processes the TCP close before the new firmware
+                    // connects. Without this, loadMovie destroys the socket
+                    // implicitly and the TCP FIN races against the new connection.
+                    connected = false;
                     try { socket.close(); } catch (e:Error) { /* already closed */ }
                     _level0.loadMovie(resetUrl);
                 } else {
@@ -1016,6 +1024,7 @@ class Main {
      * Send a response to a request
      */
     private static function sendResponse(id:String, data:Object):Void {
+        if (!connected || socket == null) return;
         var message:Array = ["RESPONSE", id, data];
         var json:String = JSON.stringify(message);
         socket.send(json + chr(0));
@@ -1025,6 +1034,7 @@ class Main {
      * Send an unsolicited message to the server
      */
     private static function sendMessage(type:String, data:Object):Void {
+        if (!connected || socket == null) return;
         var message:Object = { type: type, data: data };
         var json:String = JSON.stringify(message);
         socket.send(json + chr(0));

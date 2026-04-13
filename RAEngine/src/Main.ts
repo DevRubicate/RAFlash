@@ -2356,6 +2356,8 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
                 resolver({ success: false, error: "Firmware disconnected" });
             }
             pendingRequests.clear();
+            // Watchers are firmware-side state — they're gone once it disconnects.
+            watcherSockets.clear();
         }
         try {
             writer.releaseLock();
