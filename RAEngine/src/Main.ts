@@ -1878,7 +1878,7 @@ async function handleApiRequest(
                 const modifiedFlagChanges: Array<[string, unknown]> = [];
                 for (let i = 0; i < assets.length; i++) {
                     const asset = assets[i];
-                    if (asset._saved) {
+                    if (asset != null && asset._saved) {
                         const oldModified = asset._modified;
                         AppData.updateModifiedFlag(asset);
                         if (asset._modified !== oldModified) {
@@ -3037,6 +3037,23 @@ async function main(): Promise<void> {
         const hashOverride = raflashData?.hashOverride || '';
         await AppData.setGamePath(resolvedGamePath, hashOverride);
         await AppData.loadData();
+
+        // Recompile all formulas. loadData() uses diff-based loading which
+        // deletes compiled fields (compiledA, fastA, fastReq) not present
+        // in the saved data. The compilation watchers only fire on address
+        // changes, so reloading the same game (same addresses) leaves
+        // requirements without compiled formulas.
+        for (const asset of AppData.data.assets as Array<Record<string, unknown>>) {
+            if (!asset?.groups) continue;
+            for (const group of asset.groups as Array<Record<string, unknown>>) {
+                if (!group?.requirements) continue;
+                for (const req of group.requirements as Array<Record<string, unknown>>) {
+                    if (!req) continue;
+                    (req as Requirement).compiledA = compileRequirementField(req as Requirement, 'A');
+                    (req as Requirement).compiledB = compileRequirementField(req as Requirement, 'B');
+                }
+            }
+        }
 
         // For .raflash: keep extracted SWF in memory for serving
         if (extractedSwfBytes) {
