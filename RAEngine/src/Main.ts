@@ -914,6 +914,7 @@ enum AppState {
 
 let appState = AppState.FILE_PICKER;
 let selectedGamePath: string | null = null;
+let cachedGameSwf: Uint8Array | null = null; // In-memory SWF for .raflash files (avoids disk extraction)
 let gameWindowWidth = 800;  // Will be updated from game SWF metadata
 let gameWindowHeight = 600; // Will be updated from game SWF metadata
 let fileSelectedResolver: ((result: { gamePath: string; user: string }) => void) | null = null;
@@ -990,6 +991,7 @@ function resetGameState(): void {
     flashProcess = null;
     lastRichPresenceTime = 0;
     selectedGamePath = null;
+    cachedGameSwf = null;
     selectedUserName = null;
     devtoolsOpened = false;
     gameResetting = false;
@@ -1008,6 +1010,12 @@ function resetGameState(): void {
  */
 function generateRequestId(): string {
     return `req_${++requestIdCounter}_${Date.now()}`;
+}
+
+/** Read the game SWF bytes — from memory cache (.raflash) or disk (.swf). */
+async function readGameSwf(): Promise<Uint8Array> {
+    if (cachedGameSwf) return cachedGameSwf;
+    return Deno.readFile(selectedGamePath!);
 }
 
 /**
@@ -1198,7 +1206,7 @@ function startHttpServerInner() {
                 // Special handling for firmware SWF - optionally patch with game settings
                 if (avmConfig && url.pathname === avmConfig.firmwareUrl && selectedGamePath) {
                     if (avmConfig.patchFirmware) {
-                        const gameSwfBuffer = await Deno.readFile(selectedGamePath);
+                        const gameSwfBuffer = await readGameSwf();
                         const gameMetadata = parseSwfMetadata(gameSwfBuffer);
                         const firmwareBytes = await Deno.readFile(avmConfig.firmwareSwf);
                         const patchedFirmware = patchFirmwareSwf(
@@ -1234,7 +1242,7 @@ function startHttpServerInner() {
                             headers: { "Content-Type": "application/x-shockwave-flash" },
                         });
                     }
-                    const gameSwfBuffer = await Deno.readFile(selectedGamePath);
+                    const gameSwfBuffer = await readGameSwf();
                     const gameMetadata = parseSwfMetadata(gameSwfBuffer);
                     const firmwareBytes = await Deno.readFile(avmConfig.innerFirmwareSwf);
                     const patchedFirmware = patchFirmwareSwf(
@@ -1252,7 +1260,7 @@ function startHttpServerInner() {
 
                 // Serve bootstrap SWF (child mode: hides menu bar before game loads)
                 if (url.pathname === "/avm1-bootstrap.swf" && avmConfig?.bootstrapSwf && selectedGamePath) {
-                    const gameSwfBuffer = await Deno.readFile(selectedGamePath);
+                    const gameSwfBuffer = await readGameSwf();
                     const gameMetadata = parseSwfMetadata(gameSwfBuffer);
                     const bootstrapBytes = await Deno.readFile(avmConfig.bootstrapSwf);
                     // Patch RECT to match game dimensions so Flash Player sizes the window correctly
@@ -1286,18 +1294,21 @@ function startHttpServerInner() {
                 }
 
                 let filePath = "";
+                let isGameSwf = false;
 
                 if (avmConfig && url.pathname === avmConfig.firmwareUrl) {
                     filePath = avmConfig.firmwareSwf;
-                } else if ((url.pathname === "/game.swf" || url.pathname === resolveGameUrl().path) && selectedGamePath) {
-                    filePath = selectedGamePath;
+                } else if ((url.pathname === "/game.swf" || url.pathname === resolveGameUrl().path) && (selectedGamePath || cachedGameSwf)) {
+                    isGameSwf = true;
                 } else {
                     // Serve from assets directory for UI
                     filePath = join("internals", "assets", url.pathname.substring(1));
                 }
 
-                let file: Uint8Array<ArrayBuffer> = await Deno.readFile(filePath);
-                if (filePath === selectedGamePath && resolveFirmwareMode() === "child") {
+                let file: Uint8Array<ArrayBuffer> = isGameSwf
+                    ? await readGameSwf() as Uint8Array<ArrayBuffer>
+                    : await Deno.readFile(filePath);
+                if (isGameSwf && resolveFirmwareMode() === "child") {
                     // Build the firmware URL using the same domain the game is
                     // served from (sitelock-spoofed origin if applicable) so the
                     // firmware ends up in the same security sandbox as the game
@@ -1307,7 +1318,7 @@ function startHttpServerInner() {
                     const fwUrl = `http://${fwDomain}/avm1-firmware.swf`;
                     file = injectFirmwareLoader(file, fwUrl) as Uint8Array<ArrayBuffer>;
                 }
-                const extension = filePath.split(".").pop() || "";
+                const extension = isGameSwf ? "swf" : (filePath.split(".").pop() || "");
                 const mimeTypes: Record<string, string> = {
                     html: "text/html",
                     css: "text/css",
@@ -2052,7 +2063,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
         if (httpBuffer.startsWith(`GET ${avmConfig.firmwareUrl}`)) {
             let swfData: Uint8Array;
             if (avmConfig.patchFirmware) {
-                const gameSwfBuffer = await Deno.readFile(selectedGamePath!);
+                const gameSwfBuffer = await readGameSwf();
                 const gameMetadata = parseSwfMetadata(gameSwfBuffer);
                 const firmwareBytes = await Deno.readFile(avmConfig.firmwareSwf);
                 swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height);
@@ -2078,7 +2089,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
 
         // HTTP request for bootstrap SWF (child mode: sets up stage before game loads)
         if (httpBuffer.startsWith("GET /avm1-bootstrap.swf") && avmConfig.bootstrapSwf) {
-            const gameSwfBuffer = await Deno.readFile(selectedGamePath!);
+            const gameSwfBuffer = await readGameSwf();
             const gameMetadata = parseSwfMetadata(gameSwfBuffer);
             const bootstrapBytes = await Deno.readFile(avmConfig.bootstrapSwf);
             const swfData = patchFirmwareSwf(
@@ -2112,7 +2123,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
                 // Child mode: serve unpatched (firmware doesn't own player chrome)
                 swfData = await Deno.readFile(avmConfig.innerFirmwareSwf);
             } else {
-                const gameSwfBuffer = await Deno.readFile(selectedGamePath!);
+                const gameSwfBuffer = await readGameSwf();
                 const gameMetadata = parseSwfMetadata(gameSwfBuffer);
                 const firmwareBytes = await Deno.readFile(avmConfig.innerFirmwareSwf);
                 swfData = patchFirmwareSwf(firmwareBytes, gameMetadata.frameRate, gameMetadata.backgroundColor, gameMetadata.width, gameMetadata.height);
@@ -2141,7 +2152,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
         // since some sitelock checks compare the full URL, not just the host.
         const expectedGamePath = resolveGameUrl().path;
         if (httpBuffer.startsWith("GET /game.swf") || httpBuffer.startsWith(`GET ${expectedGamePath} `) || httpBuffer.startsWith(`GET ${expectedGamePath}?`)) {
-            const rawSwfData = await Deno.readFile(selectedGamePath!);
+            const rawSwfData = await readGameSwf();
             let swfData: Uint8Array = rawSwfData;
             if (resolveFirmwareMode() === "child") {
                 // Inject firmware loader bytecode into the game SWF.
@@ -2802,12 +2813,9 @@ async function main(): Promise<void> {
         await AppData.setGamePath(resolvedGamePath, hashOverride);
         await AppData.loadData();
 
-        // For .raflash: write extracted SWF to cache so the HTTP server can serve it
+        // For .raflash: keep extracted SWF in memory for serving
         if (extractedSwfBytes) {
-            const extractDir = join("RACache", "extracted", AppData.gameHash!);
-            await Deno.mkdir(extractDir, { recursive: true });
-            selectedGamePath = join(extractDir, "start.swf");
-            await Deno.writeFile(selectedGamePath, extractedSwfBytes);
+            cachedGameSwf = extractedSwfBytes;
         }
 
         // Pre-populate empty gameConfig fields from .raflash metadata
