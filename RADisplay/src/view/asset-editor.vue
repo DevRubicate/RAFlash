@@ -347,7 +347,7 @@
         { value: 100,   text: '100' },
     ];
     const progressionOptions = [
-        { value: null,          text: ''            },
+        { value: null,          text: '(None)'      },
         { value: 'MISSABLE',    text: 'Missable'    },
         { value: 'PROGRESSION', text: 'Progression' },
         { value: 'WIN',         text: 'Win'         },

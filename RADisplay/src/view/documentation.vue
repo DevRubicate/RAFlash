@@ -69,8 +69,9 @@
 
                     <dt>Alignment</dt>
                     <dd>
-                        Controls where the game is anchored within the player window
-                        (e.g. Top Left, Center, Bottom Right). Use Neutral to let the game decide.
+                        Controls where the game is anchored within the player window.
+                        Options: Top Left, Top Center, Top Right, Center Left, Center, Center Right,
+                        Bottom Left, Bottom Center, Bottom Right, or Neutral (let the game decide).
                     </dd>
                 </dl>
             </section>
@@ -96,8 +97,7 @@
                 </p>
                 <p>
                     <strong>Save</strong> writes modified assets to the game file. <strong>Reset</strong>
-                    discards unsaved changes and reloads from disk. Both buttons show the count of
-                    affected assets.
+                    discards unsaved changes and reloads from disk.
                 </p>
                 <p>
                     Assets with negative IDs are local/unpromoted &mdash; they only exist in your local game file
@@ -280,8 +280,8 @@
                 </p>
 
                 <p>
-                    All modes support a text filter input to narrow results.
-                    Key extraction uses the text before the first <code>: </code> separator in each row.
+                    All modes support a text filter input to narrow results by matching
+                    against the full row content (both keys and values).
                 </p>
             </section>
 
@@ -626,7 +626,13 @@ stage.player.x + 100        // scalar + scalar</pre>
                         <tr><td><code>this</code></td><td>Current context array &mdash; the values being filtered in a property access</td></tr>
                         <tr><td><code>key</code></td><td>Current keys array &mdash; property names or indices, parallel to <code>this</code></td></tr>
                         <tr><td><code>stage_frame</code></td><td>Current frame number of the game's root MovieClip</td></tr>
-                        <tr><td><code>null</code></td><td>Null literal</td></tr>
+                    </tbody>
+                </table>
+                <h2>Literals</h2>
+                <table>
+                    <thead><tr><th>Literal</th><th>Description</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>null</code></td><td>Null literal &mdash; used to test whether an expression returned any results</td></tr>
                     </tbody>
                 </table>
             </section>

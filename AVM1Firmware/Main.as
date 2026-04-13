@@ -1827,8 +1827,12 @@ class Main {
                         }
                         stack.push(result);
                     } else {
-                        log("Invalid number of entries for " + token);
-                        return null;
+                        var length = Math.max(a.length, b.length);
+                        var result = [];
+                        for (var j = 0; j < length; ++j) {
+                            result.push(NaN);
+                        }
+                        stack.push(result);
                     }
                     break;
                 }
@@ -1858,8 +1862,12 @@ class Main {
                         }
                         stack.push(result);
                     } else {
-                        log("Invalid number of entries for " + token);
-                        return null;
+                        var length = Math.max(a.length, b.length);
+                        var result = [];
+                        for (var j = 0; j < length; ++j) {
+                            result.push(NaN);
+                        }
+                        stack.push(result);
                     }
                     break;
                 }
@@ -1895,8 +1903,12 @@ class Main {
                         }
                         stack.push(result);
                     } else {
-                        log("Invalid number of entries for " + token);
-                        return null;
+                        var length = Math.max(a.length, b.length);
+                        var result = [];
+                        for (var j = 0; j < length; ++j) {
+                            result.push(NaN);
+                        }
+                        stack.push(result);
                     }
                     break;
                 }
@@ -1926,8 +1938,12 @@ class Main {
                         }
                         stack.push(result);
                     } else {
-                        log("Invalid number of entries for " + token);
-                        return null;
+                        var length = Math.max(a.length, b.length);
+                        var result = [];
+                        for (var j = 0; j < length; ++j) {
+                            result.push(NaN);
+                        }
+                        stack.push(result);
                     }
                     break;
                 }
@@ -1957,8 +1973,12 @@ class Main {
                         }
                         stack.push(result);
                     } else {
-                        log("Invalid number of entries for " + token);
-                        return null;
+                        var length = Math.max(a.length, b.length);
+                        var result = [];
+                        for (var j = 0; j < length; ++j) {
+                            result.push(NaN);
+                        }
+                        stack.push(result);
                     }
                     break;
                 }
@@ -1999,8 +2019,12 @@ class Main {
                         }
                         stack.push(result);
                     } else {
-                        log("Invalid number of entries for " + token);
-                        return null;
+                        var length = Math.max(a.length, b.length);
+                        var result = [];
+                        for (var j = 0; j < length; ++j) {
+                            result.push(NaN);
+                        }
+                        stack.push(result);
                     }
                     break;
                 }
@@ -2041,8 +2065,12 @@ class Main {
                         }
                         stack.push(result);
                     } else {
-                        log("Invalid number of entries for " + token);
-                        return null;
+                        var length = Math.max(a.length, b.length);
+                        var result = [];
+                        for (var j = 0; j < length; ++j) {
+                            result.push(NaN);
+                        }
+                        stack.push(result);
                     }
                     break;
                 }
@@ -2072,8 +2100,12 @@ class Main {
                         }
                         stack.push(result);
                     } else {
-                        log("Invalid number of entries for " + token);
-                        return null;
+                        var length = Math.max(a.length, b.length);
+                        var result = [];
+                        for (var j = 0; j < length; ++j) {
+                            result.push(NaN);
+                        }
+                        stack.push(result);
                     }
                     break;
                 }
@@ -2103,8 +2135,12 @@ class Main {
                         }
                         stack.push(result);
                     } else {
-                        log("Invalid number of entries for " + token);
-                        return null;
+                        var length = Math.max(a.length, b.length);
+                        var result = [];
+                        for (var j = 0; j < length; ++j) {
+                            result.push(NaN);
+                        }
+                        stack.push(result);
                     }
                     break;
                 }
@@ -2134,8 +2170,12 @@ class Main {
                         }
                         stack.push(result);
                     } else {
-                        log("Invalid number of entries for " + token);
-                        return null;
+                        var length = Math.max(a.length, b.length);
+                        var result = [];
+                        for (var j = 0; j < length; ++j) {
+                            result.push(NaN);
+                        }
+                        stack.push(result);
                     }
                     break;
                 }
@@ -2165,8 +2205,12 @@ class Main {
                         }
                         stack.push(result);
                     } else {
-                        log("Invalid number of entries for " + token);
-                        return null;
+                        var length = Math.max(a.length, b.length);
+                        var result = [];
+                        for (var j = 0; j < length; ++j) {
+                            result.push(NaN);
+                        }
+                        stack.push(result);
                     }
                     break;
                 }
@@ -2196,8 +2240,12 @@ class Main {
                         }
                         stack.push(result);
                     } else {
-                        log("Invalid number of entries for " + token);
-                        return null;
+                        var length = Math.max(a.length, b.length);
+                        var result = [];
+                        for (var j = 0; j < length; ++j) {
+                            result.push(NaN);
+                        }
+                        stack.push(result);
                     }
                     break;
                 }
@@ -2227,8 +2275,12 @@ class Main {
                         }
                         stack.push(result);
                     } else {
-                        log("Invalid number of entries for " + token);
-                        return null;
+                        var length = Math.max(a.length, b.length);
+                        var result = [];
+                        for (var j = 0; j < length; ++j) {
+                            result.push(NaN);
+                        }
+                        stack.push(result);
                     }
                     break;
                 }
@@ -2258,8 +2310,12 @@ class Main {
                         }
                         stack.push(result);
                     } else {
-                        log("Invalid number of entries for " + token);
-                        return null;
+                        var length = Math.max(a.length, b.length);
+                        var result = [];
+                        for (var j = 0; j < length; ++j) {
+                            result.push(NaN);
+                        }
+                        stack.push(result);
                     }
                     break;
                 }
