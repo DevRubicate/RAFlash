@@ -47,6 +47,11 @@ const OperatorDetails: Partial<
         associativity: 'LEFT',
         precedence: 2,
     },
+    [NODE_TYPE.MODULO]: {
+        type: 'BINARY',
+        associativity: 'LEFT',
+        precedence: 2,
+    },
     [NODE_TYPE.EXPONENT]: {
         type: 'BINARY',
         associativity: 'RIGHT',
@@ -930,6 +935,20 @@ class Parser {
                         }
                         case TokenType.ASTERISK: {
                             operator = NODE_TYPE.MULTIPLICATION;
+                            // Move past the token
+                            this.advanceToken();
+                            this.currentNode.addConsume(CONSUME.EXPRESSION);
+                            break;
+                        }
+                        case TokenType.DOUBLE_ASTERISK: {
+                            operator = NODE_TYPE.EXPONENT;
+                            // Move past the token
+                            this.advanceToken();
+                            this.currentNode.addConsume(CONSUME.EXPRESSION);
+                            break;
+                        }
+                        case TokenType.PERCENT: {
+                            operator = NODE_TYPE.MODULO;
                             // Move past the token
                             this.advanceToken();
                             this.currentNode.addConsume(CONSUME.EXPRESSION);

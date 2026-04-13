@@ -31,8 +31,8 @@
                 <h1>Game Info</h1>
                 <p>
                     Set the game's <strong>title</strong> and upload a <strong>badge image</strong>
-                    that represents the game. The badge image is displayed in the launcher and
-                    in achievement popups.
+                    that represents the game. The badge image is displayed in achievement popups
+                    and game info notifications.
                 </p>
                 <p>
                     Changes are saved manually with the Save button.
@@ -222,8 +222,8 @@
                 </p>
                 <p>
                     The <strong>Active</strong> checkbox controls whether the engine evaluates this
-                    rich presence. Click <strong>Save</strong> to write changes to the game file.
-                    The formula auto-saves as you type (with a short debounce).
+                    rich presence. Changes to the formula are kept in memory as you type.
+                    Click <strong>Save</strong> to persist changes to the game file.
                 </p>
             </section>
 
@@ -276,7 +276,7 @@
                 <p>
                     Rows with simple values (numbers, strings, booleans) show a pencil button on hover.
                     Click it to open an edit popup where you can change the value directly in the
-                    running game. Functions, MovieClips, and other complex types cannot be edited.
+                    running game. Functions, TextFields, Dates, MovieClips, Objects, and Arrays cannot be edited.
                 </p>
 
                 <p>
@@ -496,9 +496,9 @@
                 <h1>Creating an Achievement</h1>
                 <ol>
                     <li>Press <kbd>F12</kbd> to open the Devtools menu.</li>
-                    <li>Open <strong>Asset List</strong> and click <strong>+</strong> to create a new asset.</li>
+                    <li>Open <strong>Asset List</strong> and click <strong>New</strong> to create a new asset.</li>
                     <li>Give it a title and description.</li>
-                    <li>In the Asset Editor, add one or more <strong>conditions</strong>. Each condition is a DSL expression that should evaluate to true when the achievement should unlock.</li>
+                    <li>In the Asset Editor, add one or more <strong>requirements</strong>. Each requirement compares two DSL expressions that should match when the achievement should unlock.</li>
                     <li>Play the game normally. When all conditions are true at the same time, the achievement triggers.</li>
                 </ol>
                 <p>

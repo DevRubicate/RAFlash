@@ -8,7 +8,9 @@ enum TokenType {
     PLUS = 'PLUS',
     MINUS = 'MINUS',
     ASTERISK = 'ASTERISK',
+    DOUBLE_ASTERISK = 'DOUBLE_ASTERISK',
     SLASH = 'SLASH',
+    PERCENT = 'PERCENT',
     LPAREN = 'LPAREN',
     RPAREN = 'RPAREN',
     LBRACE = 'LBRACE',
@@ -356,8 +358,20 @@ class Lexer {
                 );
                 break;
             case '*':
+                if (this.peekChar() === '*') {
+                    this.tokens.push(
+                        new Token(TokenType.DOUBLE_ASTERISK, null, tokenRow, tokenColumn),
+                    );
+                    this.advancePosition();
+                } else {
+                    this.tokens.push(
+                        new Token(TokenType.ASTERISK, null, tokenRow, tokenColumn),
+                    );
+                }
+                break;
+            case '%':
                 this.tokens.push(
-                    new Token(TokenType.ASTERISK, null, tokenRow, tokenColumn),
+                    new Token(TokenType.PERCENT, null, tokenRow, tokenColumn),
                 );
                 break;
             case '/':

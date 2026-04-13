@@ -11,6 +11,7 @@ import { ExecutableBlockUnit }          from './unit/ExecutableBlockUnit.ts';
 import { ExponentUnit }                 from './unit/ExponentUnit.ts';
 import { IdentifierUnit }               from './unit/IdentifierUnit.ts';
 import { ListUnit }                     from './unit/ListUnit.ts';
+import { ModuloUnit }                   from './unit/ModuloUnit.ts';
 import { MultiplicationUnit }           from './unit/MultiplicationUnit.ts';
 import { ObjectAccessExpressionUnit }   from './unit/ObjectAccessExpressionUnit.ts';
 import { RootUnit }                     from './unit/RootUnit.ts';
@@ -182,6 +183,24 @@ export class Builder {
                 }
 
                 const element = new MultiplicationUnit(null);
+                element.children.push(
+                    Builder.convert(node.children[0]),
+                );
+                element.children.push(
+                    Builder.convert(node.children[1]),
+                );
+                element.children[0].parent = element;
+                element.children[1].parent = element;
+                return element;
+            }
+            case NODE_TYPE.MODULO: {
+                if (node.children.length !== 2) {
+                    throw new Error(
+                        `Unexpected number of children in MODULO statement: ${node.children.length}`,
+                    );
+                }
+
+                const element = new ModuloUnit(null);
                 element.children.push(
                     Builder.convert(node.children[0]),
                 );
