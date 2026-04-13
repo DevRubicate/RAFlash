@@ -27,17 +27,52 @@
 
             <!-- ============ TOOLS ============ -->
 
+            <section id="tool-game-info">
+                <h1>Game Info</h1>
+                <p>
+                    Set the game's <strong>title</strong> and upload a <strong>badge image</strong>
+                    that represents the game. The badge image is displayed in the launcher and
+                    in achievement popups.
+                </p>
+                <p>
+                    Changes are saved manually with the Save button.
+                </p>
+            </section>
+
             <section id="tool-game-behavior">
                 <h1>Game Behavior</h1>
                 <p>
-                    Configure metadata for the current game. Set the game's <strong>title</strong>,
-                    <strong>origin URL</strong> (the original source where the SWF was hosted),
-                    and upload a <strong>badge image</strong> that represents the game.
+                    Configure runtime behavior for the current game. Only available for
+                    <strong>.raflash</strong> files &mdash; use "Convert to .raflash" from the
+                    devtools menu if you're working with a plain .swf.
                 </p>
-                <p>
-                    Changes are saved manually with the Save button. The origin URL is used
-                    when the game needs to load external resources relative to its original host.
-                </p>
+                <dl>
+                    <dt>Hash Override</dt>
+                    <dd>
+                        Override the hash used to identify this game. Leave empty to use the
+                        .raflash file's own computed hash. Useful when a game has multiple
+                        versions that should share the same achievement set.
+                    </dd>
+
+                    <dt>Origin URL</dt>
+                    <dd>
+                        The original URL where the SWF was hosted. Used to defeat sitelocks
+                        that prevent the game from running outside its original domain, and to
+                        load external resources relative to the original host.
+                    </dd>
+
+                    <dt>Scale Mode</dt>
+                    <dd>
+                        Controls how the game scales within the Flash Player window.
+                        Options: No Scale, Show All, No Border, Exact Fit, or Neutral (let the game decide).
+                    </dd>
+
+                    <dt>Alignment</dt>
+                    <dd>
+                        Controls where the game is anchored within the player window
+                        (e.g. Top Left, Center, Bottom Right). Use Neutral to let the game decide.
+                    </dd>
+                </dl>
             </section>
 
             <section id="tool-asset-list">
@@ -134,6 +169,37 @@
                 </p>
             </section>
 
+            <section id="tool-resource-explorer">
+                <h1>Resource Explorer</h1>
+                <p>
+                    Performs a static analysis of the game SWF and lists embedded resources.
+                    Unlike Memory Explorer which inspects live runtime state, Resource Explorer
+                    reads the SWF file itself to extract data that exists before the game runs.
+                </p>
+                <p>Four categories of resources are extracted:</p>
+                <dl>
+                    <dt>Strings</dt>
+                    <dd>String constants embedded in the SWF bytecode.</dd>
+
+                    <dt>Frame Labels</dt>
+                    <dd>Named frames in the game's timeline. Useful for understanding game states and transitions.</dd>
+
+                    <dt>Exports</dt>
+                    <dd>Symbols exported from the SWF library (movie clips, sounds, etc.).</dd>
+
+                    <dt>Text Fields</dt>
+                    <dd>
+                        Static text fields with their variable bindings. Shows the variable name
+                        and, when present, the initial text content.
+                    </dd>
+                </dl>
+                <p>
+                    Use the category dropdown to filter by type, and the text filter to search
+                    within results. This tool is especially helpful for discovering property
+                    names, game states, and asset identifiers before diving into live exploration.
+                </p>
+            </section>
+
             <section id="tool-code-notes">
                 <h1>Code Notes</h1>
                 <p>
@@ -145,6 +211,22 @@
                     Code notes serve as a reference sheet &mdash; document what you've discovered about the game's
                     memory layout so you don't have to re-explore it later. Notes can be reordered with the
                     arrow buttons and searched with the filter input.
+                </p>
+            </section>
+
+            <section id="tool-event-log">
+                <h1>Event Log</h1>
+                <p>
+                    A live stream of events from the RAFlash engine. Each entry shows a
+                    <strong>timestamp</strong>, <strong>source</strong> (which component emitted it),
+                    and a <strong>message</strong>. Entries are color-coded by severity: normal for
+                    info, yellow for warnings, and red for errors.
+                </p>
+                <p>
+                    Use the text filter to narrow entries by source or message content.
+                    Click <strong>Clear</strong> to reset the log. The log auto-scrolls to
+                    new entries only when you're already at the bottom &mdash; scrolling up
+                    to review older entries won't be interrupted.
                 </p>
             </section>
 
@@ -567,12 +649,15 @@ stage.menu.gotoMySite.triggered // 1 on frames the function fired, else 0</pre>
     import { App } from '../js/app.ts';
 
     const toolsChapters = [
-        { id: 'tool-game-behavior',    title: 'Game Behavior' },
-        { id: 'tool-asset-list',       title: 'Asset List' },
-        { id: 'tool-memory-explorer',  title: 'Memory Explorer' },
-        { id: 'tool-memory-search',    title: 'Memory Search' },
-        { id: 'tool-memory-watch',     title: 'Memory Watch' },
-        { id: 'tool-code-notes',       title: 'Code Notes' },
+        { id: 'tool-game-info',           title: 'Game Info' },
+        { id: 'tool-game-behavior',       title: 'Game Behavior' },
+        { id: 'tool-asset-list',          title: 'Asset List' },
+        { id: 'tool-memory-explorer',     title: 'Memory Explorer' },
+        { id: 'tool-memory-search',       title: 'Memory Search' },
+        { id: 'tool-memory-watch',        title: 'Memory Watch' },
+        { id: 'tool-resource-explorer',   title: 'Resource Explorer' },
+        { id: 'tool-code-notes',          title: 'Code Notes' },
+        { id: 'tool-event-log',           title: 'Event Log' },
     ];
 
     const guidesChapters = [
@@ -594,7 +679,7 @@ stage.menu.gotoMySite.triggered // 1 on frames the function fired, else 0</pre>
 
     const allChapters = [...toolsChapters, ...guidesChapters, ...referenceChapters];
 
-    const activeId = ref('tool-game-behavior');
+    const activeId = ref('tool-game-info');
     const contentEl = ref(null);
 
     const scrollTo = (id) => {
