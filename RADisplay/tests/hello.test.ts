@@ -1,19 +1,19 @@
 /**
  * RADisplay Hello World Tests
  *
- * Basic tests to verify the Deno test infrastructure works.
+ * Basic tests to verify the test infrastructure works.
  */
 
-import { assertEquals } from "https://deno.land/std/assert/mod.ts";
+import { expect, test } from 'vitest';
 
-Deno.test("hello world - basic assertion", () => {
-    assertEquals(true, true);
+test("hello world - basic assertion", () => {
+    expect(true).toBe(true);
 });
 
-Deno.test("hello world - math works", () => {
-    assertEquals(1 + 1, 2);
+test("hello world - math works", () => {
+    expect(1 + 1).toBe(2);
 });
 
-Deno.test("hello world - strings", () => {
-    assertEquals("hello", "hello");
+test("hello world - strings", () => {
+    expect("hello").toBe("hello");
 });
