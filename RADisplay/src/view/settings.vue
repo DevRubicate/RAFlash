@@ -88,17 +88,18 @@
             </div>
 
 
-            <!-- AVM1 tab: evaluation mode picker -->
-            <div v-if="activeTab === 'avm1'">
+            <!-- AVM1 tab: evaluation mode picker (top level) -->
+            <div v-if="activeTab === 'avm1' && currentSubview === null">
                 <div class="setting-group">
                     <div class="firmware-mode-row" :class="{ active: settings.avm1ExecutionMode === 'interpreter' }">
                         <label class="firmware-mode-main">
                             <input type="radio" value="interpreter" v-model="settings.avm1ExecutionMode" @change="save">
                             <div class="setting-info">
                                 <span class="setting-name">Interpreter</span>
-                                <span class="setting-desc">Evaluates achievements using the built-in bytecode interpreter each frame. Supports all achievement features. Use as a fallback if compiled mode has issues.</span>
+                                <span class="setting-desc">Evaluates achievements using the built-in bytecode interpreter.</span>
                             </div>
                         </label>
+                        <button class="settings-button" @click="currentSubview = 'interpreter'">Settings →</button>
                     </div>
 
                     <div class="firmware-mode-row" :class="{ active: settings.avm1ExecutionMode === 'compiled' }">
@@ -106,10 +107,39 @@
                             <input type="radio" value="compiled" v-model="settings.avm1ExecutionMode" @change="save">
                             <div class="setting-info">
                                 <span class="setting-name">Compiled</span>
-                                <span class="setting-desc">Compiles each achievement into a native Flash bytecode function at game load. Significantly faster. Supports all achievement features including Pause If, Reset If, chained requirements, and measured progress.</span>
+                                <span class="setting-desc">Compiles each achievement into a native Flash bytecode function at game load.</span>
                             </div>
                         </label>
+                        <button class="settings-button" @click="currentSubview = 'compiled'">Settings →</button>
                     </div>
+                </div>
+            </div>
+
+            <!-- AVM1 tab: Interpreter sub-view -->
+            <div v-if="activeTab === 'avm1' && currentSubview === 'interpreter'">
+                <div class="subview-header">
+                    <button class="back-button" @click="currentSubview = null">← Back</button>
+                    <span class="subview-title">Interpreter Settings</span>
+                </div>
+                <div class="setting-group">
+                    <label class="setting-row">
+                        <input type="checkbox" v-model="settings.interpreterFastPath" @change="save">
+                        <div class="setting-info">
+                            <span class="setting-name">Enable fast-path evaluation</span>
+                            <span class="setting-desc">Simple achievements with known formula patterns (direct property lookups, literal comparisons) skip the bytecode interpreter and use inlined evaluation instead. Disable to force all achievements through the full interpreter pipeline.</span>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- AVM1 tab: Compiled sub-view -->
+            <div v-if="activeTab === 'avm1' && currentSubview === 'compiled'">
+                <div class="subview-header">
+                    <button class="back-button" @click="currentSubview = null">← Back</button>
+                    <span class="subview-title">Compiled Settings</span>
+                </div>
+                <div class="setting-group">
+                    <p class="empty-note">No settings yet.</p>
                 </div>
             </div>
 
@@ -336,7 +366,7 @@ import { App } from '../js/app.ts';
 
 const ready = ref(false);
 const activeTab = ref('firmware');
-const currentSubview = ref(null); // null | 'parent' | 'child'
+const currentSubview = ref(null); // null | 'parent' | 'child' | 'interpreter' | 'compiled'
 
 const tabs = [
     { id: 'firmware', label: 'Firmware' },
@@ -351,6 +381,7 @@ const settings = ref({
     benchmarkingEnabled: false,
     autoOpenDevtools: false,
     avm1ExecutionMode: 'compiled',
+    interpreterFastPath: true,
 });
 
 async function save() {

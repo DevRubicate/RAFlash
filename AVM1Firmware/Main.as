@@ -70,6 +70,7 @@ class Main {
     // Runtime settings (from UI checkboxes)
     private static var processingActive:Boolean = true;
     private static var benchmarkingActive:Boolean = false;
+    private static var interpreterFastPath:Boolean = true;
 
 
     // Delta values storage - keyed by requirement ID
@@ -807,6 +808,7 @@ class Main {
                         fixTextFieldBindings = (params.settings.fixTextFieldBindings != false);
                         fixSoundAttach = (params.settings.fixSoundAttach != false);
                         benchmarkingActive = (params.settings.benchmarkingEnabled == true);
+                        interpreterFastPath = (params.settings.interpreterFastPath != false);
                     }
                     initialSetupDone = true;
                     sendResponse(id, { success: true });
@@ -932,6 +934,8 @@ class Main {
                     processingActive = (params.value == true);
                 } else if (params.key == "benchmarkingEnabled") {
                     benchmarkingActive = (params.value == true);
+                } else if (params.key == "interpreterFastPath") {
+                    interpreterFastPath = (params.value == true);
                 }
                 sendResponse(id, { success: true });
                 break;
@@ -3115,7 +3119,7 @@ class Main {
             // === SIMPLE ACHIEVEMENT FAST-PATH ===
             // For achievements with 1 CORE group, all requirements having fastReq,
             // no special flags, and no hit tracking — skip the entire phase pipeline.
-            var simpleEligible:Boolean = (achievement.groups.length == 1 && achievement.groups[0].type == "CORE");
+            var simpleEligible:Boolean = interpreterFastPath && (achievement.groups.length == 1 && achievement.groups[0].type == "CORE");
             if (simpleEligible) {
                 var simpleGroup:Object = achievement.groups[0];
                 var simpleReqs:Array = simpleGroup.requirements;

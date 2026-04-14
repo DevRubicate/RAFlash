@@ -280,6 +280,10 @@ interface Settings {
     //   "interpreter" — uses the built-in bytecode interpreter (default)
     //   "compiled"    — compiles formulas to native Flash bytecode
     avm1ExecutionMode: "interpreter" | "compiled";
+    // When true, simple achievements with known formula patterns use inlined
+    // evaluation instead of the full bytecode interpreter. Only applies in
+    // interpreter mode.
+    interpreterFastPath: boolean;
     // Last user picked in the file picker. Persisted so that drag-drop /
     // CLI-arg launches (which skip the picker) can default to the user the
     // person was already running under. Falls back to "Guest" on first run.
@@ -292,6 +296,7 @@ const defaultSettings: Settings = {
     benchmarkingEnabled: false,
     autoOpenDevtools: false,
     avm1ExecutionMode: "compiled",
+    interpreterFastPath: true,
     lastUser: "Guest",
 };
 let settings: Settings = { ...defaultSettings };
@@ -1677,11 +1682,18 @@ async function handleApiRequest(
         }
         case "saveSettings": {
             const oldBenchmarking = settings.benchmarkingEnabled;
+            const oldFastPath = settings.interpreterFastPath;
             await saveSettings(input.params.settings as Settings);
             if (settings.benchmarkingEnabled !== oldBenchmarking) {
                 sendToFirmware("setRuntimeSetting", {
                     key: "benchmarkingEnabled",
                     value: settings.benchmarkingEnabled
+                }, 0).catch(() => {});
+            }
+            if (settings.interpreterFastPath !== oldFastPath) {
+                sendToFirmware("setRuntimeSetting", {
+                    key: "interpreterFastPath",
+                    value: settings.interpreterFastPath
                 }, 0).catch(() => {});
             }
             return { success: true };
