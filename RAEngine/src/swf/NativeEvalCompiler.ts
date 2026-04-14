@@ -700,11 +700,10 @@ function emitResetIfTracking(
         asm.patchJumpHere(skipIncPatch);
         asm.patchJumpHere(skipIncPatch2);
 
-        // Check if fires: hits >= maxHits
+        // Check if fires: hits >= maxHits (skip fire when hits < maxHits)
         asm.push(aRegister(R_SCRATCH1), aInt(maxHits));
         asm.less2();
-        asm.not();
-        const skipFirePatch = asm.jumpIfForward();
+        const skipFirePatch = asm.jumpIfForward(); // hits < maxHits → skip
         asm.push(aBool(true));
         asm.storeRegister(R_RESET_FIRED);
         asm.pop();
@@ -940,8 +939,10 @@ function emitGroupRequirements(
         const { bytesA, bytesB } = formulas[k];
         const nextReqPatches: number[] = [];
 
-        // Locked-true check
-        if (maxHits > 0) {
+        // Locked-true check (skip for AHS terminals — their satisfaction
+        // depends on effective hits, not just own hits)
+        const isAhsTerminal = ahsChains.has(k);
+        if (maxHits > 0 && !isAhsTerminal) {
             emitReadHitsToReg(asm, hitsKey, R_SCRATCH1);
             asm.push(aRegister(R_SCRATCH1), aInt(maxHits));
             asm.less2(); asm.not();
@@ -1303,16 +1304,31 @@ function compileAchievementBody(
                 const maxHits = (req.maxHits as number) || 0;
                 const hitsKey = `h${g}_${k}`;
                 const { bytesA, bytesB } = formulas[k];
-                const patchesPif: number[] = [];
                 if (maxHits > 0) {
+                    // If already at threshold, skip evaluation but still fire pause
                     emitReadHitsToReg(asm, hitsKey, R_SCRATCH1);
                     asm.push(aRegister(R_SCRATCH1), aInt(maxHits));
-                    asm.less2(); asm.not();
-                    patchesPif.push(asm.jumpIfForward());
+                    asm.less2(); asm.not(); // hits >= maxHits?
+                    const alreadyLockedPatch = asm.jumpIfForward();
+                    // Not locked: evaluate formula + fire logic
+                    const patchesPif: number[] = [];
+                    emitRequirementEval(asm, req, k, bytesA, bytesB, patchesPif, g);
+                    emitPauseIfFire(asm, hitsKey, maxHits);
+                    for (const p of patchesPif) asm.patchJumpHere(p);
+                    const skipLockedPatch = asm.jumpForward();
+                    // Locked: hits already at threshold → pause fires unconditionally
+                    asm.patchJumpHere(alreadyLockedPatch);
+                    asm.push(aBool(true));
+                    asm.storeRegister(R_ALL_MET);
+                    asm.pop();
+                    asm.patchJumpHere(skipLockedPatch);
+                } else {
+                    // Transient: no locked-true concept, always evaluate
+                    const patchesPif: number[] = [];
+                    emitRequirementEval(asm, req, k, bytesA, bytesB, patchesPif, g);
+                    emitPauseIfFire(asm, hitsKey, maxHits);
+                    for (const p of patchesPif) asm.patchJumpHere(p);
                 }
-                emitRequirementEval(asm, req, k, bytesA, bytesB, patchesPif, g);
-                emitPauseIfFire(asm, hitsKey, maxHits);
-                for (const p of patchesPif) asm.patchJumpHere(p);
             }
 
             // R_ALL_MET = isPaused. If paused: delta-only, group=false
@@ -1502,10 +1518,10 @@ function emitPauseIfFire(
         asm.setMember();
         asm.patchJumpHere(skipInc);
         asm.patchJumpHere(skipInc2);
-        // Fire check
+        // Fire check: skip fire when hits < maxHits
         asm.push(aRegister(R_SCRATCH1), aInt(maxHits));
-        asm.less2(); asm.not();
-        const skipFire = asm.jumpIfForward();
+        asm.less2();
+        const skipFire = asm.jumpIfForward(); // hits < maxHits → skip
         asm.push(aBool(true));
         asm.storeRegister(R_ALL_MET);
         asm.pop();
@@ -1643,8 +1659,9 @@ export function compileAchievementsSWF(assets: unknown[]): NativeAchResult {
     mainAsm.getVariable();
     mainAsm.push(aString("__nativeAch"));
 
-    // Each defineFunction2 pushes the function onto the stack
-    for (const body of functionBodies) {
+    // Push in reverse: initArray pops LIFO, so last-pushed → index 0
+    for (let i = functionBodies.length - 1; i >= 0; i--) {
+        const body = functionBodies[i];
         mainAsm.defineFunction2({
             name: "",
             params: [
