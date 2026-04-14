@@ -32,7 +32,7 @@ import { unzipSync, zipSync } from "npm:fflate";
 import { startSitelockProxy, stopSitelockProxy } from "./SitelockProxy.ts";
 import { compileAchievementsSWF, type NativeAchResult } from "./swf/NativeEvalCompiler.ts";
 
-const VERSION = "0.0.17";
+const VERSION = "0.0.18";
 
 // Compile a formula and emit an error log if compilation fails
 function compileFormula(input: string): unknown[] {
