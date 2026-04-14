@@ -1,12 +1,15 @@
 /**
- * Compiles entire achievements to native AVM1 bytecode. Each eligible
- * achievement becomes a self-contained function that handles formula
+ * Compiles achievements and Rich Presence to native AVM1 bytecode.
+ *
+ * Achievements: each becomes a self-contained function that handles formula
  * evaluation, comparison, hit tracking, delta, and trigger determination.
  *
- * Generated SWF structure:
- *   _global.__nativeAch = [fn0, fn1, fn2, ...]
+ * Rich Presence: each becomes a function that evaluates the formula and
+ * returns the string result directly.
  *
- * Each function: function(gameRoot, storage) → 0 (not triggered) | 1 (triggered)
+ * Generated SWF structure:
+ *   _global.__nativeAch = [achFn0, achFn1, ...]  — function(gameRoot, storage) → 0|1
+ *   _global.__nativeRP  = [rpFn0, rpFn1, ...]    — function(gameRoot, storage) → string
  */
 
 import { AVM1Builder, aString, aDouble, aInt, aNull, aUndefined, aRegister, aBool } from "./AVM1Builder.ts";
@@ -1625,43 +1628,96 @@ function emitMeasuredEpilogue(
 }
 
 // ============================================================================
+// Rich Presence compilation
+// ============================================================================
+
+// Register allocation for Rich Presence functions (simpler than achievements)
+const RP_R_GAMEROOT = 1;
+const RP_R_STORAGE = 2;
+const RP_R_TEMP = 3;
+const RP_R_ARR = 4;
+const RP_R_MATCH = 5;
+const RP_REGISTER_COUNT = 6;
+
+const RP_FORMULA_REGS: FormulaRegs = {
+    gameRoot: RP_R_GAMEROOT,
+    temp: RP_R_TEMP,
+    arr: RP_R_ARR,
+    match: RP_R_MATCH,
+    storage: RP_R_STORAGE,
+};
+
+/**
+ * Compile a Rich Presence asset to a native AVM1 function body.
+ * function(gameRoot, storage) → string result
+ *
+ * The formula is compiled as-is and the result is returned directly.
+ * Storage is used for REMEMBER values.
+ */
+function compileRichPresenceBody(asset: Record<string, unknown>): Uint8Array {
+    const formula = String(asset.formula ?? '""');
+    const dslBytecode = Formula.compile(formula) as string[];
+
+    const ctx: CompileContext = { nextRememberKey: 0 };
+    const asm = new AVM1Builder();
+
+    if (!compileDSLFormula(dslBytecode, asm, ctx, RP_FORMULA_REGS)) {
+        throw new Error(`Failed to compile Rich Presence formula: ${formula}`);
+    }
+
+    // Stack has formula result; return it
+    asm.returnOp();
+    return asm.toBytes();
+}
+
+// ============================================================================
 // SWF generation
 // ============================================================================
 
 export interface NativeAchResult {
     swf: Uint8Array;
     compiledIndices: number[];
+    rpCompiledIndices: number[];
 }
 
 /**
- * Compile all achievements to native AVM1 functions, packaged as one SWF.
- * Non-achievement assets (e.g. RICH_PRESENCE) are skipped silently.
- * Throws if any achievement fails to compile.
+ * Compile all achievements and Rich Presence to native AVM1 functions, packaged as one SWF.
+ * Throws if any asset fails to compile.
+ *
+ * Generated SWF structure:
+ *   _global.__nativeAch = [achFn0, achFn1, ...]
+ *   _global.__nativeRP  = [rpFn0, rpFn1, ...]
  */
 export function compileAchievementsSWF(assets: unknown[]): NativeAchResult {
     const compiledIndices: number[] = [];
     const functionBodies: Uint8Array[] = [];
+    const rpCompiledIndices: number[] = [];
+    const rpFunctionBodies: Uint8Array[] = [];
 
     for (let i = 0; i < (assets as Array<Record<string, unknown>>).length; i++) {
         const asset = (assets as Array<Record<string, unknown>>)[i];
+        if (asset == null) continue;
 
-        // Skip null/deleted entries and non-achievement assets
-        if (asset == null || asset.type === "RICH_PRESENCE") continue;
-
-        const body = compileAchievementBody(asset);
-        compiledIndices.push(i);
-        functionBodies.push(body);
+        if (asset.type === "RICH_PRESENCE") {
+            const body = compileRichPresenceBody(asset);
+            rpCompiledIndices.push(i);
+            rpFunctionBodies.push(body);
+        } else {
+            const body = compileAchievementBody(asset);
+            compiledIndices.push(i);
+            functionBodies.push(body);
+        }
     }
 
-    // Build SWF: _global.__nativeAch = [fn0, fn1, ...]
     const mainAsm = new AVM1Builder();
+
+    // Build _global.__nativeAch = [achFn0, achFn1, ...]
     mainAsm.push(aString("_global"));
     mainAsm.getVariable();
     mainAsm.push(aString("__nativeAch"));
 
     // Push in reverse: initArray pops LIFO, so last-pushed → index 0
     for (let i = functionBodies.length - 1; i >= 0; i--) {
-        const body = functionBodies[i];
         mainAsm.defineFunction2({
             name: "",
             params: [
@@ -1670,17 +1726,39 @@ export function compileAchievementsSWF(assets: unknown[]): NativeAchResult {
             ],
             registerCount: ACH_REGISTER_COUNT,
             flags: 0,
-            body,
+            body: functionBodies[i],
         });
     }
 
-    // initArray pops count then count items → array
     mainAsm.push(aInt(functionBodies.length));
     mainAsm.initArray();
     mainAsm.setMember(); // _global.__nativeAch = array
+
+    // Build _global.__nativeRP = [rpFn0, rpFn1, ...]
+    mainAsm.push(aString("_global"));
+    mainAsm.getVariable();
+    mainAsm.push(aString("__nativeRP"));
+
+    for (let i = rpFunctionBodies.length - 1; i >= 0; i--) {
+        mainAsm.defineFunction2({
+            name: "",
+            params: [
+                { register: RP_R_GAMEROOT, name: "gameRoot" },
+                { register: RP_R_STORAGE, name: "storage" },
+            ],
+            registerCount: RP_REGISTER_COUNT,
+            flags: 0,
+            body: rpFunctionBodies[i],
+        });
+    }
+
+    mainAsm.push(aInt(rpFunctionBodies.length));
+    mainAsm.initArray();
+    mainAsm.setMember(); // _global.__nativeRP = array
+
     mainAsm.end();
 
     const swf = buildSWF(mainAsm.toBytes());
 
-    return { swf, compiledIndices };
+    return { swf, compiledIndices, rpCompiledIndices };
 }

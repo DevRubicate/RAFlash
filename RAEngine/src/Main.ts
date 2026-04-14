@@ -1164,10 +1164,11 @@ function scheduleNativeAchRecompile(): void {
         nativeAchRecompileTimer = null;
         try {
             nativeAchResult = compileAchievementsSWF(AppData.data.assets);
-            emitLog("engine", "info", `[compiled-avm1] Recompiled ${nativeAchResult.compiledIndices.length} achievements`);
+            emitLog("engine", "info", `[compiled-avm1] Recompiled ${nativeAchResult.compiledIndices.length} achievements, ${nativeAchResult.rpCompiledIndices.length} rich presence`);
             sendToFirmware("loadCompiledAvm1", {
                 url: `http://${RAFLASH_DOMAIN}/compiled-avm1.swf?t=${Date.now()}`,
                 compiledIndices: nativeAchResult.compiledIndices,
+                rpCompiledIndices: nativeAchResult.rpCompiledIndices,
             }, 0).then((response) => {
                 if (response.success) {
                     emitLog("engine", "info", `[compiled-avm1] Reloaded (${nativeAchResult!.swf.length} bytes)`);
@@ -2733,11 +2734,12 @@ function handleFirmwareData(data: string): void {
                 if (settings.avm1ExecutionMode === "compiled") {
                     try {
                         nativeAchResult = compileAchievementsSWF(AppData.data.assets);
-                        emitLog("engine", "info", `[compiled-avm1] Compiled ${nativeAchResult.compiledIndices.length} achievements`);
+                        emitLog("engine", "info", `[compiled-avm1] Compiled ${nativeAchResult.compiledIndices.length} achievements, ${nativeAchResult.rpCompiledIndices.length} rich presence`);
 
                         sendToFirmware("loadCompiledAvm1", {
                             url: `http://${RAFLASH_DOMAIN}/compiled-avm1.swf`,
                             compiledIndices: nativeAchResult.compiledIndices,
+                            rpCompiledIndices: nativeAchResult.rpCompiledIndices,
                         }, 0).then((response) => {
                             if (response.success) {
                                 emitLog("engine", "info", `[compiled-avm1] Loaded (${nativeAchResult!.swf.length} bytes)`);

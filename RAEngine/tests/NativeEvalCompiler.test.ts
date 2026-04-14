@@ -51,7 +51,7 @@ class MiniAVM1 {
         this.registers[2] = storage;  // R_STORAGE
     }
 
-    execute(): number {
+    execute(): unknown {
         while (this.pc < this.data.length) {
             const opcode = this.data[this.pc++];
             switch (opcode) {
@@ -191,7 +191,12 @@ class MiniAVM1 {
     private opAdd2(): void {
         const b = this.pop();
         const a = this.pop();
-        this.push(this.toNumber(a) + this.toNumber(b));
+        // AVM1 add2: string concatenation if either operand is a string, otherwise numeric
+        if (typeof a === "string" || typeof b === "string") {
+            this.push(String(a) + String(b));
+        } else {
+            this.push(this.toNumber(a) + this.toNumber(b));
+        }
     }
 
     private opSubtract(): void {
@@ -307,9 +312,8 @@ class MiniAVM1 {
         }
     }
 
-    private opReturn(): number {
-        const v = this.pop();
-        return this.toNumber(v);
+    private opReturn(): unknown {
+        return this.pop();
     }
 
     private opGetVariable(): void {
@@ -377,7 +381,7 @@ class MiniAVM1 {
         this.pc += codeSize; // skip over function body
         // Push a callable that creates a new VM for the function body
         const body = this.data.slice(bodyStart, bodyStart + codeSize);
-        const fn = (gameRoot: Record<string, unknown>, storage: Record<string, unknown>): number => {
+        const fn = (gameRoot: Record<string, unknown>, storage: Record<string, unknown>): unknown => {
             const vm = new MiniAVM1(body, gameRoot, storage);
             return vm.execute();
         };
@@ -390,23 +394,18 @@ class MiniAVM1 {
 // =============================================================================
 
 /** Compile assets and extract the function array from the SWF. */
-function compileAndExtract(assets: unknown[]): {
-    functions: Array<(gameRoot: Record<string, unknown>, storage: Record<string, unknown>) => number>;
-    compiledIndices: number[];
+type VMFunction = (gameRoot: Record<string, unknown>, storage: Record<string, unknown>) => unknown;
+
+/** Extract function bodies from the SWF action bytes, split into ach and RP arrays. */
+function extractFunctionsFromSWF(swf: Uint8Array, achCount: number, rpCount: number): {
+    achFunctions: VMFunction[];
+    rpFunctions: VMFunction[];
 } {
-    const result = compileAchievementsSWF(assets);
-    // Execute the SWF's DoAction to build the function array
-    // The SWF structure: FWS header (variable), then DoAction tag containing the bytecode
-    // Parse: skip 12 bytes (header), then read tag
-    const swf = result.swf;
     let offset = 8; // after header (FWS + version + fileLength)
-    // Skip RECT: 1 byte (Nbits=0)
-    offset += 1;
-    // Skip FrameRate: 2 bytes
-    offset += 2;
-    // Skip FrameCount: 2 bytes
-    offset += 2;
-    // Now at DoAction tag
+    offset += 1;    // Skip RECT (Nbits=0)
+    offset += 2;    // Skip FrameRate
+    offset += 2;    // Skip FrameCount
+    // DoAction tag
     const tagWord = swf[offset] | (swf[offset + 1] << 8);
     const tagType = tagWord >> 6;
     let tagLen = tagWord & 0x3F;
@@ -418,24 +417,20 @@ function compileAndExtract(assets: unknown[]): {
     if (tagType !== 12) throw new Error(`Expected DoAction tag (12), got ${tagType}`);
 
     const actionBytes = swf.slice(offset, offset + tagLen);
-    // Execute the actions to build __nativeAch
-    // The actions: push "_global", getVariable, push "__nativeAch", [defineFunction2 * N], push count, initArray, setMember, end
-    // We need to extract the function bodies. Simplest: run in the mini VM.
-    // But the mini VM's getVariable for "_global" returns a stub. Let me use a different approach:
-    // parse the action stream directly to extract DefineFunction2 bodies.
-    const functions: Array<(gameRoot: Record<string, unknown>, storage: Record<string, unknown>) => number> = [];
+    // Parse all DefineFunction2 bodies from the action stream.
+    // Stream layout: [ach functions (reversed)] initArray setMember [rp functions (reversed)] initArray setMember end
+    const allBodies: Uint8Array[] = [];
     let pc = 0;
     while (pc < actionBytes.length) {
         const op = actionBytes[pc++];
-        if (op === 0x00) break; // End
-        if (op < 0x80) continue; // single-byte opcode, no data
+        if (op === 0x00) break;
+        if (op < 0x80) continue;
         const dataLen = actionBytes[pc] | (actionBytes[pc + 1] << 8);
         pc += 2;
         if (op === 0x8E) { // DefineFunction2
             const metaStart = pc;
             let mpc = pc;
-            // Skip name
-            while (actionBytes[mpc++] !== 0);
+            while (actionBytes[mpc++] !== 0); // skip name
             const numParams = actionBytes[mpc] | (actionBytes[mpc + 1] << 8);
             mpc += 2;
             mpc++; // registerCount
@@ -447,21 +442,47 @@ function compileAndExtract(assets: unknown[]): {
             const codeSize = actionBytes[mpc] | (actionBytes[mpc + 1] << 8);
             mpc += 2;
             if (mpc !== metaStart + dataLen) mpc = metaStart + dataLen;
-            const body = actionBytes.slice(mpc, mpc + codeSize);
-            const fn = (gameRoot: Record<string, unknown>, storage: Record<string, unknown>): number => {
-                const vm = new MiniAVM1(body, gameRoot, storage);
-                return vm.execute();
-            };
-            functions.push(fn);
+            allBodies.push(actionBytes.slice(mpc, mpc + codeSize));
             pc = mpc + codeSize;
         } else {
             pc += dataLen;
         }
     }
-    // initArray pops LIFO, so the bytecode-order functions are reversed in the array.
-    // Reverse to match what Flash's initArray produces.
-    functions.reverse();
-    return { functions, compiledIndices: result.compiledIndices };
+
+    // First achCount bodies are achievement functions (in reverse order due to LIFO push)
+    // Next rpCount bodies are RP functions (in reverse order)
+    const achBodies = allBodies.slice(0, achCount);
+    const rpBodies = allBodies.slice(achCount, achCount + rpCount);
+
+    const makeVMFn = (body: Uint8Array): VMFunction =>
+        (gameRoot, storage) => new MiniAVM1(body, gameRoot, storage).execute();
+
+    // Reverse each group: initArray pops LIFO, so bytecode-order is reversed in the array
+    achBodies.reverse();
+    rpBodies.reverse();
+
+    return {
+        achFunctions: achBodies.map(makeVMFn),
+        rpFunctions: rpBodies.map(makeVMFn),
+    };
+}
+
+function compileAndExtract(assets: unknown[]): {
+    functions: VMFunction[];
+    compiledIndices: number[];
+    rpFunctions: VMFunction[];
+    rpCompiledIndices: number[];
+} {
+    const result = compileAchievementsSWF(assets);
+    const { achFunctions, rpFunctions } = extractFunctionsFromSWF(
+        result.swf, result.compiledIndices.length, result.rpCompiledIndices.length
+    );
+    return {
+        functions: achFunctions,
+        compiledIndices: result.compiledIndices,
+        rpFunctions,
+        rpCompiledIndices: result.rpCompiledIndices,
+    };
 }
 
 /** Build a minimal achievement asset for testing. */
@@ -511,7 +532,7 @@ function simpleAsset(
 }
 
 /** Compile a single asset and return the function + helpers. */
-function compileSingle(asset: Record<string, unknown>): (gameRoot: Record<string, unknown>, storage: Record<string, unknown>) => number {
+function compileSingle(asset: Record<string, unknown>): VMFunction {
     const { functions } = compileAndExtract([asset]);
     return functions[0];
 }
@@ -533,14 +554,16 @@ Deno.test("NativeEval - compiles single requirement", () => {
     assertEquals(compiledIndices, [0]);
 });
 
-Deno.test("NativeEval - skips RICH_PRESENCE assets", () => {
+Deno.test("NativeEval - separates RICH_PRESENCE and achievement assets", () => {
     const assets = [
-        { type: "RICH_PRESENCE", groups: [] },
+        { type: "RICH_PRESENCE", formula: '"Hello"', groups: [] },
         simpleAsset([{ addressA: "stage.x", addressB: "10", cmp: "==" }]),
     ];
-    const { functions, compiledIndices } = compileAndExtract(assets);
+    const { functions, compiledIndices, rpFunctions, rpCompiledIndices } = compileAndExtract(assets);
     assertEquals(functions.length, 1);
     assertEquals(compiledIndices, [1]);
+    assertEquals(rpFunctions.length, 1);
+    assertEquals(rpCompiledIndices, [0]);
 });
 
 Deno.test("NativeEval - throws on unknown flag", () => {
@@ -2321,4 +2344,116 @@ Deno.test("NativeEval - complex: PAUSE_IF + chain + hits", () => {
     assertEquals(storage["h0_2"], 2);
     // Chain passes → hits=3 → trigger
     assertEquals(fn({ paused: 0, a: 1, b: 1 }, storage), 1);
+});
+
+// ============================================================================
+// Rich Presence compilation tests
+// ============================================================================
+
+/** Compile a single Rich Presence asset and return its function. */
+function compileRP(formula: string): VMFunction {
+    const assets = [{ type: "RICH_PRESENCE", formula, groups: [] }];
+    const { rpFunctions } = compileAndExtract(assets);
+    assertEquals(rpFunctions.length, 1);
+    return rpFunctions[0];
+}
+
+Deno.test("RP - string literal", () => {
+    const fn = compileRP('"Hello World"');
+    assertEquals(fn({}, {}), "Hello World");
+});
+
+Deno.test("RP - string concatenation", () => {
+    const fn = compileRP('"Hello " + "World"');
+    assertEquals(fn({}, {}), "Hello World");
+});
+
+Deno.test("RP - property access as string", () => {
+    const fn = compileRP('"Level: " + stage.level');
+    assertEquals(fn({ level: 5 }, {}), "Level: 5");
+});
+
+Deno.test("RP - numeric property access", () => {
+    const fn = compileRP("stage.score");
+    assertEquals(fn({ score: 42 }, {}), 42);
+});
+
+Deno.test("RP - string property access", () => {
+    const fn = compileRP("stage.name");
+    assertEquals(fn({ name: "Player1" }, {}), "Player1");
+});
+
+Deno.test("RP - nested property access", () => {
+    const fn = compileRP('"HP: " + stage.player.health');
+    assertEquals(fn({ player: { health: 100 } }, {}), "HP: 100");
+});
+
+Deno.test("RP - arithmetic in string context", () => {
+    const fn = compileRP('"Score: " + (stage.a + stage.b)');
+    assertEquals(fn({ a: 10, b: 20 }, {}), "Score: 30");
+});
+
+Deno.test("RP - multi-part concatenation", () => {
+    const fn = compileRP('"HP: " + stage.hp + "/" + stage.maxHp');
+    // String concat is left-to-right: "HP: " + 50 = "HP: 50", + "/" = "HP: 50/", + 100 = "HP: 50/100"
+    assertEquals(fn({ hp: 50, maxHp: 100 }, {}), "HP: 50/100");
+});
+
+Deno.test("RP - ternary expression", () => {
+    const fn = compileRP('stage.alive ? "Alive" : "Dead"');
+    assertEquals(fn({ alive: 1 }, {}), "Alive");
+    assertEquals(fn({ alive: 0 }, {}), "Dead");
+});
+
+Deno.test("RP - pure numeric formula", () => {
+    const fn = compileRP("stage.x * 2 + 1");
+    assertEquals(fn({ x: 5 }, {}), 11);
+});
+
+Deno.test("RP - REMEMBER caches last non-empty", () => {
+    const fn = compileRP("{stage.status}");
+    const storage: Record<string, unknown> = {};
+
+    // First call: status is present
+    assertEquals(fn({ status: "Playing" }, storage), "Playing");
+
+    // Second call: status is undefined → returns cached "Playing"
+    assertEquals(fn({}, storage), "Playing");
+
+    // Third call: status updates
+    assertEquals(fn({ status: "Menu" }, storage), "Menu");
+});
+
+Deno.test("RP - mixed achievements and RP in same compilation", () => {
+    const assets = [
+        simpleAsset([{ addressA: "stage.x", addressB: "10", cmp: "==" }]),
+        { type: "RICH_PRESENCE", formula: '"Level " + stage.level', groups: [] },
+        simpleAsset([{ addressA: "stage.y", addressB: "5", cmp: ">=" }]),
+    ];
+    const { functions, compiledIndices, rpFunctions, rpCompiledIndices } = compileAndExtract(assets);
+
+    // Two achievements, one RP
+    assertEquals(functions.length, 2);
+    assertEquals(compiledIndices, [0, 2]);
+    assertEquals(rpFunctions.length, 1);
+    assertEquals(rpCompiledIndices, [1]);
+
+    // Achievements work
+    assertEquals(functions[0]({ x: 10 }, {}), 1);
+    assertEquals(functions[0]({ x: 5 }, {}), 0);
+
+    // RP works
+    assertEquals(rpFunctions[0]({ level: 3 }, {}), "Level 3");
+});
+
+Deno.test("RP - empty formula returns empty string", () => {
+    const fn = compileRP('""');
+    assertEquals(fn({}, {}), "");
+});
+
+Deno.test("RP - comparison produces boolean result", () => {
+    const fn = compileRP("stage.hp > 0");
+    // AVM1 greater returns true/false
+    assertEquals(fn({ hp: 50 }, {}), true);
+    assertEquals(fn({ hp: 0 }, {}), false);
 });

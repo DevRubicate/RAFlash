@@ -101,6 +101,11 @@ class Main {
     private static var nativeAchFnMap:Object = null;     // asset index → function array index
     private static var nativeAchStorage:Array = [];       // per-asset storage objects
 
+    // Native Rich Presence compilation
+    private static var nativeRPReady:Boolean = false;
+    private static var nativeRPFnMap:Object = null;      // asset index → function array index
+    private static var nativeRPStorage:Array = [];        // per-asset storage objects (for REMEMBER)
+
     // Socket receive buffer for fragmented messages
     private static var receiveBuffer:String = "";
 
@@ -1027,11 +1032,18 @@ class Main {
             case "loadCompiledAvm1":
                 var naUrl:String = String(params.url);
                 var naIndices:Array = params.compiledIndices;
+                var rpIndices:Array = params.rpCompiledIndices;
                 nativeAchReady = false;
                 nativeAchFnMap = {};
                 nativeAchStorage = [];
                 for (var ci:Number = 0; ci < naIndices.length; ci++) {
                     nativeAchFnMap[naIndices[ci]] = ci;
+                }
+                nativeRPReady = false;
+                nativeRPFnMap = {};
+                nativeRPStorage = [];
+                for (var ri:Number = 0; ri < rpIndices.length; ri++) {
+                    nativeRPFnMap[rpIndices[ri]] = ri;
                 }
                 var naHost:MovieClip = (_self != null) ? _self : _root;
                 naHost.__nativeAchClip.removeMovieClip();
@@ -1043,6 +1055,9 @@ class Main {
                 naListener.onLoadInit = function(target:MovieClip):Void {
                     if (_global.__nativeAch != undefined) {
                         Main.nativeAchReady = true;
+                        if (_global.__nativeRP != undefined) {
+                            Main.nativeRPReady = true;
+                        }
                         Main.sendResponse(naId, { success: true });
                     } else {
                         Main.sendResponse(naId, { success: false, error: "__nativeAch not defined after load" });
@@ -2976,6 +2991,7 @@ class Main {
         }
 
         var frameStartTime:Number = getTimer();
+        var rpTimeMs:Number = 0;
 
         // Update reusable stage context for this frame
         _stageContext[0] = gameRoot;
@@ -2997,21 +3013,39 @@ class Main {
                 // Only evaluate once per second
                 if (rpNow - lastRichPresenceTime >= RICH_PRESENCE_INTERVAL) {
                     lastRichPresenceTime = rpNow;
-                    if (achievement.compiledFormula != null && achievement.compiledFormula.length > 1) {
+                    var rpStartTime:Number = benchmarkingActive ? getTimer() : 0;
+                    var rpString:String;
+
+                    if (nativeRPReady && nativeRPFnMap[i] != undefined) {
+                        // Native compiled path
+                        var rpFnIdx:Number = nativeRPFnMap[i];
+                        var rpFn:Function = _global.__nativeRP[rpFnIdx];
+                        if (nativeRPStorage[i] == null) nativeRPStorage[i] = {};
+                        var rpResult:Object = rpFn(gameRoot, nativeRPStorage[i]);
+                        rpString = (rpResult != null && rpResult != undefined) ? String(rpResult) : "";
+                    } else if (achievement.compiledFormula != null && achievement.compiledFormula.length > 1) {
+                        // Interpreter fallback
                         var rpFormulaResult:Array = evaluate(
                             achievement.compiledFormula, 1, achievement.compiledFormula.length,
                             _stageContext, _stageKeys
                         );
-                        // Store first result as the Rich Presence string
-                        var rpString:String;
                         if (rpFormulaResult != null && rpFormulaResult.length > 0) {
                             rpString = String(rpFormulaResult[0]);
                         } else {
                             rpString = "";
                         }
-                        achievement._richPresenceResult = rpString;
-                        // Send to Deno for window title update
-                        sendMessage("richPresenceUpdate", { result: rpString });
+                    } else {
+                        rpString = "";
+                    }
+
+                    achievement._richPresenceResult = rpString;
+                    // Send to Deno for window title update
+                    sendMessage("richPresenceUpdate", { result: rpString });
+
+                    if (benchmarkingActive) {
+                        var rpElapsed:Number = getTimer() - rpStartTime;
+                        rpTimeMs += rpElapsed;
+                        sendMessage("benchmark", {kind: "Rich Presence", ms: rpElapsed});
                     }
                 }
                 continue; // Skip achievement-specific processing
@@ -4255,7 +4289,7 @@ class Main {
 
         // Emit per-frame benchmark data (use-it-or-lose-it: lost if no listener)
         if (benchmarkingActive) {
-            sendMessage("benchmark", {kind: "Achievements", ms: frameTotalMs - diffMs});
+            sendMessage("benchmark", {kind: "Achievements", ms: frameTotalMs - diffMs - rpTimeMs});
             sendMessage("benchmark", {kind: "Diff Ops", ms: diffMs});
             sendMessage("benchmark", {kind: "Frame Total", ms: frameTotalMs});
         }
