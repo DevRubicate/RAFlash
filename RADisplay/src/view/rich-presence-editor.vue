@@ -172,6 +172,7 @@
 
     // Poll for Rich Presence result
     const pollResult = async () => {
+        if (!App.flashConnected) return;
         if (!selectedAsset.value?.id) return;
 
         try {
