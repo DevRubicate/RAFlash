@@ -56,6 +56,10 @@ class Main extends MovieClip {
     private var disconnectOverlay:flash.display.Sprite = null;
     private var initialSetupDone:Bool = false;
 
+    // Child mode: firmware was loaded by injected bytecode inside the game SWF
+    // (game is root, firmware is child). Detected from loaderInfo URL query param.
+    private var childMode:Bool = false;
+
     private static inline var PORT:Int = 18081;
 
     public function new() {
@@ -65,6 +69,15 @@ class Main extends MovieClip {
         // Allow loaded game SWFs to be introspected across security boundaries
         Security.allowDomain("*");
         Security.allowInsecureDomain("*");
+
+        // Detect child mode from the firmware URL query parameter.
+        // In child mode, the injected bytecode loads us with ?mode=child.
+        try {
+            var url:String = flash.Lib.current.loaderInfo.url;
+            childMode = (url != null && url.indexOf("mode=child") != -1);
+        } catch (e:Dynamic) {
+            childMode = false;
+        }
 
         // Setup stage
         addEventListener(Event.ADDED_TO_STAGE, onAddedToStage);
@@ -76,8 +89,12 @@ class Main extends MovieClip {
     private function onAddedToStage(e:Event):Void {
         removeEventListener(Event.ADDED_TO_STAGE, onAddedToStage);
 
-        stage.align = StageAlign.TOP_LEFT;
-        stage.scaleMode = StageScaleMode.NO_SCALE;
+        if (!childMode) {
+            // Parent mode: firmware owns the stage, set properties
+            stage.align = StageAlign.TOP_LEFT;
+            stage.scaleMode = StageScaleMode.NO_SCALE;
+        }
+        // Menu suppression works in both modes
         flash.Lib.fscommand("showmenu", "false");
         var cm = new flash.ui.ContextMenu();
         cm.hideBuiltInItems();
@@ -315,7 +332,17 @@ class Main extends MovieClip {
                     AppData.originalData = haxe.Json.parse(haxe.Json.stringify(params.data));
                     initialSetupDone = true;
                     sendResponse(id, {success: true});
-                    loadGame(params.gameUrl);
+                    if (childMode) {
+                        // Child mode: game is already loaded — we're a child of it.
+                        // Find the game root by walking up the parent chain.
+                        gameRoot = resolveChildModeGameRoot();
+                        gameLoaded = true;
+                        sendMessage("gameLoaded", {bytes: 0});
+                        setupKeyListener();
+                        addEventListener(Event.ENTER_FRAME, onEnterFrame);
+                    } else {
+                        loadGame(params.gameUrl);
+                    }
                 }
 
             case "evaluate":
@@ -440,6 +467,26 @@ class Main extends MovieClip {
     }
 
     // === Game Loading ===
+
+    /**
+     * In child mode, the firmware is loaded as a child of the game's root.
+     * Walk up the parent chain from this firmware instance until we find the
+     * display object whose parent is the Stage — that's the game's root.
+     *
+     * Display hierarchy in child mode:
+     *   Stage
+     *     └── GameDocumentClass  ← game root (what we want)
+     *          ├── [game content...]
+     *          └── Loader (name="__raflash")
+     *               └── Main (this firmware)
+     */
+    private function resolveChildModeGameRoot():flash.display.DisplayObject {
+        var current:flash.display.DisplayObject = this;
+        while (current.parent != null && !Std.isOfType(current.parent, flash.display.Stage)) {
+            current = current.parent;
+        }
+        return current;
+    }
 
     private function loadGame(?url:String):Void {
         var loader = new Loader();
@@ -634,8 +681,18 @@ class Main extends MovieClip {
     // === Entry Point ===
 
     public static function main():Void {
-        flash.Lib.current.stage.align = StageAlign.TOP_LEFT;
-        flash.Lib.current.stage.scaleMode = StageScaleMode.NO_SCALE;
+        // Detect child mode early (before Main constructor) to avoid
+        // stomping on the game's stage properties.
+        var isChild:Bool = false;
+        try {
+            var url:String = flash.Lib.current.loaderInfo.url;
+            isChild = (url != null && url.indexOf("mode=child") != -1);
+        } catch (e:Dynamic) {}
+
+        if (!isChild) {
+            flash.Lib.current.stage.align = StageAlign.TOP_LEFT;
+            flash.Lib.current.stage.scaleMode = StageScaleMode.NO_SCALE;
+        }
 
         var main = new Main();
         flash.Lib.current.addChild(main);

@@ -31,6 +31,7 @@ import * as pako from "npm:pako";
 import { unzipSync, zipSync } from "npm:fflate";
 import { startSitelockProxy, stopSitelockProxy } from "./SitelockProxy.ts";
 import { compileAchievementsSWF, type NativeAchResult } from "./swf/NativeEvalCompiler.ts";
+import { buildInjectorTags, findMaxCharacterId } from "./swf/AVM2Injector.ts";
 
 const VERSION = "0.0.18";
 
@@ -268,8 +269,8 @@ interface Settings {
     //              and no firmware involvement at all. Used for debugging
     //              and side-by-side comparison. Devtools (RADisplay) won't
     //              be able to connect since there's nothing to talk to.
-    // For AVM2 games, "child" silently falls back to "parent" (no AVM2 child
-    // mode yet); "none" is honored.
+    // Both AVM1 and AVM2 games support all three modes. AVM1 child mode
+    // injects AS2 bytecode; AVM2 child mode injects ABC (DoABC2 tag).
     firmwareMode: "parent" | "child" | "none";
     fixTextFieldBindings: boolean;     // parent-mode only
     fixSoundAttach: boolean;            // parent-mode only
@@ -338,15 +339,13 @@ let avmConfig: AVMConfig;
  * "none" is honored regardless of AVM version — it's the user explicitly
  * asking for a raw game launch with no firmware involvement.
  *
- * "child" is honored only for AVM1; AVM2 games silently fall back to
- * "parent" because the AVM2 firmware doesn't have a child-mode equivalent
- * yet. AVM2 games launched in "parent" still get full devtools support.
+ * "child" is honored for both AVM1 and AVM2. AVM1 uses injected AS2
+ * bytecode (DoAction); AVM2 uses injected ABC (DoABC2 + SymbolClass).
  *
  * "parent" is the fallback for everything else.
  */
 function resolveFirmwareMode(): "parent" | "child" | "none" {
     if (settings.firmwareMode === "none") return "none";
-    if (avmConfig?.mode === "AVM2") return "parent";
     return settings.firmwareMode === "child" ? "child" : "parent";
 }
 
@@ -1138,6 +1137,102 @@ function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8A
     }
 }
 
+/**
+ * Inject AVM2 firmware loader into an AS3 game SWF for child-mode operation.
+ *
+ * Inserts four SWF tags before the first ShowFrame:
+ *   1. DoABC2 — defines __RAFlashInjector class (extends MovieClip)
+ *   2. DefineSprite — empty sprite with an unused character ID
+ *   3. SymbolClass — maps the sprite to __RAFlashInjector
+ *   4. PlaceObject3 — places the sprite on the main timeline
+ *
+ * When Flash Player processes frame 1, it instantiates the sprite, which
+ * runs the constructor: checks idempotency, creates a Loader, and loads
+ * the firmware SWF as a child of the game's root display object.
+ *
+ * Handles CWS (zlib-compressed) SWFs by decompressing to FWS first.
+ */
+function injectAVM2FirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8Array {
+    try {
+    if (swfBytes.length < 9) {
+        console.warn("injectAVM2FirmwareLoader: swf too short for header, returning unmodified");
+        return swfBytes;
+    }
+    const sig = String.fromCharCode(swfBytes[0], swfBytes[1], swfBytes[2]);
+    let data: Uint8Array;
+    if (sig === "CWS") {
+        const decompressed = pako.inflate(swfBytes.slice(8));
+        data = new Uint8Array(8 + decompressed.length);
+        data.set(swfBytes.slice(0, 8));
+        data.set(decompressed, 8);
+        data[0] = 0x46; // 'F' — convert CWS → FWS
+    } else if (sig === "FWS") {
+        data = new Uint8Array(swfBytes);
+    } else {
+        console.warn(`injectAVM2FirmwareLoader: unsupported signature ${sig}, returning unmodified`);
+        return swfBytes;
+    }
+
+    // Skip RECT + frameRate + frameCount to reach the tag stream
+    const rectNBits = (data[8] >> 3) & 0x1F;
+    const rectBytes = Math.ceil((5 + rectNBits * 4) / 8);
+    const tagsOffset = 8 + rectBytes + 4;
+    if (tagsOffset >= data.length) {
+        console.warn("injectAVM2FirmwareLoader: tag stream offset past end of file, returning unmodified");
+        return swfBytes;
+    }
+
+    // Scan tags to find: (a) the highest character ID, (b) the first ShowFrame offset
+    const maxCharId = findMaxCharacterId(data, tagsOffset);
+    const newCharId = maxCharId + 1;
+
+    let offset = tagsOffset;
+    let insertOffset = -1;
+    while (offset + 2 <= data.length) {
+        const tcl = data[offset] | (data[offset + 1] << 8);
+        const tagType = tcl >> 6;
+        let tagLength = tcl & 0x3F;
+        let headerSize = 2;
+        if (tagLength === 0x3F) {
+            if (offset + 6 > data.length) break;
+            tagLength = data[offset + 2] | (data[offset + 3] << 8) |
+                       (data[offset + 4] << 16) | (data[offset + 5] << 24);
+            headerSize = 6;
+        }
+        if (tagType === 1) { insertOffset = offset; break; } // ShowFrame
+        if (tagType === 0) break; // End
+        const nextOffset = offset + headerSize + tagLength;
+        if (nextOffset <= offset || nextOffset > data.length) break;
+        offset = nextOffset;
+    }
+    if (insertOffset === -1) {
+        console.warn("injectAVM2FirmwareLoader: no ShowFrame tag found, returning unmodified");
+        return swfBytes;
+    }
+
+    // Build the injection tags
+    const injectedTags = buildInjectorTags(firmwareUrl, newCharId);
+
+    // Splice into the SWF before the first ShowFrame
+    const result = new Uint8Array(data.length + injectedTags.length);
+    result.set(data.subarray(0, insertOffset), 0);
+    result.set(injectedTags, insertOffset);
+    result.set(data.subarray(insertOffset), insertOffset + injectedTags.length);
+
+    // Update FileLength header (bytes 4..7, UI32 LE)
+    const newLen = result.length;
+    result[4] = newLen & 0xFF;
+    result[5] = (newLen >> 8) & 0xFF;
+    result[6] = (newLen >> 16) & 0xFF;
+    result[7] = (newLen >> 24) & 0xFF;
+
+    return result;
+    } catch (err) {
+        console.warn(`injectAVM2FirmwareLoader: ${err}, returning unmodified`);
+        return swfBytes;
+    }
+}
+
 // Application state
 enum AppState {
     FILE_PICKER,
@@ -1160,7 +1255,7 @@ let nativeAchRecompileTimer: number | null = null;
 
 /** Recompile and reload the native achievement SWF. Debounced to avoid rapid recompiles during editing. */
 function scheduleNativeAchRecompile(): void {
-    if (settings.avm1ExecutionMode !== "compiled" || !firmwareConnected) return;
+    if (settings.avm1ExecutionMode !== "compiled" || !firmwareConnected || avmConfig?.mode !== "AVM1") return;
     if (nativeAchRecompileTimer !== null) clearTimeout(nativeAchRecompileTimer);
     nativeAchRecompileTimer = setTimeout(() => {
         nativeAchRecompileTimer = null;
@@ -1483,7 +1578,8 @@ function startHttpServerInner() {
             try {
                 // Special handling for firmware SWF - optionally patch with game settings
                 if (avmConfig && url.pathname === avmConfig.firmwareUrl && selectedGamePath) {
-                    if (avmConfig.patchFirmware) {
+                    if (avmConfig.patchFirmware && resolveFirmwareMode() !== "child") {
+                        // Parent/none mode: patch firmware dimensions to match game
                         const gameSwfBuffer = await readGameSwf();
                         const gameMetadata = parseSwfMetadata(gameSwfBuffer);
                         const firmwareBytes = await Deno.readFile(avmConfig.firmwareSwf);
@@ -1499,6 +1595,8 @@ function startHttpServerInner() {
                             headers: { "Content-Type": "application/x-shockwave-flash" },
                         });
                     } else {
+                        // Child mode or no-patch: serve unpatched (firmware doesn't
+                        // own the player chrome, so patching would stomp on the game)
                         const firmwareBytes = await Deno.readFile(avmConfig.firmwareSwf);
                         return new Response(firmwareBytes, {
                             status: 200,
@@ -1597,8 +1695,13 @@ function startHttpServerInner() {
                         try { fwDomain = new URL(originUrl).host; }
                         catch { /* use default domain */ }
                     }
-                    const fwUrl = `http://${fwDomain}/avm1-firmware.swf`;
-                    file = injectFirmwareLoader(file, fwUrl) as Uint8Array<ArrayBuffer>;
+                    if (avmConfig.mode === "AVM2") {
+                        const fwUrl = `http://${fwDomain}/avm2-firmware.swf?mode=child`;
+                        file = injectAVM2FirmwareLoader(file, fwUrl) as Uint8Array<ArrayBuffer>;
+                    } else {
+                        const fwUrl = `http://${fwDomain}/avm1-firmware.swf`;
+                        file = injectFirmwareLoader(file, fwUrl) as Uint8Array<ArrayBuffer>;
+                    }
                 }
                 const extension = isGameSwf ? "swf" : (filePath.split(".").pop() || "");
                 const mimeTypes: Record<string, string> = {
@@ -2380,7 +2483,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
         // HTTP request for firmware SWF
         if (httpBuffer.startsWith(`GET ${avmConfig.firmwareUrl}`)) {
             let swfData: Uint8Array;
-            if (avmConfig.patchFirmware) {
+            if (avmConfig.patchFirmware && resolveFirmwareMode() !== "child") {
                 const gameSwfBuffer = await readGameSwf();
                 const gameMetadata = parseSwfMetadata(gameSwfBuffer);
                 const firmwareBytes = await Deno.readFile(avmConfig.firmwareSwf);
@@ -2474,7 +2577,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
             let swfData: Uint8Array = rawSwfData;
             if (resolveFirmwareMode() === "child") {
                 // Inject firmware loader bytecode into the game SWF.
-                // injectFirmwareLoader handles CWS→FWS decompression internally.
+                // Both injectors handle CWS→FWS decompression internally.
                 // The game SWF is NOT run through patchFirmwareSwf — that function
                 // rewrites the RECT/frameRate/backgroundColor which can corrupt the
                 // game (e.g. zeroing the frameRate fraction, changing RECT Nbits
@@ -2484,8 +2587,13 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
                 if (rsOriginUrl) {
                     try { rsDomain = new URL(rsOriginUrl).host; } catch { /* malformed URL, use default */ }
                 }
-                const rsFirmwareUrl = `http://${rsDomain}/avm1-firmware.swf`;
-                swfData = injectFirmwareLoader(swfData, rsFirmwareUrl);
+                if (avmConfig.mode === "AVM2") {
+                    const rsFirmwareUrl = `http://${rsDomain}/avm2-firmware.swf?mode=child`;
+                    swfData = injectAVM2FirmwareLoader(swfData, rsFirmwareUrl);
+                } else {
+                    const rsFirmwareUrl = `http://${rsDomain}/avm1-firmware.swf`;
+                    swfData = injectFirmwareLoader(swfData, rsFirmwareUrl);
+                }
             }
             const response = [
                 "HTTP/1.1 200 OK",
@@ -2773,7 +2881,7 @@ function handleFirmwareData(data: string): void {
                 }, 0).catch(() => {});
 
                 // Compile and load native achievement SWF when in compiled mode
-                if (settings.avm1ExecutionMode === "compiled") {
+                if (settings.avm1ExecutionMode === "compiled" && avmConfig?.mode === "AVM1") {
                     try {
                         const thisResult = compileAchievementsSWF(AppData.data.assets);
                         nativeAchResult = thisResult;
