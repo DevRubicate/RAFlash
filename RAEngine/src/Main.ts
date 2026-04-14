@@ -1159,19 +1159,19 @@ function scheduleNativeAchRecompile(): void {
         nativeAchRecompileTimer = null;
         try {
             nativeAchResult = compileAchievementsSWF(AppData.data.assets);
-            emitLog("engine", "info", `[native-ach] Recompiled ${nativeAchResult.compiledIndices.length} achievements`);
-            sendToFirmware("loadNativeAch", {
-                url: `http://${RAFLASH_DOMAIN}/native-ach.swf?t=${Date.now()}`,
+            emitLog("engine", "info", `[compiled-avm1] Recompiled ${nativeAchResult.compiledIndices.length} achievements`);
+            sendToFirmware("loadCompiledAvm1", {
+                url: `http://${RAFLASH_DOMAIN}/compiled-avm1.swf?t=${Date.now()}`,
                 compiledIndices: nativeAchResult.compiledIndices,
             }, 0).then((response) => {
                 if (response.success) {
-                    emitLog("engine", "info", `[native-ach] Reloaded (${nativeAchResult!.swf.length} bytes)`);
+                    emitLog("engine", "info", `[compiled-avm1] Reloaded (${nativeAchResult!.swf.length} bytes)`);
                 } else {
-                    emitLog("engine", "warn", `[native-ach] Reload failed: ${response.error}`);
+                    emitLog("engine", "warn", `[compiled-avm1] Reload failed: ${response.error}`);
                 }
             }).catch(() => {});
         } catch (e) {
-            emitLog("engine", "warn", `[native-ach] Recompilation failed: ${e}`);
+            emitLog("engine", "warn", `[compiled-avm1] Recompilation failed: ${e}`);
         }
     }, 300) as unknown as number;
 }
@@ -2452,7 +2452,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
         }
 
         // HTTP request for native achievement SWF (runtime-generated AVM1 bytecode)
-        if (httpBuffer.startsWith("GET /native-ach.swf") && nativeAchResult) {
+        if (httpBuffer.startsWith("GET /compiled-avm1.swf") && nativeAchResult) {
             const swfData = nativeAchResult.swf;
             const response = [
                 "HTTP/1.1 200 OK",
@@ -2721,20 +2721,20 @@ function handleFirmwareData(data: string): void {
                 if (settings.avm1ExecutionMode === "compiled") {
                     try {
                         nativeAchResult = compileAchievementsSWF(AppData.data.assets);
-                        emitLog("engine", "info", `[native-ach] Compiled ${nativeAchResult.compiledIndices.length} achievements`);
+                        emitLog("engine", "info", `[compiled-avm1] Compiled ${nativeAchResult.compiledIndices.length} achievements`);
 
-                        sendToFirmware("loadNativeAch", {
-                            url: `http://${RAFLASH_DOMAIN}/native-ach.swf`,
+                        sendToFirmware("loadCompiledAvm1", {
+                            url: `http://${RAFLASH_DOMAIN}/compiled-avm1.swf`,
                             compiledIndices: nativeAchResult.compiledIndices,
                         }, 0).then((response) => {
                             if (response.success) {
-                                emitLog("engine", "info", `[native-ach] Loaded (${nativeAchResult!.swf.length} bytes)`);
+                                emitLog("engine", "info", `[compiled-avm1] Loaded (${nativeAchResult!.swf.length} bytes)`);
                             } else {
-                                emitLog("engine", "warn", `[native-ach] Load failed: ${response.error}`);
+                                emitLog("engine", "warn", `[compiled-avm1] Load failed: ${response.error}`);
                             }
                         }).catch(() => {});
                     } catch (e) {
-                        emitLog("engine", "warn", `[native-ach] Compilation failed: ${e}`);
+                        emitLog("engine", "warn", `[compiled-avm1] Compilation failed: ${e}`);
                     }
                 }
             } else if (parsed.type === "keypress") {

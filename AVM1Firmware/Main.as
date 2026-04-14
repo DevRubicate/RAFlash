@@ -1020,7 +1020,7 @@ class Main {
                 }
                 break;
 
-            case "loadNativeAch":
+            case "loadCompiledAvm1":
                 var naUrl:String = String(params.url);
                 var naIndices:Array = params.compiledIndices;
                 nativeAchReady = false;
