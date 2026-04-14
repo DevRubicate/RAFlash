@@ -486,7 +486,7 @@ function emitChainMemberEval(
     if (maxHits > 0) {
         emitReadHitsToReg(asm, hitsKey, R_SCRATCH1);
         asm.push(aRegister(R_SCRATCH1), aInt(maxHits));
-        asm.less2(); asm.not(); // hits >= maxHits → locked
+        asm.less2(); // hits < maxHits → not locked → skip locked block
         const notLockedPatch = asm.jumpIfForward();
         // LOCKED: satisfied = true
         asm.push(aBool(true));
