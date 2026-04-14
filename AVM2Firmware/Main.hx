@@ -154,8 +154,15 @@ class Main extends MovieClip {
             return;
         }
 
+        var arr:Array<Dynamic> = cast data;
+        if (arr.length < 3) {
+            log("Message too short");
+            return;
+        }
+
         switch (data[0]) {
             case "RESPONSE":
+                if (!Std.isOfType(data[1], Int)) return;
                 var id:Int = data[1];
                 var result:Dynamic = data[2];
                 var callback = callbacks.get(id);
@@ -166,7 +173,8 @@ class Main extends MovieClip {
 
             case "REQUEST":
                 var id:Dynamic = data[1];
-                var payload:{command:String, params:Dynamic} = data[2];
+                var payload:Dynamic = data[2];
+                if (payload == null || payload.command == null) return;
                 handleRequest(id, payload.command, payload.params);
 
             default:
@@ -176,6 +184,7 @@ class Main extends MovieClip {
 
     private function onError(e:Event):Void {
         connected = false;
+        clearPendingCallbacks();
         if (gameLoaded) {
             showDisconnectOverlay(false);
             scheduleReconnect();
@@ -186,9 +195,16 @@ class Main extends MovieClip {
 
     private function onClose(e:Event):Void {
         connected = false;
+        clearPendingCallbacks();
         if (gameLoaded) {
             showDisconnectOverlay(false);
             scheduleReconnect();
+        }
+    }
+
+    private function clearPendingCallbacks():Void {
+        for (key in callbacks.keys()) {
+            callbacks.remove(key);
         }
     }
 
@@ -271,12 +287,14 @@ class Main extends MovieClip {
                 }
 
             case "evaluate":
+                if (params.formula == null) { sendResponse(id, {success: false, error: "Missing formula"}); return; }
                 var formula:Array<Dynamic> = params.formula;
                 var result = Evaluate.evaluate(formula, 1, formula.length, [gameRoot], cast ["stage"], gameRoot);
                 var formatted = Evaluate.formatOutput(result != null ? result : [], 0);
                 sendResponse(id, {success: true, result: formatted});
 
             case "evaluateMultiple":
+                if (params.formulas == null) { sendResponse(id, {success: false, error: "Missing formulas"}); return; }
                 var formulas:Array<Dynamic> = params.formulas;
                 var results:Array<Dynamic> = [];
                 var fi:Int = 0;
@@ -290,6 +308,7 @@ class Main extends MovieClip {
                 sendResponse(id, {success: true, results: results});
 
             case "editData":
+                if (params.changes == null) { sendResponse(id, {success: false, error: "Missing changes"}); return; }
                 var changes:Dynamic = params.changes;
                 JSONDiff.applyDataDiff(AppData.data, changes);
                 // Sync originalData to prevent ping-pong feedback loops
@@ -415,6 +434,8 @@ class Main extends MovieClip {
     }
 
     private function onGameLoadError(e:IOErrorEvent):Void {
+        var loader:Loader = cast(e.target, flash.display.LoaderInfo).loader;
+        if (loader.parent != null) loader.parent.removeChild(loader);
         log("Failed to load game: " + e.text);
         sendMessage("gameLoadError", {error: e.text});
     }

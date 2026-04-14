@@ -346,8 +346,8 @@
                 }
                 rowValues.value = newValues;
             }
-        } catch {
-            // Silently ignore errors
+        } catch (e) {
+            console.warn('Memory search poll failed:', e);
         }
     };
 

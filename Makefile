@@ -7,7 +7,7 @@ DENO=deno
 MTASC_HEADER=800:575:60
 
 # Dummy target to force rebuild
-.PHONY: all check clean run assets test test-avm1 test-engine test-display test-avm2 avm1-build avm1-wrapper-build avm2-build compile dist release stage FORCE
+.PHONY: all check clean run assets test test-avm1 test-engine test-display test-avm2 avm1-build avm1-bootstrap-build avm1-wrapper-build avm2-build compile dist release stage FORCE
 
 # Default target - full build including standalone executable
 all: compile

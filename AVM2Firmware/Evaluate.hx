@@ -32,6 +32,12 @@ class Evaluate {
      * @param gameRoot The loaded game's root display object (for READ_GLOBAL "stage")
      * @return Array of result values, or null on error
      */
+    private static var _emptyArr:Array<Dynamic> = [];
+
+    private static inline function safePop(stack:Array<Array<Dynamic>>):Array<Dynamic> {
+        return stack.length > 0 ? stack.pop() : _emptyArr;
+    }
+
     public static function evaluate(formula:Array<Dynamic>, start:Int, end:Int, context:Array<Dynamic>, keys:Array<Dynamic>, gameRoot:Dynamic):Array<Dynamic> {
         var stack:Array<Array<Dynamic>> = [];
         var i:Int = start;
@@ -52,8 +58,8 @@ class Evaluate {
                 stack.push([formula[i]]);
                 i++;
             } else if (token == "ADD") {
-                var b = stack.pop();
-                var a = stack.pop();
+                var b = safePop(stack);
+                var a = safePop(stack);
                 var length = a.length > b.length ? a.length : b.length;
 
                 if (a.length > 0 && b.length == 0) {
@@ -85,28 +91,28 @@ class Evaluate {
                     stack.push(result);
                 }
             } else if (token == "SUB") {
-                var b = stack.pop();
-                var a = stack.pop();
+                var b = safePop(stack);
+                var a = safePop(stack);
                 stack.push(binaryArith(a, b, function(av:Float, bv:Float):Float { return av - bv; }));
             } else if (token == "MUL") {
-                var b = stack.pop();
-                var a = stack.pop();
+                var b = safePop(stack);
+                var a = safePop(stack);
                 stack.push(binaryArith(a, b, function(av:Float, bv:Float):Float { return av * bv; }));
             } else if (token == "DIV") {
-                var b = stack.pop();
-                var a = stack.pop();
+                var b = safePop(stack);
+                var a = safePop(stack);
                 stack.push(binaryArith(a, b, function(av:Float, bv:Float):Float { return av / bv; }));
             } else if (token == "MOD") {
-                var b = stack.pop();
-                var a = stack.pop();
+                var b = safePop(stack);
+                var a = safePop(stack);
                 stack.push(binaryArith(a, b, function(av:Float, bv:Float):Float { return av % bv; }));
             } else if (token == "POW") {
-                var b = stack.pop();
-                var a = stack.pop();
+                var b = safePop(stack);
+                var a = safePop(stack);
                 stack.push(binaryArith(a, b, function(av:Float, bv:Float):Float { return Math.pow(av, bv); }));
             } else if (token == "EQUAL") {
-                var b = stack.pop();
-                var a = stack.pop();
+                var b = safePop(stack);
+                var a = safePop(stack);
                 // null comparison: check if array is empty
                 if (b.length == 1 && b[0] == null) {
                     stack.push([a.length == 0 ? 1 : 0]);
@@ -116,8 +122,8 @@ class Evaluate {
                     stack.push(binaryCompare(a, b, function(av:Dynamic, bv:Dynamic):Int { return av == bv ? 1 : 0; }));
                 }
             } else if (token == "NOT_EQUAL") {
-                var b = stack.pop();
-                var a = stack.pop();
+                var b = safePop(stack);
+                var a = safePop(stack);
                 // null comparison: check if array is not empty
                 if (b.length == 1 && b[0] == null) {
                     stack.push([a.length > 0 ? 1 : 0]);
@@ -127,46 +133,50 @@ class Evaluate {
                     stack.push(binaryCompare(a, b, function(av:Dynamic, bv:Dynamic):Int { return av != bv ? 1 : 0; }));
                 }
             } else if (token == "GREATER") {
-                var b = stack.pop();
-                var a = stack.pop();
+                var b = safePop(stack);
+                var a = safePop(stack);
                 stack.push(binaryCompare(a, b, function(av:Dynamic, bv:Dynamic):Int { return (av : Float) > (bv : Float) ? 1 : 0; }));
             } else if (token == "GREATER_EQUAL") {
-                var b = stack.pop();
-                var a = stack.pop();
+                var b = safePop(stack);
+                var a = safePop(stack);
                 stack.push(binaryCompare(a, b, function(av:Dynamic, bv:Dynamic):Int { return (av : Float) >= (bv : Float) ? 1 : 0; }));
             } else if (token == "LESSER") {
-                var b = stack.pop();
-                var a = stack.pop();
+                var b = safePop(stack);
+                var a = safePop(stack);
                 stack.push(binaryCompare(a, b, function(av:Dynamic, bv:Dynamic):Int { return (av : Float) < (bv : Float) ? 1 : 0; }));
             } else if (token == "LESSER_EQUAL") {
-                var b = stack.pop();
-                var a = stack.pop();
+                var b = safePop(stack);
+                var a = safePop(stack);
                 stack.push(binaryCompare(a, b, function(av:Dynamic, bv:Dynamic):Int { return (av : Float) <= (bv : Float) ? 1 : 0; }));
             } else if (token == "AND") {
-                var b = stack.pop();
-                var a = stack.pop();
+                var b = safePop(stack);
+                var a = safePop(stack);
                 stack.push(binaryCompare(a, b, function(av:Dynamic, bv:Dynamic):Int { return isTruthy(av) && isTruthy(bv) ? 1 : 0; }));
             } else if (token == "OR") {
-                var b = stack.pop();
-                var a = stack.pop();
+                var b = safePop(stack);
+                var a = safePop(stack);
                 stack.push(binaryCompare(a, b, function(av:Dynamic, bv:Dynamic):Int { return isTruthy(av) || isTruthy(bv) ? 1 : 0; }));
             } else if (token == "XOR") {
-                var b = stack.pop();
-                var a = stack.pop();
+                var b = safePop(stack);
+                var a = safePop(stack);
                 stack.push(binaryCompare(a, b, function(av:Dynamic, bv:Dynamic):Int {
                     var ai:Int = isTruthy(av) ? 1 : 0;
                     var bi:Int = isTruthy(bv) ? 1 : 0;
                     return (ai ^ bi) != 0 ? 1 : 0;
                 }));
             } else if (token == "NOT") {
-                var a = stack.pop();
-                var notResult:Array<Dynamic> = [];
-                for (v in a) {
-                    notResult.push(isTruthy(v) ? 0 : 1);
+                var a = safePop(stack);
+                if (a.length == 0) {
+                    stack.push([1]);
+                } else {
+                    var notResult:Array<Dynamic> = [];
+                    for (v in a) {
+                        notResult.push(isTruthy(v) ? 0 : 1);
+                    }
+                    stack.push(notResult);
                 }
-                stack.push(notResult);
             } else if (token == "READ_GLOBAL") {
-                var identifiers = stack.pop();
+                var identifiers = safePop(stack);
                 if (identifiers.length == 1) {
                     var name:String = cast identifiers[0];
                     if (name == "stage") {
@@ -191,14 +201,14 @@ class Evaluate {
                     return null;
                 }
             } else if (token == "OBJECT_ACCESS") {
-                var targets = stack.pop();
+                var targets = safePop(stack);
                 var amount:Int = Std.parseInt(cast(formula[i], String));
 
                 var result:Array<Dynamic> = [];
 
                 // OPTIMIZATION: Detect simple property access pattern
                 // Pattern: IDENTIFIER key, READ_GLOBAL, IDENTIFIER <name>, EQUAL (length 6)
-                if (amount == 6 &&
+                if (amount == 6 && i + amount < formula.length &&
                     formula[i + 1] == "IDENTIFIER" &&
                     formula[i + 2] == "key" &&
                     formula[i + 3] == "READ_GLOBAL" &&
@@ -242,14 +252,14 @@ class Evaluate {
                     i += amount + 1;
                 }
             } else if (token == "ARRAY_ACCESS") {
-                var targets = stack.pop();
+                var targets = safePop(stack);
                 var amount:Int = Std.parseInt(cast(formula[i], String));
 
                 var result:Array<Dynamic> = [];
 
                 // OPTIMIZATION: Detect simple numeric index pattern
                 // Pattern: VALUE <n> (length 2)
-                if (amount == 2 && formula[i + 1] == "VALUE") {
+                if (amount == 2 && i + amount < formula.length && formula[i + 1] == "VALUE") {
                     var idx:Int = Std.parseInt(cast(formula[i + 2], String));
                     var j:Int = 0;
                     while (j < targets.length) {
@@ -314,7 +324,7 @@ class Evaluate {
                 var elseStart:Int = thenEnd + 1;
                 var elseEnd:Int = elseStart + elseLen;
 
-                var condition:Array<Dynamic> = stack.pop();
+                var condition:Array<Dynamic> = safePop(stack);
 
                 var thenResult = evaluate(formula, thenStart, thenEnd, context, keys, gameRoot);
                 var elseResult = evaluate(formula, elseStart, elseEnd, context, keys, gameRoot);
@@ -769,7 +779,7 @@ class Evaluate {
             return result;
         } else {
             trace("[Evaluate] Mismatched array lengths for arithmetic");
-            return null;
+            return [];
         }
     }
 
@@ -797,7 +807,7 @@ class Evaluate {
             return result;
         } else {
             trace("[Evaluate] Mismatched array lengths for comparison");
-            return null;
+            return [];
         }
     }
 

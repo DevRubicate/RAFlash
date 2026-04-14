@@ -1971,25 +1971,33 @@ class Main {
                     var b = stack.pop();
                     var a = stack.pop();
                     if (a.length == 1 && b.length == 1) {
-                        stack.push([a[0] % b[0]]);
+                        stack.push([b[0] == 0 ? NaN : a[0] % b[0]]);
                         break;
                     }
                     if (a.length == 1) {
                         var result = [];
                         for (var j = 0; j < b.length; ++j) {
-                            result.push(a[0] % b[j]);
+                            result.push(b[j] == 0 ? NaN : a[0] % b[j]);
                         }
                         stack.push(result);
                     } else if (b.length == 1) {
-                        var result = [];
-                        for (var j = 0; j < a.length; ++j) {
-                            result.push(a[j] % b[0]);
+                        if (b[0] == 0) {
+                            var result = [];
+                            for (var j = 0; j < a.length; ++j) {
+                                result.push(NaN);
+                            }
+                            stack.push(result);
+                        } else {
+                            var result = [];
+                            for (var j = 0; j < a.length; ++j) {
+                                result.push(a[j] % b[0]);
+                            }
+                            stack.push(result);
                         }
-                        stack.push(result);
                     } else if (a.length == b.length) {
                         var result = [];
                         for (var j = 0; j < a.length; ++j) {
-                            result.push(a[j] % b[j]);
+                            result.push(b[j] == 0 ? NaN : a[j] % b[j]);
                         }
                         stack.push(result);
                     } else {
@@ -2343,25 +2351,27 @@ class Main {
                     var b = stack.pop();
                     var a = stack.pop();
                     if (a.length == 1 && b.length == 1) {
-                        stack.push([(a[0] ^ b[0]) ? 1 : 0]);
+                        stack.push([((a[0] ? 1 : 0) ^ (b[0] ? 1 : 0)) ? 1 : 0]);
                         break;
                     }
                     if (a.length == 1) {
                         var result = [];
+                        var av = a[0] ? 1 : 0;
                         for (var j = 0; j < b.length; ++j) {
-                            result.push((a[0] ^ b[j]) ? 1 : 0);
+                            result.push((av ^ (b[j] ? 1 : 0)) ? 1 : 0);
                         }
                         stack.push(result);
                     } else if (b.length == 1) {
                         var result = [];
+                        var bv = b[0] ? 1 : 0;
                         for (var j = 0; j < a.length; ++j) {
-                            result.push((a[j] ^ b[0]) ? 1 : 0);
+                            result.push(((a[j] ? 1 : 0) ^ bv) ? 1 : 0);
                         }
                         stack.push(result);
                     } else if (a.length == b.length) {
                         var result = [];
                         for (var j = 0; j < a.length; ++j) {
-                            result.push((a[j] ^ b[j]) ? 1 : 0);
+                            result.push(((a[j] ? 1 : 0) ^ (b[j] ? 1 : 0)) ? 1 : 0);
                         }
                         stack.push(result);
                     } else {
@@ -2376,6 +2386,10 @@ class Main {
                 }
                 case "NOT": {
                     var a = stack.pop();
+                    if (a.length == 0) {
+                        stack.push([1]);
+                        break;
+                    }
                     var result = [];
                     for (var j = 0; j < a.length; ++j) {
                         result.push(a[j] ? 0 : 1);
@@ -2446,7 +2460,7 @@ class Main {
 
                     // OPTIMIZATION: Detect simple property access pattern
                     // Pattern: IDENTIFIER key, READ_GLOBAL, IDENTIFIER <name>, EQUAL (length 6)
-                    if (amount == 6 &&
+                    if (amount == 6 && i + amount + 2 <= end &&
                         formula[i + 2] == "IDENTIFIER" &&
                         formula[i + 3] == "key" &&
                         formula[i + 4] == "READ_GLOBAL" &&
@@ -2496,6 +2510,7 @@ class Main {
                         }
 
                         var filteredResult = evaluate(formula, i + 2, i + amount + 2, childThis, childKeys);
+                        if (filteredResult == null) filteredResult = [];
 
                         for (var k = 0; k < filteredResult.length; ++k) {
                             if (filteredResult[k] == true) {
@@ -2557,6 +2572,7 @@ class Main {
                         }
 
                         var filteredResult = evaluate(formula, i + 2, i + amount + 2, childThis, childKeys);
+                        if (filteredResult == null) filteredResult = [];
 
                         for (var k = 0; k < filteredResult.length; ++k) {
                             if (filteredResult[k] == true) {
@@ -2622,8 +2638,8 @@ class Main {
                     for (var j:Number = 0; j < len; j++) {
                         var cond = condition[j];
                         var isTruthy:Boolean = (cond != 0 && cond != false && cond != null && cond != "");
-                        var thenVal = (thenResult.length == 1) ? thenResult[0] : thenResult[j];
-                        var elseVal = (elseResult.length == 1) ? elseResult[0] : elseResult[j];
+                        var thenVal = (thenResult.length == 1) ? thenResult[0] : (j < thenResult.length ? thenResult[j] : null);
+                        var elseVal = (elseResult.length == 1) ? elseResult[0] : (j < elseResult.length ? elseResult[j] : null);
                         result.push(isTruthy ? thenVal : elseVal);
                     }
                     stack.push(result);

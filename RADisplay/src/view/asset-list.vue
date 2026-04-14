@@ -352,11 +352,18 @@
     });
 
     // Save assets handler
+    const savingAssets = ref(false);
     const saveAssets = async () => {
-        const ids = selectedAssetIds.value.size > 0
-            ? [...selectedAssetIds.value]
-            : undefined; // undefined = save all
-        await Network.send({ command: 'saveAssets', params: { ids } });
+        if (savingAssets.value) return;
+        savingAssets.value = true;
+        try {
+            const ids = selectedAssetIds.value.size > 0
+                ? [...selectedAssetIds.value]
+                : undefined; // undefined = save all
+            await Network.send({ command: 'saveAssets', params: { ids } });
+        } finally {
+            savingAssets.value = false;
+        }
     };
 
     // Reset assets handler

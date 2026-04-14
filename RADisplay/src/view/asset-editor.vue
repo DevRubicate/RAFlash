@@ -450,6 +450,9 @@
             selectedAsset.value.badgeImage = e.target.result;
             App.save();
         };
+        reader.onerror = () => {
+            console.error('Failed to read badge image file');
+        };
         reader.readAsDataURL(file);
     };
 
@@ -524,7 +527,9 @@
                 return;
             }
             selectedAsset.value.groups.splice(index, 1);
-            selectedGroupId.value = selectedAsset.value.groups[index]?.id ?? selectedAsset.value.groups[index - 1]?.id;
+            selectedGroupId.value = selectedAsset.value.groups.length === 0
+                ? null
+                : selectedAsset.value.groups[Math.min(index, selectedAsset.value.groups.length - 1)]?.id ?? null;
             await App.save();
         }
     };
@@ -619,7 +624,7 @@
         try {
             await navigator.clipboard.writeText(JSON.stringify(data));
         } catch {
-            // Silently fail
+            console.warn('Failed to copy requirement to clipboard');
         }
     };
 
@@ -662,8 +667,8 @@
 
             selectedRequirementId.value = newReq.id;
             await App.save();
-        } catch {
-            // Silently fail on any error (parse, clipboard access, etc.)
+        } catch (e) {
+            console.warn('Failed to paste requirement:', e);
         } finally {
             saving.value = false;
         }

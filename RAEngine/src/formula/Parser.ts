@@ -1127,6 +1127,7 @@ class Parser {
                                         qnode.type === NODE_TYPE.TERNARY) {
                                         evalStack.push(qnode);
                                     } else if (opDetails && opDetails.type === 'BINARY') {
+                                        if (evalStack.length < 2) break;
                                         const b = evalStack.pop()!;
                                         const a = evalStack.pop()!;
                                         a.parent = qnode;
@@ -1135,6 +1136,7 @@ class Parser {
                                         qnode.children.push(b);
                                         evalStack.push(qnode);
                                     } else if (opDetails && opDetails.type === 'UNARY') {
+                                        if (evalStack.length < 1) break;
                                         const a = evalStack.pop()!;
                                         a.parent = qnode;
                                         qnode.children.unshift(a);

@@ -183,8 +183,8 @@
             if (reply.success && reply.params?.result !== undefined) {
                 previewResult.value = reply.params.result || '';
             }
-        } catch {
-            // Silently ignore errors
+        } catch (e) {
+            console.warn('Rich Presence poll failed:', e);
         }
     };
 

@@ -2733,16 +2733,17 @@ function handleFirmwareData(data: string): void {
                 // Compile and load native achievement SWF when in compiled mode
                 if (settings.avm1ExecutionMode === "compiled") {
                     try {
-                        nativeAchResult = compileAchievementsSWF(AppData.data.assets);
-                        emitLog("engine", "info", `[compiled-avm1] Compiled ${nativeAchResult.compiledIndices.length} achievements, ${nativeAchResult.rpCompiledIndices.length} rich presence`);
+                        const thisResult = compileAchievementsSWF(AppData.data.assets);
+                        nativeAchResult = thisResult;
+                        emitLog("engine", "info", `[compiled-avm1] Compiled ${thisResult.compiledIndices.length} achievements, ${thisResult.rpCompiledIndices.length} rich presence`);
 
                         sendToFirmware("loadCompiledAvm1", {
                             url: `http://${RAFLASH_DOMAIN}/compiled-avm1.swf`,
-                            compiledIndices: nativeAchResult.compiledIndices,
-                            rpCompiledIndices: nativeAchResult.rpCompiledIndices,
+                            compiledIndices: thisResult.compiledIndices,
+                            rpCompiledIndices: thisResult.rpCompiledIndices,
                         }, 0).then((response) => {
                             if (response.success) {
-                                emitLog("engine", "info", `[compiled-avm1] Loaded (${nativeAchResult!.swf.length} bytes)`);
+                                emitLog("engine", "info", `[compiled-avm1] Loaded (${thisResult.swf.length} bytes)`);
                             } else {
                                 emitLog("engine", "warn", `[compiled-avm1] Load failed: ${response.error}`);
                             }
