@@ -88,6 +88,31 @@
             </div>
 
 
+            <!-- AVM1 tab: evaluation mode picker -->
+            <div v-if="activeTab === 'avm1'">
+                <div class="setting-group">
+                    <div class="firmware-mode-row" :class="{ active: settings.avm1ExecutionMode === 'interpreter' }">
+                        <label class="firmware-mode-main">
+                            <input type="radio" value="interpreter" v-model="settings.avm1ExecutionMode" @change="save">
+                            <div class="setting-info">
+                                <span class="setting-name">Interpreter</span>
+                                <span class="setting-desc">Evaluates achievements using the built-in bytecode interpreter each frame. Supports all achievement features. Use as a fallback if compiled mode has issues.</span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <div class="firmware-mode-row" :class="{ active: settings.avm1ExecutionMode === 'compiled' }">
+                        <label class="firmware-mode-main">
+                            <input type="radio" value="compiled" v-model="settings.avm1ExecutionMode" @change="save">
+                            <div class="setting-info">
+                                <span class="setting-name">Compiled</span>
+                                <span class="setting-desc">Compiles each achievement into a native Flash bytecode function at game load. Significantly faster. Supports all achievement features including Pause If, Reset If, chained requirements, and measured progress.</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
             <!-- Developer tab -->
             <div v-if="activeTab === 'developer'">
                 <div class="setting-group">
@@ -315,6 +340,7 @@ const currentSubview = ref(null); // null | 'parent' | 'child'
 
 const tabs = [
     { id: 'firmware', label: 'Firmware' },
+    { id: 'avm1', label: 'AVM1' },
     { id: 'developer', label: 'Developer' },
 ];
 
@@ -324,6 +350,7 @@ const settings = ref({
     fixSoundAttach: true,
     benchmarkingEnabled: false,
     autoOpenDevtools: false,
+    avm1ExecutionMode: 'compiled',
 });
 
 async function save() {

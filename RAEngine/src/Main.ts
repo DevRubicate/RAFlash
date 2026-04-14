@@ -30,6 +30,7 @@ import jpeg from "npm:jpeg-js";
 import * as pako from "npm:pako";
 import { unzipSync, zipSync } from "npm:fflate";
 import { startSitelockProxy, stopSitelockProxy } from "./SitelockProxy.ts";
+import { compileAchievementsSWF, type NativeAchResult } from "./swf/NativeEvalCompiler.ts";
 
 const VERSION = "0.0.16";
 
@@ -275,6 +276,10 @@ interface Settings {
     // useful for sitelocked / immediately-crashing games where the user has
     // no chance to hit F12 themselves.
     autoOpenDevtools: boolean;
+    // AVM1 formula evaluation mode:
+    //   "interpreter" — uses the built-in bytecode interpreter (default)
+    //   "compiled"    — compiles formulas to native Flash bytecode
+    avm1ExecutionMode: "interpreter" | "compiled";
     // Last user picked in the file picker. Persisted so that drag-drop /
     // CLI-arg launches (which skip the picker) can default to the user the
     // person was already running under. Falls back to "Guest" on first run.
@@ -286,6 +291,7 @@ const defaultSettings: Settings = {
     fixSoundAttach: true,
     benchmarkingEnabled: false,
     autoOpenDevtools: false,
+    avm1ExecutionMode: "compiled",
     lastUser: "Guest",
 };
 let settings: Settings = { ...defaultSettings };
@@ -1140,6 +1146,9 @@ let fileSelectedResolver: ((result: { gamePath: string; user: string }) => void)
 let selectedUserName: string | null = null;
 let pendingRelaunch: string | null = null;  // Path to relaunch after current game closes
 let httpServer: Deno.HttpServer | null = null;
+
+// Native achievement compilation: per-achievement SWF
+let nativeAchResult: NativeAchResult | null = null;
 
 // Flash socket policy file server (port 843)
 let policyListener: Deno.Listener | null = null;
@@ -2407,6 +2416,25 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
             return;
         }
 
+        // HTTP request for native achievement SWF (runtime-generated AVM1 bytecode)
+        if (httpBuffer.startsWith("GET /native-ach.swf") && nativeAchResult) {
+            const swfData = nativeAchResult.swf;
+            const response = [
+                "HTTP/1.1 200 OK",
+                "Content-Type: application/x-shockwave-flash",
+                `Content-Length: ${swfData.length}`,
+                "Connection: close",
+                "",
+                "",
+            ].join("\r\n");
+            await writer.write(encoder.encode(response));
+            await writer.write(swfData);
+            writer.releaseLock();
+            reader.releaseLock();
+            conn.close();
+            return;
+        }
+
         // HTTP request for asset badge image
         if (httpBuffer.startsWith("GET /asset-image/")) {
             const match = httpBuffer.match(/GET \/asset-image\/(-?\d+)/);
@@ -2653,6 +2681,27 @@ function handleFirmwareData(data: string): void {
                     align: "right",
                     imageUrl,
                 }, 0).catch(() => {});
+
+                // Compile and load native achievement SWF when in compiled mode
+                if (settings.avm1ExecutionMode === "compiled") {
+                    try {
+                        nativeAchResult = compileAchievementsSWF(AppData.data.assets);
+                        emitLog("engine", "info", `[native-ach] Compiled ${nativeAchResult.compiledIndices.length} achievements`);
+
+                        sendToFirmware("loadNativeAch", {
+                            url: `http://${RAFLASH_DOMAIN}/native-ach.swf`,
+                            compiledIndices: nativeAchResult.compiledIndices,
+                        }, 0).then((response) => {
+                            if (response.success) {
+                                emitLog("engine", "info", `[native-ach] Loaded (${nativeAchResult!.swf.length} bytes)`);
+                            } else {
+                                emitLog("engine", "warn", `[native-ach] Load failed: ${response.error}`);
+                            }
+                        }).catch(() => {});
+                    } catch (e) {
+                        emitLog("engine", "warn", `[native-ach] Compilation failed: ${e}`);
+                    }
+                }
             } else if (parsed.type === "keypress") {
                 // F12 key pressed - open devtools
                 if (parsed.data?.keyCode === 123) {

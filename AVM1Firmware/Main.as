@@ -95,6 +95,11 @@ class Main {
     private static var _stageContext:Array = [null];
     private static var _stageKeys:Array = ["stage"];
 
+    // Native achievement compilation
+    public static var nativeAchReady:Boolean = false;
+    private static var nativeAchFnMap:Object = null;     // asset index → function array index
+    private static var nativeAchStorage:Array = [];       // per-asset storage objects
+
     // Socket receive buffer for fragmented messages
     private static var receiveBuffer:String = "";
 
@@ -1013,6 +1018,37 @@ class Main {
                 } else {
                     sendResponse(id, { success: false, error: "Path not found" });
                 }
+                break;
+
+            case "loadNativeAch":
+                var naUrl:String = String(params.url);
+                var naIndices:Array = params.compiledIndices;
+                nativeAchReady = false;
+                nativeAchFnMap = {};
+                nativeAchStorage = [];
+                for (var ci:Number = 0; ci < naIndices.length; ci++) {
+                    nativeAchFnMap[naIndices[ci]] = ci;
+                }
+                var naHost:MovieClip = (_self != null) ? _self : _root;
+                naHost.__nativeAchClip.removeMovieClip();
+                var naClip:MovieClip = naHost.createEmptyMovieClip("__nativeAchClip", 983742);
+                naClip._visible = false;
+                var naLoader:MovieClipLoader = new MovieClipLoader();
+                var naListener:Object = {};
+                var naId:String = id;
+                naListener.onLoadInit = function(target:MovieClip):Void {
+                    if (_global.__nativeAch != undefined) {
+                        Main.nativeAchReady = true;
+                        Main.sendResponse(naId, { success: true });
+                    } else {
+                        Main.sendResponse(naId, { success: false, error: "__nativeAch not defined after load" });
+                    }
+                };
+                naListener.onLoadError = function(target:MovieClip, errorCode:String):Void {
+                    Main.sendResponse(naId, { success: false, error: "Load failed: " + errorCode });
+                };
+                naLoader.addListener(naListener);
+                naLoader.loadClip(naUrl, naClip);
                 break;
 
             default:
@@ -2980,6 +3016,102 @@ class Main {
             // Start timing for this achievement (only when benchmarking is active)
             var startTime:Number = benchmarkingActive ? getTimer() : 0;
 
+            // === NATIVE COMPILED PATH ===
+            if (nativeAchReady) {
+                var fnIdx:Number = nativeAchFnMap[i];
+                var achFn:Function = _global.__nativeAch[fnIdx];
+
+                // Get or create per-achievement storage
+                if (nativeAchStorage[i] == null) nativeAchStorage[i] = {};
+                var naStore:Object = nativeAchStorage[i];
+
+                // Call compiled function
+                var achResult:Number = achFn(gameRoot, naStore);
+
+                // Sync hits from storage back to requirement objects (ALL groups)
+                for (var ng:Number = 0; ng < achievement.groups.length; ng++) {
+                    var naGroup:Object = achievement.groups[ng];
+                    for (var nk:Number = 0; nk < naGroup.requirements.length; nk++) {
+                        var naReq:Object = naGroup.requirements[nk];
+                        var naFlag:String = naReq.flag || "";
+                        // Sync requirements that track hits
+                        if ((naReq.maxHits || 0) > 0 || naFlag == "ADD_HITS" || naFlag == "SUB_HITS") {
+                            var naHitsKey:String = "h" + ng + "_" + nk;
+                            var naHits:Number = naStore[naHitsKey];
+                            if (naHits == undefined) naHits = 0;
+                            if (naHits != (naReq.hits || 0)) {
+                                diffSet(naReq, "hits", naHits,
+                                    "assets/" + i + "/groups/" + ng + "/requirements/" + nk + "/hits");
+                            }
+                        }
+                    }
+                }
+
+                // Handle TRIGGER / primed state
+                var naPrimed:Boolean = (naStore._primed == true);
+                if (naPrimed) {
+                    if (!achievement._primed) {
+                        var primedImgUrl:String = "http://raflash.local/asset-image/" + achievement.id;
+                        PrimedBadges.show(achievement.id, primedImgUrl);
+                    }
+                    achievement._primed = true;
+                } else {
+                    if (achievement._primed) {
+                        PrimedBadges.hide(achievement.id);
+                    }
+                    achievement._primed = false;
+                }
+
+                // Handle MEASURED display
+                if (naStore._mCur != undefined && naStore._mTgt != undefined) {
+                    var naMCur:Number = Number(naStore._mCur);
+                    var naMTgt:Number = Number(naStore._mTgt);
+                    var naPrevMeasured:Number = achievement._measuredValue;
+                    var naValueChanged:Boolean = (naPrevMeasured != null) &&
+                        (naMCur != naPrevMeasured || naMTgt != achievement._measuredTarget);
+                    if (naValueChanged && achResult != 1) {
+                        var naMText:String = String(Math.floor(naMCur)) + "/" + String(Math.floor(naMTgt));
+                        var naMImgUrl:String = "http://raflash.local/asset-image/" + achievement.id;
+                        Measure.showOrReset(achievement.name, achievement.description || "",
+                                            naMText, naMImgUrl, achievement.id);
+                    }
+                    achievement._measuredValue = naMCur;
+                    achievement._measuredTarget = naMTgt;
+                }
+
+                // Handle trigger
+                if (achResult == 1) {
+                    var naImageUrl:String = "http://raflash.local/asset-image/" + achievement.id;
+                    Toast.show("Achievement Unlocked", achievement.name,
+                               achievement.description || "", "left", naImageUrl);
+                    // Reset storage and hits across all groups
+                    nativeAchStorage[i] = {};
+                    for (var nrg:Number = 0; nrg < achievement.groups.length; nrg++) {
+                        var nrGroup:Object = achievement.groups[nrg];
+                        for (var nrk:Number = 0; nrk < nrGroup.requirements.length; nrk++) {
+                            if ((nrGroup.requirements[nrk].hits || 0) > 0) {
+                                diffSet(nrGroup.requirements[nrk], "hits", 0,
+                                    "assets/" + i + "/groups/" + nrg + "/requirements/" + nrk + "/hits");
+                            }
+                        }
+                    }
+                    clearAssetDeltaValues(achievement);
+                    diffSet(achievement, "state", "TRIGGERED", "assets/" + i + "/state");
+                }
+
+                // Record timing
+                if (benchmarkingActive) {
+                    var naElapsed:Number = getTimer() - startTime;
+                    var naAchId:String = String(achievement.id);
+                    if (profilingData[naAchId] == null) {
+                        profilingData[naAchId] = {name: achievement.name, totalMs: 0, evalCount: 0};
+                    }
+                    profilingData[naAchId].totalMs += naElapsed;
+                    profilingData[naAchId].evalCount += 1;
+                }
+                continue; // Skip interpreter pipeline
+            }
+
             // === SIMPLE ACHIEVEMENT FAST-PATH ===
             // For achievements with 1 CORE group, all requirements having fastReq,
             // no special flags, and no hit tracking — skip the entire phase pipeline.
@@ -4102,6 +4234,7 @@ class Main {
                 profilingData[achievementId].evalCount += 1;
             }
         }
+
 
         // Send any pending changes (lightweight - no full diff scan)
         var diffStartTime:Number = getTimer();
