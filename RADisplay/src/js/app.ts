@@ -39,6 +39,10 @@ export const App: AppState = reactive({
     selectedAsset: null,
     set selectedAssetId(value: number | null) {
         this.selectedAsset = this.data.assets.find((asset: Record<string, unknown>) => asset.id === value) ?? null;
+        if (!this.selectedAsset) {
+            this.selectedGroupId = null;
+            return;
+        }
         const groupId = this.selectedAsset.groups.find((group: Record<string, unknown>) => group.type === 'CORE')?.id;
         if(groupId) {
             this.selectedGroupId = groupId;

@@ -12,7 +12,8 @@ export class Formula {
             const builder = new Builder(parseTree).build();
             const bytecode = new MnemonicGenerator(builder.output()).generate();
             return bytecode;
-        } catch {
+        } catch (e) {
+            console.error(`Formula compilation error for "${input}":`, e);
             return ['VERSION_1', 'STRING', 'ERROR'];
         }
     }

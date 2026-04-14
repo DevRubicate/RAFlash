@@ -586,14 +586,16 @@ class Achievement {
                                 for (contribIdx in contribs) {
                                     var contribReq:Dynamic = reqs[contribIdx];
                                     var contribHits:Int = untyped contribReq.hits != null ? contribReq.hits : 0;
+                                    var contribMax:Int = untyped contribReq.maxHits != null ? contribReq.maxHits : 0;
                                     var contribResult:Dynamic = evaluateRequirementCondition(contribReq, frameCache, gameRoot);
                                     var contribPasses:Bool = contribResult.passed && contribResult.valid;
+                                    var contribCanIncrement:Bool = contribPasses && (contribMax == 0 || contribHits < contribMax);
                                     if (Std.string(untyped contribReq.flag) == "ADD_HITS") {
                                         effectiveHits += contribHits;
-                                        if (contribPasses) lookahead += 1;
+                                        if (contribCanIncrement) lookahead += 1;
                                     } else {
                                         effectiveHits -= contribHits;
-                                        if (contribPasses) lookahead -= 1;
+                                        if (contribCanIncrement) lookahead -= 1;
                                     }
                                 }
                                 var terminalLookahead:Int = passed ? 1 : 0;
@@ -611,17 +613,81 @@ class Achievement {
                     }
 
                     // Reset If detection
-                    if (untyped requirement.flag == "RESET_IF" && passed) {
+                    if (untyped requirement.flag == "RESET_IF") {
                         var mhCheck:Int = untyped requirement.maxHits != null ? requirement.maxHits : 0;
                         var chCheck:Int = untyped requirement.hits != null ? requirement.hits : 0;
-                        if (mhCheck == 0 || chCheck == mhCheck - 1) resetIfFired = true;
+
+                        if (mhCheck == 0) {
+                            if (passed) resetIfFired = true;
+                        } else {
+                            // Compute effective hits including AddHits/SubHits chain
+                            var rifEffective:Int = chCheck;
+                            var rifLookahead:Int = 0;
+                            var rifAhsI:Dynamic = addHitsInfo.exists(k) ? addHitsInfo.get(k) : null;
+                            if (rifAhsI != null && untyped rifAhsI.isTerminal == true) {
+                                var rifContribs:Array<Int> = rifAhsI.contributors;
+                                for (rifCIdx in rifContribs) {
+                                    var rifCReq:Dynamic = reqs[rifCIdx];
+                                    var rifCHits:Int = untyped rifCReq.hits != null ? rifCReq.hits : 0;
+                                    var rifCMax:Int = untyped rifCReq.maxHits != null ? rifCReq.maxHits : 0;
+                                    var rifCRes:Dynamic = evaluateRequirementCondition(rifCReq, frameCache, gameRoot);
+                                    var rifCPasses:Bool = rifCRes.passed && rifCRes.valid;
+                                    var rifCCanInc:Bool = rifCPasses && (rifCMax == 0 || rifCHits < rifCMax);
+                                    if (Std.string(untyped rifCReq.flag) == "ADD_HITS") {
+                                        rifEffective += rifCHits;
+                                        if (rifCCanInc) rifLookahead += 1;
+                                    } else {
+                                        rifEffective -= rifCHits;
+                                        if (rifCCanInc) rifLookahead -= 1;
+                                    }
+                                }
+                            }
+                            // Own-hit lookahead: passing this frame would increment own hits
+                            var rifOwnLook:Int = (passed && chCheck < mhCheck) ? 1 : 0;
+                            if (rifEffective + rifLookahead + rifOwnLook >= mhCheck) {
+                                resetIfFired = true;
+                            }
+                        }
                     }
 
                     // Reset Next If detection
-                    if (untyped requirement.flag == "RESET_NEXT_IF" && passed) {
+                    if (untyped requirement.flag == "RESET_NEXT_IF") {
                         var mhRNI:Int = untyped requirement.maxHits != null ? requirement.maxHits : 0;
                         var chRNI:Int = untyped requirement.hits != null ? requirement.hits : 0;
-                        if (mhRNI == 0 || chRNI == mhRNI - 1) {
+                        var resetNextIfFired:Bool = false;
+
+                        if (mhRNI == 0) {
+                            if (passed) resetNextIfFired = true;
+                        } else {
+                            // Compute effective hits including AddHits/SubHits chain
+                            var rniEffective:Int = chRNI;
+                            var rniLookahead:Int = 0;
+                            var rniAhsI:Dynamic = addHitsInfo.exists(k) ? addHitsInfo.get(k) : null;
+                            if (rniAhsI != null && untyped rniAhsI.isTerminal == true) {
+                                var rniContribs:Array<Int> = rniAhsI.contributors;
+                                for (rniCIdx in rniContribs) {
+                                    var rniCReq:Dynamic = reqs[rniCIdx];
+                                    var rniCHits:Int = untyped rniCReq.hits != null ? rniCReq.hits : 0;
+                                    var rniCMax:Int = untyped rniCReq.maxHits != null ? rniCReq.maxHits : 0;
+                                    var rniCRes:Dynamic = evaluateRequirementCondition(rniCReq, frameCache, gameRoot);
+                                    var rniCPasses:Bool = rniCRes.passed && rniCRes.valid;
+                                    var rniCCanInc:Bool = rniCPasses && (rniCMax == 0 || rniCHits < rniCMax);
+                                    if (Std.string(untyped rniCReq.flag) == "ADD_HITS") {
+                                        rniEffective += rniCHits;
+                                        if (rniCCanInc) rniLookahead += 1;
+                                    } else {
+                                        rniEffective -= rniCHits;
+                                        if (rniCCanInc) rniLookahead -= 1;
+                                    }
+                                }
+                            }
+                            var rniOwnLook:Int = (passed && chRNI < mhRNI) ? 1 : 0;
+                            if (rniEffective + rniLookahead + rniOwnLook >= mhRNI) {
+                                resetNextIfFired = true;
+                            }
+                        }
+
+                        if (resetNextIfFired) {
                             var nextK:Int = k + 1;
                             while (nextK < reqs.length && pauseIfIndices.exists(nextK)) nextK++;
                             if (nextK < reqs.length) {

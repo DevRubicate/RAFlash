@@ -144,11 +144,11 @@ export class JSONDiff {
             }
 
             const stateBeforeThisIterationWatchers = JSON.parse(JSON.stringify(target));
-            
+
             this._findAndTriggerWatchers(target, diffToProcess);
-            
+
             const newWatcherDiff = this.getDataDiff(stateBeforeThisIterationWatchers, target);
-            this.applyDataDiff(target, newWatcherDiff);
+            // Don't re-apply: watchers already mutated target directly
 
             diffToProcess = newWatcherDiff;
 

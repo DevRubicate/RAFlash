@@ -813,7 +813,7 @@
             }
 
             remainsResults.value = kept;
-            previousResults.value = kept;
+            previousResults.value = kept.map(entry => ({ value: entry.value }));
             memoryResult.value = results;
             isRemainsMode.value = true;
             isCompareMode.value = false;
@@ -844,7 +844,7 @@
             }
 
             leavesResults.value = gone;
-            previousResults.value = gone;
+            previousResults.value = gone.map(entry => ({ value: entry.value }));
             memoryResult.value = results;
             isLeavesMode.value = true;
             isCompareMode.value = false;
@@ -859,7 +859,6 @@
     };
 
     onMounted(() => {
-        evaluate();
         document.addEventListener('click', closeDropdown);
     });
 
@@ -867,6 +866,9 @@
         document.removeEventListener('click', closeDropdown);
     });
 
-    App.initialize().then(() => App.ready = true);
+    App.initialize().then(() => {
+        App.ready = true;
+        evaluate();
+    });
 </script>
 

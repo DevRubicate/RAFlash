@@ -133,6 +133,13 @@ class JSON {
                             case 'n':  s += '\n'; break;
                             case 'r':  s += '\r'; break;
                             case 't':  s += '\t'; break;
+                            case 'u':
+                                var hex:String = '';
+                                for (var ui:Number = 0; ui < 4; ui++) {
+                                    hex += next();
+                                }
+                                s += String.fromCharCode(parseInt(hex, 16));
+                                break;
                             default:   error("Bad escape sequence");
                         }
                     } else {
@@ -159,6 +166,9 @@ class JSON {
                 while (next() && ch >= '0' && ch <= '9') {
                     n += ch;
                 }
+            }
+            if (ch == 'e' || ch == 'E') {
+                error("Scientific notation is not supported");
             }
             var v:Number = Number(n);
             if (!isFinite(v)) {

@@ -189,8 +189,8 @@
 </style>
 
 <script setup>
-    import { ref, reactive, computed, watch } from 'vue';
-    import { Network } from '../js/network.ts';
+    import { ref, reactive, computed, watch, triggerRef } from 'vue';
+    import { Network, deepCloneRaw } from '../js/network.ts';
     import { App }          from '../js/app.ts';
     import { confirmDialog } from '../js/dialog.ts';
 
@@ -237,11 +237,17 @@
         return filtered;
     });
 
+    // Reset lastSelectedIndex when filtered list changes
+    watch(filteredAssets, () => {
+        lastSelectedIndex = null;
+    });
+
     // Click on blank space in container to deselect
     const handleContainerClick = (event) => {
         // Only deselect if clicking directly on the container or table (not on a row)
         if (event.target.closest('tbody tr')) return;
         selectedAssetIds.value.clear();
+        triggerRef(selectedAssetIds);
         lastSelectedIndex = null;
     };
 
@@ -268,6 +274,7 @@
             selectedAssetIds.value.add(asset.id);
             lastSelectedIndex = index;
         }
+        triggerRef(selectedAssetIds);
         // Keep App.selectedAssetId in sync for double-click to open
         App.selectedAssetId = asset.id;
     };
@@ -390,6 +397,7 @@
         const ids = [...selectedAssetIds.value];
         await Network.send({ command: 'deleteAssets', params: { ids } });
         selectedAssetIds.value.clear();
+        triggerRef(selectedAssetIds);
     };
 
     const newAsset = async () => {
@@ -427,8 +435,8 @@
         const sourceAsset = App.data.assets.find(a => a.id === selectedId);
         if (!sourceAsset) return;
 
-        // Deep clone the asset
-        const cloned = JSON.parse(JSON.stringify(sourceAsset));
+        // Deep clone the asset (strips Vue reactive proxies safely)
+        const cloned = deepCloneRaw(sourceAsset);
 
         // Assign new IDs and mark as unsaved
         cloned.id = App.getFakeId();

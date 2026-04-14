@@ -120,7 +120,7 @@ class Main extends MovieClip {
         reconnectAttempts = 0;
         hideDisconnectOverlay();
 
-        if (!gameLoaded) {
+        if (!initialSetupDone) {
             sendMessage("ready", {});
         } else {
             log("Reconnected to Deno server");
@@ -225,16 +225,26 @@ class Main extends MovieClip {
         if (!connected || socket == null) return;
 
         var msg = haxe.Json.stringify({type: type, data: data}) + "\n";
-        socket.writeUTFBytes(msg);
-        socket.flush();
+        try {
+            socket.writeUTFBytes(msg);
+            socket.flush();
+        } catch (e:Dynamic) {
+            connected = false;
+            log("sendMessage IO error: " + Std.string(e));
+        }
     }
 
     private function sendResponse(id:Dynamic, result:Dynamic):Void {
         if (!connected || socket == null) return;
 
         var msg = haxe.Json.stringify(["RESPONSE", id, result]) + "\n";
-        socket.writeUTFBytes(msg);
-        socket.flush();
+        try {
+            socket.writeUTFBytes(msg);
+            socket.flush();
+        } catch (e:Dynamic) {
+            connected = false;
+            log("sendResponse IO error: " + Std.string(e));
+        }
     }
 
     private function sendCommand(command:String, params:Dynamic, callback:Dynamic->Void):Void {
@@ -274,7 +284,10 @@ class Main extends MovieClip {
 
             case "setup":
                 if (initialSetupDone) {
-                    // Reconnect: firmware state is authoritative, push it back to Deno
+                    // Reconnect: re-apply gameConfig from server before syncing state back
+                    if (params.data != null && params.data.gameConfig != null) {
+                        untyped AppData.data.gameConfig = params.data.gameConfig;
+                    }
                     sendResponse(id, {success: true});
                     sendMessage("syncState", {appData: AppData.data});
                 } else {
@@ -506,6 +519,10 @@ class Main extends MovieClip {
             } else {
                 // Value mode: buffer results and flush every 1 second
                 var buf:Array<Dynamic> = watcher.buffer;
+                if (buf == null) {
+                    buf = [];
+                    watcher.buffer = buf;
+                }
                 buf.push({frame: memoryWatchFrameCount, value: value});
 
                 if (now - (watcher.lastFlush : Float) >= 1.0) {

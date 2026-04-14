@@ -551,7 +551,7 @@ async function confirmSelection(fileName) {
 // Initialize on mount
 onMounted(async () => {
     App.windowId = Number(new URL(window.location.href).searchParams.get('windowId'));
-    Network.connect();
+    await Network.connect();
 
     // Load users, directory info, and per-window setup params in parallel
     const [, dirResponse, setupResponse] = await Promise.all([

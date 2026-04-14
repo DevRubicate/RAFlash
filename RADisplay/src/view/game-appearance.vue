@@ -166,7 +166,7 @@
             command: 'editData',
             params: {
                 edited: [
-                    ['gameConfig', { title: title.value, originUrl: config.originUrl || '', badgeImage: badgeImage.value }]
+                    ['gameConfig', { ...config, title: title.value, badgeImage: badgeImage.value }]
                 ]
             }
         });

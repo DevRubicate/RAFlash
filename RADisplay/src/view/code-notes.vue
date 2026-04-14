@@ -334,16 +334,11 @@
                 edited: [['codeNotes', JSON.parse(JSON.stringify(App.data.codeNotes))]]
             }
         });
+        App.originalData.codeNotes = JSON.parse(JSON.stringify(App.data.codeNotes));
     };
 
     // Setup observer and interval on mount
     onMounted(() => {
-        // Initialize nextId from existing notes
-        if (App.data.codeNotes) {
-            const maxId = Math.max(0, ...App.data.codeNotes.map(n => n.id || 0));
-            nextId = maxId + 1;
-        }
-
         observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 const index = parseInt(entry.target.dataset.index);
@@ -397,7 +392,7 @@
     });
 
     // Observe rows when codeNotes array length changes (add/remove)
-    watch(() => codeNotes.value.length, async () => {
+    watch(() => codeNotes.value.map(n => n.id).join(','), async () => {
         rowValues.value = {};
         visibleRows.value = new Set();
 
@@ -429,5 +424,8 @@
         if (intervalId) clearInterval(intervalId);
     });
 
-    App.initialize().then(() => App.ready = true);
+    App.initialize().then(() => {
+        nextId = Math.max(0, ...App.data.codeNotes.map(n => n.id || 0)) + 1;
+        App.ready = true;
+    });
 </script>

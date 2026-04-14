@@ -428,6 +428,10 @@ export class WindowManager {
         for (let i = 0; i < maxRetries; i++) {
             const hwnd = this.findWindowByPid(pid);
             if (hwnd) {
+                if (this.hiddenWindowHandle && this.hiddenWindowHandle !== hwnd) {
+                    // Show previously hidden window to prevent leaking it
+                    user32!.symbols.ShowWindow(this.hiddenWindowHandle, SW_SHOW);
+                }
                 this.hiddenWindowHandle = hwnd;  // Store for later
                 user32.symbols.ShowWindow(hwnd, SW_HIDE);
                 return true;

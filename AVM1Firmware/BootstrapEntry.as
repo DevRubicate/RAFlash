@@ -25,7 +25,7 @@ class BootstrapEntry {
             Stage.scaleMode = sm;
         }
         var al:String = _root.align;
-        if (al != undefined && al != "neutral") {
+        if (al != undefined && al != "" && al != "neutral") {
             Stage.align = al;
         }
 

@@ -1078,6 +1078,26 @@ function emitPostComparison(
                 }
             }
         }
+
+        // MEASURED_IF gate tracking: if this MEASURED_IF requirement is not
+        // satisfied, set _mifOk_{g} = false so the epilogue can zero _mCur.
+        if (flag === "MEASURED_IF") {
+            if (maxHits > 0) {
+                emitReadHitsToReg(asm, hitsKey, R_SCRATCH1);
+                asm.push(aRegister(R_SCRATCH1), aInt(maxHits));
+                asm.less2(); asm.not(); // hits >= maxHits?
+                const mifPatch = asm.jumpIfForward();
+                asm.push(aRegister(R_STORAGE), aString(`_mifOk_${g}`), aBool(false));
+                asm.setMember();
+                asm.patchJumpHere(mifPatch);
+            } else {
+                asm.push(aRegister(R_SCRATCH2));
+                const mifPatch = asm.jumpIfForward();
+                asm.push(aRegister(R_STORAGE), aString(`_mifOk_${g}`), aBool(false));
+                asm.setMember();
+                asm.patchJumpHere(mifPatch);
+            }
+        }
     }
 }
 
@@ -1240,6 +1260,17 @@ function compileAchievementBody(
         asm.setMember();
         asm.push(aRegister(R_STORAGE), aString("_atm"), aBool(true));
         asm.setMember();
+    }
+    // Init MEASURED_IF gate flags per group
+    for (let g = 0; g < groups.length; g++) {
+        const reqs = (groups[g] as Record<string, unknown>).requirements as Array<Record<string, unknown>>;
+        for (const r of reqs) {
+            if ((r.flag as string) === "MEASURED_IF") {
+                asm.push(aRegister(R_STORAGE), aString(`_mifOk_${g}`), aBool(true));
+                asm.setMember();
+                break;
+            }
+        }
     }
 
     // Collect RESET_NEXT_IF targets across all groups
@@ -1604,22 +1635,14 @@ function emitMeasuredEpilogue(
                 if ((r.flag as string) === "MEASURED_IF") { hasMeasuredIf = true; break; }
             }
             if (hasMeasuredIf) {
-                // If any MEASURED_IF failed, storage._antm would be false,
-                // but that's for TRIGGER. For MEASURED_IF, we check separately.
-                // The MEASURED_IF requirements were already evaluated as normal
-                // requirements. Their "passed" state determined allMet.
-                // For MEASURED gate: if not all MEASURED_IF passed, set _mCur = 0.
-                // We stored _mifOk during evaluation... actually we didn't.
-                // Simplest: re-evaluate MEASURED_IF conditions here.
-                // But re-evaluation would corrupt deltas. Instead, during group
-                // evaluation, we should store MEASURED_IF status.
-                // For now: store _mifOk in emitPostComparison for MEASURED_IF.
-                // Actually, let's just track it: MEASURED_IF requirements are
-                // normal requirements that affect allMet. If any fails, the
-                // group's allMet is false. But MEASURED_IF gate is separate
-                // from allMet — a MEASURED_IF can fail while other requirements
-                // pass, only zeroing the measured value.
-                // TODO: full MEASURED_IF gate. For now, skip the gate.
+                // If any MEASURED_IF in this group failed, _mifOk_{g} was set
+                // to false during evaluation. Zero _mCur when the gate fails.
+                asm.push(aRegister(R_STORAGE), aString(`_mifOk_${g}`));
+                asm.getMember();
+                const skipZero = asm.jumpIfForward();
+                asm.push(aRegister(R_STORAGE), aString("_mCur"), aInt(0));
+                asm.setMember();
+                asm.patchJumpHere(skipZero);
             }
 
             break; // Only first MEASURED per group

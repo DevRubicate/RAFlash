@@ -149,10 +149,10 @@ class JSONDiff {
                     if (mergedOperations[parentPath] != undefined) {
                         var parentValue:Object = mergedOperations[parentPath];
                         if (parentValue == JSONDiff.DELETE_SENTINEL) {
-                            throw new Error("Cannot modify child path '" + pathB + "' - parent '" + parentPath + "' was deleted");
+                            return null;
                         }
                         if (typeof parentValue != 'object' || parentValue == null) {
-                            throw new Error("Cannot modify child path '" + pathB + "' - parent '" + parentPath + "' is a non-object");
+                            return null;
                         }
                     }
                 }

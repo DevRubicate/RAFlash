@@ -21,7 +21,12 @@ function createDialog(title: string, message: string, buttons: DialogButton[]): 
     });
 
     // Create backdrop styling
-    dialog.addEventListener('cancel', (event) => event.preventDefault());
+    dialog.addEventListener('cancel', (event) => {
+        event.preventDefault();
+        dialog.close();
+        dialog.remove();
+        if ((dialog as any)._onCancel) (dialog as any)._onCancel();
+    });
     dialog.style.backdropFilter = 'blur(4px)';
 
     // Add content
@@ -110,6 +115,7 @@ function confirmDialog(title: string, message: string): Promise<boolean> {
             },
         ]);
 
+        (dialog as any)._onCancel = () => resolve(false);
         dialog.showModal();
     });
 }

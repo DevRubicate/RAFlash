@@ -73,14 +73,21 @@ const originalConsoleError = console.error;
 /**
  * Overrides the default console.error to display a custom error screen.
  */
+let insideErrorHandler = false;
 console.error = function(...args: unknown[]) {
     originalConsoleError.apply(console, args);
 
-    const message = formatArgs(args);
-    // Create a new error to capture the current stack trace, excluding this function call
-    const stack = (new Error().stack || 'Stack trace not available.').replace(/^Error.*\n/, '');
+    if (insideErrorHandler) return;
+    insideErrorHandler = true;
+    try {
+        const message = formatArgs(args);
+        // Create a new error to capture the current stack trace, excluding this function call
+        const stack = (new Error().stack || 'Stack trace not available.').replace(/^Error.*\n/, '');
 
-    displayError('An Error Occurred', message, stack);
+        displayError('An Error Occurred', message, stack);
+    } finally {
+        insideErrorHandler = false;
+    }
 };
 
 

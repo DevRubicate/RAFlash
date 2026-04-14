@@ -52,7 +52,7 @@ function detectPattern(bytecode: unknown[]): unknown[] | null {
 
     // Pattern 0: Literal number — VERSION_1, VALUE, <n>
     if (len === 3 && b[1] === 'VALUE')
-        return [0, parseInt(b[2], 10)];
+        return [0, Number(b[2])];
 
     // Pattern 1: Literal string — VERSION_1, STRING, <s>
     if (len === 3 && b[1] === 'STRING')
@@ -1247,6 +1247,7 @@ function resetGameState(): void {
     requestIdCounter = 0;
     watcherSockets.clear();
     windowParams.clear();
+    WindowManager.windowHandles.clear();
     flashPlayerPid = null;
     flashProcess = null;
     lastRichPresenceTime = 0;
@@ -1318,7 +1319,12 @@ async function sendToFirmware(command: string, params: Record<string, unknown> =
 
         // Send request
         const encoder = new TextEncoder();
-        firmwareWriter!.write(encoder.encode(message)).catch(() => {
+        const writer = firmwareWriter;
+        if (!writer) {
+            resolve({ success: false, error: "Firmware disconnected during send" });
+            return;
+        }
+        writer.write(encoder.encode(message)).catch(() => {
             clearTimeout(timeout);
             pendingRequests.delete(id);
             resolve({ success: false, error: "Failed to send to firmware" });
@@ -1446,6 +1452,10 @@ function startHttpServerInner() {
                             }
                             if (data[0] === "REQUEST") {
                                 const [, id, message] = data;
+                                if (!message || typeof message !== "object" || !message.command) {
+                                    socket.send(JSON.stringify(["RESPONSE", id, { success: false, error: "Invalid message format" }]) + "\n");
+                                    continue;
+                                }
                                 const response = await handleApiRequest(message, socket);
                                 if (response && response.success === false) {
                                     emitLog("engine", "error", `Command "${message?.command}" failed: ${response.error || "unknown"}`);
@@ -1574,7 +1584,11 @@ function startHttpServerInner() {
                     // firmware ends up in the same security sandbox as the game
                     // and can enumerate its tree without cross-domain blocks.
                     const originUrl = AppData.data.gameConfig.originUrl;
-                    const fwDomain = originUrl ? new URL(originUrl).host : RAFLASH_DOMAIN;
+                    let fwDomain = RAFLASH_DOMAIN;
+                    if (originUrl) {
+                        try { fwDomain = new URL(originUrl).host; }
+                        catch { /* use default domain */ }
+                    }
                     const fwUrl = `http://${fwDomain}/avm1-firmware.swf`;
                     file = injectFirmwareLoader(file, fwUrl) as Uint8Array<ArrayBuffer>;
                 }
@@ -1623,9 +1637,9 @@ async function handleApiRequest(
         case "readDirectory": {
             const rawPath = String(input.params.path || ".");
             const resolvedPath = resolve(rawPath);
-            // Reject paths that aren't absolute after resolution (defense-in-depth)
-            if (!isAbsolute(resolvedPath)) {
-                return { success: false, error: "Path must be absolute" };
+            // Defense-in-depth: ensure resolved path doesn't escape expected scope
+            if (!isAbsolute(resolvedPath) || resolvedPath.includes("..")) {
+                return { success: false, error: "Invalid path" };
             }
             try {
                 const entries = Array.from(Deno.readDirSync(resolvedPath)).map((entry: Deno.DirEntry) => ({
@@ -1650,6 +1664,7 @@ async function handleApiRequest(
             }
             if (fileSelectedResolver) {
                 fileSelectedResolver({ gamePath: path, user });
+                fileSelectedResolver = null;
             }
             return { success: true };
         }
@@ -2665,10 +2680,13 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
             resetFirmwareConnectPromise();
             // Clear any in-flight requests so their promises don't dangle when
             // the firmware reconnects (e.g. after a child-mode resetGame).
-            for (const [, resolver] of pendingRequests) {
+            // Snapshot the current entries to avoid clearing requests that may
+            // have been added by a new connection between disconnect and cleanup.
+            const staleRequests = [...pendingRequests.entries()];
+            for (const [id, resolver] of staleRequests) {
                 resolver({ success: false, error: "Firmware disconnected" });
+                pendingRequests.delete(id);
             }
-            pendingRequests.clear();
             // Watchers are firmware-side state — they're gone once it disconnects.
             watcherSockets.clear();
         }
@@ -2776,7 +2794,7 @@ function handleFirmwareData(data: string): void {
                                 }
                             }
                         }
-                        UserProfile.saveUser();
+                        UserProfile.saveUser().catch(e => console.error("Failed to save user profile:", e));
                     }
 
                     // Broadcast fullDiff to all devtools clients
@@ -2982,7 +3000,9 @@ async function main(): Promise<void> {
                 const relative = normalized.replace(/^RAFlash\//, "");
                 if (!relative || relative === "RAFlash.exe") continue;
 
-                const destPath = join(installDir, relative);
+                const destPath = resolve(installDir, relative);
+                // Reject paths that escape installDir (e.g. ../../evil)
+                if (!destPath.startsWith(installDir)) continue;
                 if (normalized.endsWith("/")) {
                     await Deno.mkdir(destPath, { recursive: true });
                     continue;
@@ -3190,7 +3210,11 @@ async function main(): Promise<void> {
         await Deno.writeTextFile(join(Deno.cwd(), "proxy.txt"), "1");
         await Deno.writeTextFile(join(Deno.cwd(), "port.txt"), String(PROXY_PORT));
         const sitelockOrigin = AppData.data.gameConfig.originUrl;
-        const sitelockDomain = sitelockOrigin ? new URL(sitelockOrigin).hostname : null;
+        let sitelockDomain: string | null = null;
+        if (sitelockOrigin) {
+            try { sitelockDomain = new URL(sitelockOrigin).hostname; }
+            catch { emitLog("engine", "warn", `Invalid originUrl: ${sitelockOrigin}`); }
+        }
         startSitelockProxy({
             port: PROXY_PORT,
             flashPort: FLASH_PORT,

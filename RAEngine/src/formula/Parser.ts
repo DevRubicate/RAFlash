@@ -188,7 +188,7 @@ class Parser {
             }
             default: {
                 printValue = err.token.type;
-                printSize = String(err.token.value).length;
+                printSize = err.token.value != null ? String(err.token.value).length : 1;
                 break;
             }
         }
@@ -250,6 +250,8 @@ class Parser {
                             const elseExpr = elseStack[0];
                             elseExpr.parent = this.currentNode;
                             this.currentNode.children.push(elseExpr);
+                        } else {
+                            throw new Error(`Malformed ternary: expected 1 else-expression, got ${elseStack.length}`);
                         }
 
                         this.currentNode.queue.length = 0;

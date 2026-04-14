@@ -5,7 +5,7 @@
                 <div class="header-row">
                     <div class="form-group">
                         <label for="title">Title</label>
-                        <input type="text" id="title" v-model="selectedAsset.name" @change="App.save()" spellcheck="true">
+                        <input type="text" id="title" v-model="selectedAsset.name" @change="guardedSave()" spellcheck="true">
                     </div>
                     <div class="form-group form-group-small">
                         <label for="id">ID</label>
@@ -16,7 +16,7 @@
                 <div class="header-row">
                     <div class="form-group">
                         <label for="description">Description</label>
-                        <input type="text" id="description" v-model="selectedAsset.description" @change="App.save()" spellcheck="true">
+                        <input type="text" id="description" v-model="selectedAsset.description" @change="guardedSave()" spellcheck="true">
                     </div>
                     <div class="form-group form-group-small">
                         <label for="type">Type</label>
@@ -73,13 +73,13 @@
                         <tbody>
                             <tr v-for="(req, index) in selectedGroup?.requirements" :key="req.id" @click="selectedRequirementId = req.id" :class="[req.id === selectedRequirementId ? 'active' : 'not-active']">
                                 <td>{{index+1}}</td>
-                                <td><select v-model="req.flag" @change="App.save()"><option v-for="option in flagOptions" :value="option.value">{{option.text}}</option></select></td>
-                                <td><select v-model="req.typeA" @change="App.save()"><option v-for="option in typeOptions" :value="option.value">{{option.text}}</option></select></td>
-                                <td><input v-model="req.addressA" @change="App.save()"></td>
-                                <td><select v-model="req.cmp" @change="App.save()"><option v-for="option in cmpOptions" :value="option.value">{{option.text}}</option></select></td>
-                                <td><select v-model="req.typeB" @change="App.save()"><option v-for="option in typeOptions" :value="option.value">{{option.text}}</option></select></td>
-                                <td><input v-model="req.addressB" @change="App.save()"></td>
-                                <td><input type="number" v-model.number="req.maxHits" @change="App.save()" min="0" style="width: 50px"><span v-if="req.maxHits > 0"> ({{effectiveHits(selectedGroup.requirements, index)}})</span></td>
+                                <td><select v-model="req.flag" @change="guardedSave()"><option v-for="option in flagOptions" :key="option.value" :value="option.value">{{option.text}}</option></select></td>
+                                <td><select v-model="req.typeA" @change="guardedSave()"><option v-for="option in typeOptions" :key="option.value" :value="option.value">{{option.text}}</option></select></td>
+                                <td><input v-model="req.addressA" @change="guardedSave()"></td>
+                                <td><select v-model="req.cmp" @change="guardedSave()"><option v-for="option in cmpOptions" :key="option.value" :value="option.value">{{option.text}}</option></select></td>
+                                <td><select v-model="req.typeB" @change="guardedSave()"><option v-for="option in typeOptions" :key="option.value" :value="option.value">{{option.text}}</option></select></td>
+                                <td><input v-model="req.addressB" @change="guardedSave()"></td>
+                                <td><input type="number" v-model.number="req.maxHits" @change="guardedSave()" min="0" style="width: 50px"><span v-if="req.maxHits > 0"> ({{effectiveHits(selectedGroup.requirements, index)}})</span></td>
                             </tr>
                         </tbody>
                     </table>
@@ -399,6 +399,16 @@
         return total;
     };
 
+    const guardedSave = async () => {
+        if (saving.value) return;
+        saving.value = true;
+        try {
+            await App.save();
+        } finally {
+            saving.value = false;
+        }
+    };
+
     const selectedPoints = ref(null);
     const selectedProgressionType = ref(null);
     const selectedGroup = ref(null);
@@ -581,7 +591,7 @@
         }
     };
 
-    const moveRequirementUp = () => {
+    const moveRequirementUp = async () => {
         if (!selectedGroup.value || !selectedRequirement.value) return;
 
         const reqs = selectedGroup.value.requirements;
@@ -589,11 +599,11 @@
 
         if (index > 0) {
             [reqs[index - 1], reqs[index]] = [reqs[index], reqs[index - 1]];
-            App.save();
+            await App.save();
         }
     };
 
-    const moveRequirementDown = () => {
+    const moveRequirementDown = async () => {
         if (!selectedGroup.value || !selectedRequirement.value) return;
 
         const reqs = selectedGroup.value.requirements;
@@ -601,7 +611,7 @@
 
         if (index !== -1 && index < reqs.length - 1) {
             [reqs[index], reqs[index + 1]] = [reqs[index + 1], reqs[index]];
-            App.save();
+            await App.save();
         }
     };
 

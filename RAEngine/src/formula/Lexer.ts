@@ -157,7 +157,7 @@ class Lexer {
             this.advancePosition();
         } else if (this.isLetter(char)) {
             this.handleIdentifierOrKeyword();
-        } else if (this.isDigit(char) || char === '0') {
+        } else if (this.isDigit(char)) {
             this.state = 'NUMBER';
             this.handleNumberState(char); // Switch to NUMBER state
         } else if (char === '"' || char === "'") {

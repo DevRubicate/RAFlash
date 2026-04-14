@@ -420,5 +420,82 @@ class TestEvaluate {
         TestRunner.test("Evaluate - matchesWildcard middle match failure");
         TestRunner.assert(!Evaluate.matchesWildcard("abc", "a*z"), "a*z does not match abc");
         TestRunner.endTest();
+
+        // === OBJECT_ACCESS ===
+
+        TestRunner.test("Evaluate - OBJECT_ACCESS simple property lookup");
+        // Bytecode: push gameRoot (stage), OBJECT_ACCESS with filter key=="health"
+        // gameRoot = {health: 42, mana: 10}
+        var objRoot:Dynamic = {};
+        untyped objRoot.health = 42;
+        untyped objRoot.mana = 10;
+        // Bytecode: IDENTIFIER stage, READ_GLOBAL, OBJECT_ACCESS 6, IDENTIFIER key, READ_GLOBAL, IDENTIFIER health, EQUAL
+        var r = eval(["IDENTIFIER", "stage", "READ_GLOBAL",
+                       "OBJECT_ACCESS", "6",
+                       "IDENTIFIER", "key", "READ_GLOBAL", "IDENTIFIER", "health", "EQUAL"], [], [], objRoot);
+        TestRunner.assertEqual(r.length, 1, "one property matched");
+        TestRunner.assertEqual(r[0], 42, "health is 42");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - OBJECT_ACCESS through Array target (flattening)");
+        // gameRoot.items is an Array of objects, each with a "name" property
+        // stage.items.name should flatten the array and return all names
+        var item1:Dynamic = {};
+        untyped item1.name = "sword";
+        var item2:Dynamic = {};
+        untyped item2.name = "shield";
+        var arrRoot:Dynamic = {};
+        untyped arrRoot.items = [item1, item2];
+        // Bytecode: stage.items.name
+        // IDENTIFIER stage, READ_GLOBAL,
+        // OBJECT_ACCESS 6 (key=="items"),
+        // OBJECT_ACCESS 6 (key=="name")
+        var r = eval(["IDENTIFIER", "stage", "READ_GLOBAL",
+                       "OBJECT_ACCESS", "6",
+                       "IDENTIFIER", "key", "READ_GLOBAL", "IDENTIFIER", "items", "EQUAL",
+                       "OBJECT_ACCESS", "6",
+                       "IDENTIFIER", "key", "READ_GLOBAL", "IDENTIFIER", "name", "EQUAL"], [], [], arrRoot);
+        TestRunner.assertEqual(r.length, 2, "two names from flattened array");
+        TestRunner.assertEqual(r[0], "sword", "first item name");
+        TestRunner.assertEqual(r[1], "shield", "second item name");
+        TestRunner.endTest();
+
+        // === ARRAY_ACCESS ===
+
+        TestRunner.test("Evaluate - ARRAY_ACCESS simple numeric index");
+        // gameRoot.scores[0]
+        var idxRoot:Dynamic = {};
+        untyped idxRoot.scores = [100, 200, 300];
+        // Bytecode: stage.scores[0]
+        // IDENTIFIER stage, READ_GLOBAL,
+        // OBJECT_ACCESS 6 (key=="scores"),
+        // ARRAY_ACCESS 2 (VALUE 0)
+        var r = eval(["IDENTIFIER", "stage", "READ_GLOBAL",
+                       "OBJECT_ACCESS", "6",
+                       "IDENTIFIER", "key", "READ_GLOBAL", "IDENTIFIER", "scores", "EQUAL",
+                       "ARRAY_ACCESS", "2",
+                       "VALUE", "0"], [], [], idxRoot);
+        TestRunner.assertEqual(r.length, 1, "one element at index 0");
+        TestRunner.assertEqual(r[0], 100, "first score is 100");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - ARRAY_ACCESS filter expression");
+        // Filter: keep elements where this > 150
+        // gameRoot.scores = [100, 200, 300]
+        var filtRoot:Dynamic = {};
+        untyped filtRoot.scores = [100, 200, 300];
+        // Bytecode: stage.scores[this > 150]
+        // IDENTIFIER stage, READ_GLOBAL,
+        // OBJECT_ACCESS 6 (key=="scores"),
+        // ARRAY_ACCESS 5 (IDENTIFIER this, READ_GLOBAL, VALUE 150, GREATER)
+        var r = eval(["IDENTIFIER", "stage", "READ_GLOBAL",
+                       "OBJECT_ACCESS", "6",
+                       "IDENTIFIER", "key", "READ_GLOBAL", "IDENTIFIER", "scores", "EQUAL",
+                       "ARRAY_ACCESS", "5",
+                       "IDENTIFIER", "this", "READ_GLOBAL", "VALUE", "150", "GREATER"], [], [], filtRoot);
+        TestRunner.assertEqual(r.length, 2, "two elements > 150");
+        TestRunner.assertEqual(r[0], 200, "first filtered element");
+        TestRunner.assertEqual(r[1], 300, "second filtered element");
+        TestRunner.endTest();
     }
 }

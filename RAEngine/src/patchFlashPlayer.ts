@@ -59,7 +59,7 @@ export function patchFlashPlayer(inputPath: string, outputPath: string, proxyNam
 
     // --- Read existing import descriptors ---
     const importFileOff = rvaToFile(importRVA);
-    const numImportDescs = importSize / 20;
+    const numImportDescs = Math.floor(importSize / 20);
     const existingDescs: Uint8Array[] = [];
     for (let i = 0; i < numImportDescs - 1; i++) {
         const off = importFileOff + i * 20;
@@ -182,8 +182,11 @@ export function patchFlashPlayer(inputPath: string, outputPath: string, proxyNam
     for (let i = 0; i < output.length; i += 2) {
         if (i === checksumOffset || i === checksumOffset + 2) continue; // skip checksum field
         const word = (i + 1 < output.length) ? outView.getUint16(i, true) : output[i];
-        checksum = (checksum + word) & 0xFFFFFFFF;
-        checksum = ((checksum >> 16) + (checksum & 0xFFFF)) & 0xFFFFFFFF;
+        checksum += word;
+    }
+    // Fold carry: add high 16 bits into low 16 bits until no carry remains
+    while (checksum > 0xFFFF) {
+        checksum = (checksum >> 16) + (checksum & 0xFFFF);
     }
     checksum = (checksum + output.length) & 0xFFFFFFFF;
     outView.setUint32(optHeaderOff + 64, checksum, true);

@@ -204,6 +204,36 @@ class Evaluate {
                 var targets = safePop(stack);
                 var amount:Int = Std.parseInt(cast(formula[i], String));
 
+                // Flatten Array targets so .prop maps over array elements
+                // e.g. stage.allTitles.charTitle where allTitles is an Array
+                var needsFlatten:Bool = false;
+                var fj:Int = 0;
+                while (fj < targets.length) {
+                    if (Std.isOfType(targets[fj], Array)) {
+                        needsFlatten = true;
+                        break;
+                    }
+                    fj++;
+                }
+                if (needsFlatten) {
+                    var flatTargets:Array<Dynamic> = [];
+                    fj = 0;
+                    while (fj < targets.length) {
+                        if (Std.isOfType(targets[fj], Array)) {
+                            var innerArr:Array<Dynamic> = cast targets[fj];
+                            var fk:Int = 0;
+                            while (fk < innerArr.length) {
+                                flatTargets.push(innerArr[fk]);
+                                fk++;
+                            }
+                        } else {
+                            flatTargets.push(targets[fj]);
+                        }
+                        fj++;
+                    }
+                    targets = flatTargets;
+                }
+
                 var result:Array<Dynamic> = [];
 
                 // OPTIMIZATION: Detect simple property access pattern
@@ -272,16 +302,47 @@ class Evaluate {
                     stack.push(result);
                     i += amount + 1;
                 } else {
-                    // Generic implementation: evaluate the index expression
+                    // Generic implementation: filter array elements by condition
+                    // Enumerate elements as (this=values, key=indices), evaluate
+                    // condition per-element, keep elements where result is true
                     var j:Int = 0;
                     while (j < targets.length) {
                         var target:Dynamic = targets[j];
-                        var indexResult = evaluate(formula, i + 1, i + amount + 1, [target], [], gameRoot);
-                        if (indexResult != null && indexResult.length > 0) {
-                            var index:Dynamic = indexResult[0];
-                            var value:Dynamic = readIndex(target, index);
-                            if (value != null) {
-                                result.push(value);
+
+                        var childThis:Array<Dynamic> = [];
+                        var childKeys:Array<Dynamic> = [];
+
+                        if (Std.isOfType(target, Array)) {
+                            var arr:Array<Dynamic> = cast target;
+                            var ai:Int = 0;
+                            while (ai < arr.length) {
+                                childThis.push(arr[ai]);
+                                childKeys.push(ai);
+                                ai++;
+                            }
+                        } else {
+                            // For non-array targets, try numeric index access
+                            try {
+                                var len:Int = untyped target.length;
+                                var ai:Int = 0;
+                                while (ai < len) {
+                                    childThis.push(untyped target[ai]);
+                                    childKeys.push(ai);
+                                    ai++;
+                                }
+                            } catch (e:Dynamic) {}
+                        }
+
+                        var filterResult = evaluate(formula, i + 1, i + amount + 1, childThis, childKeys, gameRoot);
+                        if (filterResult != null) {
+                            var k:Int = 0;
+                            while (k < filterResult.length) {
+                                if (filterResult[k] == true || filterResult[k] == 1) {
+                                    if (k < childThis.length) {
+                                        result.push(childThis[k]);
+                                    }
+                                }
+                                k++;
                             }
                         }
                         j++;
@@ -329,12 +390,15 @@ class Evaluate {
                 var thenResult = evaluate(formula, thenStart, thenEnd, context, keys, gameRoot);
                 var elseResult = evaluate(formula, elseStart, elseEnd, context, keys, gameRoot);
 
+                if (thenResult == null) thenResult = [];
+                if (elseResult == null) elseResult = [];
+
                 var result:Array<Dynamic> = [];
                 var j:Int = 0;
                 while (j < condition.length) {
                     var cond:Dynamic = condition[j];
-                    var thenVal:Dynamic = (thenResult.length == 1) ? thenResult[0] : thenResult[j];
-                    var elseVal:Dynamic = (elseResult.length == 1) ? elseResult[0] : elseResult[j];
+                    var thenVal:Dynamic = (thenResult.length == 1) ? thenResult[0] : (j < thenResult.length ? thenResult[j] : null);
+                    var elseVal:Dynamic = (elseResult.length == 1) ? elseResult[0] : (j < elseResult.length ? elseResult[j] : null);
                     result.push(isTruthy(cond) ? thenVal : elseVal);
                     j++;
                 }

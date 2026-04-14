@@ -89,8 +89,8 @@ class Main {
     private static var lastRichPresenceTime:Number = 0;
     private static var RICH_PRESENCE_INTERVAL:Number = 1000; // 1 second
 
-    // Reusable result object for evaluateRequirementCondition (avoids allocation per call)
-    private static var _evalResult:Object = {passed: false, valid: false, valueA: 0};
+    // Cache miss sentinel for frame cache
+    public static var CACHE_MISS:Object = {};
 
     // Reusable context arrays for evaluate() calls (avoids allocating per call)
     private static var _stageContext:Array = [null];
@@ -312,6 +312,12 @@ class Main {
             preloadContainer = null;
         }
         lastRichPresenceTime = 0;
+        nativeAchReady = false;
+        nativeAchFnMap = null;
+        nativeAchStorage = [];
+        nativeRPReady = false;
+        nativeRPFnMap = null;
+        nativeRPStorage = [];
         profilingData = {};
         lastProfilingReport = 0;
         objAccessOptimized = 0;
@@ -1163,8 +1169,8 @@ class Main {
                     if (evicted != null) evicted.removeMovieClip();
                     delete Main.badgeImageCache[evictId];
                 }
-                Main.badgeImageCache[Main.currentPreloadId] = target;
-                Main.badgeImageOrder.push(Main.currentPreloadId);
+                Main.badgeImageCache[assetId] = target;
+                Main.badgeImageOrder.push(assetId);
                 Main.preloadNext();
             } catch (e:Error) { Main.logError("preloadNext.onLoadInit", e); }
         };
@@ -1339,18 +1345,12 @@ class Main {
                 case 4: passed = (rawA < rawB); break;
                 case 5: passed = (rawA <= rawB); break;
             }
-            _evalResult.passed = passed;
-            _evalResult.valid = true;
-            _evalResult.valueA = (rawA !== undefined) ? rawA : 0;
-            return _evalResult;
+            return {passed: passed, valid: true, valueA: (rawA !== undefined) ? rawA : 0};
         }
 
         // Check if compiled formulas exist
         if (requirement.compiledA == null || requirement.compiledB == null) {
-            _evalResult.passed = false;
-            _evalResult.valid = false;
-            _evalResult.valueA = 0;
-            return _evalResult;
+            return {passed: false, valid: false, valueA: 0};
         }
 
         // Use addressA/addressB as cache keys
@@ -1358,16 +1358,20 @@ class Main {
         var cacheKeyB:String = requirement.addressB;
 
         // Evaluate current values (with caching, fast-path preferred)
-        var currentA:Array = frameCache[cacheKeyA];
-        if (currentA == null) {
+        var currentA:Array;
+        if (frameCache.hasOwnProperty(cacheKeyA)) {
+            currentA = frameCache[cacheKeyA];
+        } else {
             currentA = requirement.fastA != null
                 ? evaluateFast(requirement.fastA)
                 : evaluate(requirement.compiledA, 1, requirement.compiledA.length, _stageContext, _stageKeys);
             frameCache[cacheKeyA] = currentA;
         }
 
-        var currentB:Array = frameCache[cacheKeyB];
-        if (currentB == null) {
+        var currentB:Array;
+        if (frameCache.hasOwnProperty(cacheKeyB)) {
+            currentB = frameCache[cacheKeyB];
+        } else {
             currentB = requirement.fastB != null
                 ? evaluateFast(requirement.fastB)
                 : evaluate(requirement.compiledB, 1, requirement.compiledB.length, _stageContext, _stageKeys);
@@ -1376,18 +1380,12 @@ class Main {
 
         // Evaluate failed
         if (currentA == null || currentB == null) {
-            _evalResult.passed = false;
-            _evalResult.valid = false;
-            _evalResult.valueA = 0;
-            return _evalResult;
+            return {passed: false, valid: false, valueA: 0};
         }
 
         // Only allow single-value results (empty array is valid for null comparison)
         if (currentA.length > 1 || currentB.length > 1) {
-            _evalResult.passed = false;
-            _evalResult.valid = false;
-            _evalResult.valueA = 0;
-            return _evalResult;
+            return {passed: false, valid: false, valueA: 0};
         }
 
         // Handle Delta type for A side
@@ -1396,10 +1394,7 @@ class Main {
             var deltaData:Object = deltaValues[requirement.id];
             if (deltaData == null || !deltaData.hasA) {
                 storeDeltaValue(requirement.id, "A", currentA.length == 1 ? currentA[0] : undefined);
-                _evalResult.passed = false;
-                _evalResult.valid = false;
-                _evalResult.valueA = 0;
-                return _evalResult;
+                return {passed: false, valid: false, valueA: 0};
             }
             resultA = (deltaData.prevA === undefined) ? [] : [deltaData.prevA];
             storeDeltaValue(requirement.id, "A", currentA.length == 1 ? currentA[0] : undefined);
@@ -1413,10 +1408,7 @@ class Main {
             var deltaBData:Object = deltaValues[requirement.id];
             if (deltaBData == null || !deltaBData.hasB) {
                 storeDeltaValue(requirement.id, "B", currentB.length == 1 ? currentB[0] : undefined);
-                _evalResult.passed = false;
-                _evalResult.valid = false;
-                _evalResult.valueA = 0;
-                return _evalResult;
+                return {passed: false, valid: false, valueA: 0};
             }
             resultB = (deltaBData.prevB === undefined) ? [] : [deltaBData.prevB];
             storeDeltaValue(requirement.id, "B", currentB.length == 1 ? currentB[0] : undefined);
@@ -1439,10 +1431,7 @@ class Main {
                 case "!=": passed = !bothNull; break;
                 default:   passed = false; break;
             }
-            _evalResult.passed = passed;
-            _evalResult.valid = true;
-            _evalResult.valueA = 0;
-            return _evalResult;
+            return {passed: passed, valid: true, valueA: 0};
         }
 
         var rawA = resultA[0];
@@ -1464,10 +1453,7 @@ class Main {
             case "<=": passed = (rawA <= rawB); break;
         }
 
-        _evalResult.passed = passed;
-        _evalResult.valid = true;
-        _evalResult.valueA = rawA;
-        return _evalResult;
+        return {passed: passed, valid: true, valueA: rawA};
     }
 
     /**
@@ -1478,8 +1464,10 @@ class Main {
         if (requirement.compiledA == null) return NaN;
 
         var cacheKeyA:String = requirement.addressA;
-        var currentA:Array = frameCache[cacheKeyA];
-        if (currentA == null) {
+        var currentA:Array;
+        if (frameCache.hasOwnProperty(cacheKeyA)) {
+            currentA = frameCache[cacheKeyA];
+        } else {
             currentA = requirement.fastA != null
                 ? evaluateFast(requirement.fastA)
                 : evaluate(requirement.compiledA, 1, requirement.compiledA.length, _stageContext, _stageKeys);
@@ -1549,7 +1537,12 @@ class Main {
                     return {chainResult: false, terminalIndex: k, valid: false, members: members};
                 }
             }
-            return {chainResult: false, terminalIndex: k, valid: false, members: members};
+            // Walk backwards from k-1 to find last non-skipped index
+            var lastValid0:Number = -1;
+            for (var bk0:Number = k - 1; bk0 >= startIndex; bk0--) {
+                if (!skipIndices[bk0]) { lastValid0 = bk0; break; }
+            }
+            return {chainResult: false, terminalIndex: lastValid0, valid: false, members: members};
         }
 
         var chainResult:Boolean = firstSatisfied;
@@ -1561,8 +1554,12 @@ class Main {
             // Skip indices we should skip
             while (k < group.requirements.length && skipIndices[k]) k++;
             if (k >= group.requirements.length) {
-                // Chain ended without terminal - invalid
-                return {chainResult: false, terminalIndex: k - 1, valid: false, members: members};
+                // Chain ended without terminal - walk backwards to find last non-skipped index
+                var lastValidK:Number = -1;
+                for (var bk:Number = k - 1; bk >= startIndex; bk--) {
+                    if (!skipIndices[bk]) { lastValidK = bk; break; }
+                }
+                return {chainResult: false, terminalIndex: lastValidK, valid: false, members: members};
             }
 
             var nextReq:Object = group.requirements[k];
@@ -1672,9 +1669,42 @@ class Main {
                     break;
                 case "OBJECT_ACCESS":
                 case "ARRAY_ACCESS":
-                case "REMEMBER":
                     i++;
                     formula[i] = parseInt(formula[i], 10);
+                    break;
+                case "REMEMBER":
+                    i++;
+                    var remBlockLen:Number = parseInt(formula[i], 10);
+                    formula[i] = remBlockLen;
+                    // Recursively preprocess the inner tokens of the REMEMBER block
+                    var remEnd:Number = i + remBlockLen;
+                    for (var ri:Number = i + 1; ri <= remEnd && ri < formula.length; ri++) {
+                        switch (formula[ri]) {
+                            case "VALUE":
+                                ri++;
+                                formula[ri] = parseInt(formula[ri], 10);
+                                break;
+                            case "OBJECT_ACCESS":
+                            case "ARRAY_ACCESS":
+                                ri++;
+                                formula[ri] = parseInt(formula[ri], 10);
+                                break;
+                            case "TERNARY":
+                                ri++;
+                                var innerThenLen:Number = parseInt(formula[ri], 10);
+                                formula[ri] = innerThenLen;
+                                var innerElseLenPos:Number = ri + 1 + innerThenLen;
+                                if (innerElseLenPos < formula.length) {
+                                    formula[innerElseLenPos] = parseInt(formula[innerElseLenPos], 10);
+                                }
+                                break;
+                            case "STRING":
+                            case "IDENTIFIER":
+                                ri++;
+                                break;
+                        }
+                    }
+                    i = remEnd;
                     break;
                 case "TERNARY":
                     i++;
@@ -2424,6 +2454,7 @@ class Main {
                         }
                     } else {
                         log("Invalid global identifier " + identifiers);
+                        return null;
                     }
                     break;
                 }
@@ -3013,6 +3044,7 @@ class Main {
         _stageContext[0] = gameRoot;
 
         // Frame-local cache for formula results (cleared each frame)
+        // Uses CACHE_MISS sentinel so null results are properly cached
         var frameCache:Object = {};
 
         for (var i:Number = 0; i < AppData.data.assets.length; ++i) {
@@ -3357,15 +3389,9 @@ class Main {
 
                     // Check if this is a chain terminal
                     if (info && info.isTerminal) {
-                        // Use the chain result (already evaluated)
+                        // Use the chain result (already evaluated by evaluateChain)
                         passed = info.chainResult;
                         valid = info.chainValid;
-                        // Still need to evaluate this terminal's condition and combine
-                        if (valid) {
-                            var termEval:Object = evaluateRequirementCondition(requirement, frameCache, 0);
-                            valid = termEval.valid;
-                            // Chain result is already combined with terminal in evaluateChain
-                        }
                     } else {
                         // Standalone Pause If - evaluate normally
                         var evalResult:Object = evaluateRequirementCondition(requirement, frameCache, 0);
@@ -3471,8 +3497,10 @@ class Main {
                     // Only evaluate delta types
                     if (requirement.typeA == "DELTA") {
                         var cacheKeyA:String = requirement.addressA;
-                        var currentA:Array = frameCache[cacheKeyA];
-                        if (currentA == null) {
+                        var currentA:Array;
+                        if (frameCache.hasOwnProperty(cacheKeyA)) {
+                            currentA = frameCache[cacheKeyA];
+                        } else {
                             currentA = requirement.fastA != null
                                 ? evaluateFast(requirement.fastA)
                                 : evaluate(requirement.compiledA, 1, requirement.compiledA.length, _stageContext, _stageKeys);
@@ -3484,8 +3512,10 @@ class Main {
                     }
                     if (requirement.typeB == "DELTA") {
                         var cacheKeyB:String = requirement.addressB;
-                        var currentB:Array = frameCache[cacheKeyB];
-                        if (currentB == null) {
+                        var currentB:Array;
+                        if (frameCache.hasOwnProperty(cacheKeyB)) {
+                            currentB = frameCache[cacheKeyB];
+                        } else {
                             currentB = requirement.fastB != null
                                 ? evaluateFast(requirement.fastB)
                                 : evaluate(requirement.compiledB, 1, requirement.compiledB.length, _stageContext, _stageKeys);
@@ -3977,7 +4007,7 @@ class Main {
                             var ownCapOk:Boolean = (maxHits == 0 || currentHits < maxHits);
                             var terminalCapOk:Boolean = true;
                             if (req.flag == "ADD_HITS") {
-                                var ahsInfoP5:Object = gr.addHitsSubHitsInfo[ri];
+                                var ahsInfoP5:Object = gr.addHitsSubHitsInfo[rr.reqIndex];
                                 if (ahsInfoP5 && ahsInfoP5.isChainMember) {
                                     var termIdxP5:Number = ahsInfoP5.terminalIndex;
                                     if (termIdxP5 < gr.groupRef.requirements.length) {

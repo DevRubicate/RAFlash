@@ -336,6 +336,7 @@ export class AppData {
             badgeImage: { type: 'string' },
             scaleMode: { type: 'string' },
             align: { type: 'string' },
+            hashOverride: { type: 'string' },
         }
     };
 

@@ -3,7 +3,7 @@ import { JSONDiff } from './JSONDiff.js';
 import { toRaw } from 'vue';
 
 /** Deep clone that strips Vue reactive proxies before serializing. */
-function deepCloneRaw(obj: unknown): unknown {
+export function deepCloneRaw(obj: unknown): unknown {
     obj = toRaw(obj);
     if (Array.isArray(obj)) return obj.map(deepCloneRaw);
     if (obj && typeof obj === 'object') {
@@ -114,7 +114,7 @@ export class Network {
                 Network.reconnectAttempts++;
                 setTimeout(() => Network.connect(), delay);
             };
-            Network.socket.onmessage = (event: MessageEvent) => {
+            Network.socket.onmessage = async (event: MessageEvent) => {
                 const segments = event.data.split('\n');
                 for(let i=0; i<segments.length; ++i) {
                     if(segments[i] === '') {
@@ -133,7 +133,7 @@ export class Network {
                             if(Network.onMessageCallback === null) {
                                 throw new Error('Network.onmessage: No callback registered');
                             }
-                            const answer = Network.onMessageCallback(message);
+                            const answer = await Network.onMessageCallback(message);
                             Network.socket!.send(JSON.stringify(['RESPONSE', id, answer])+'\n');
                         } else if(type === 'RESPONSE') {
                             if (Network.messageHandlers.has(id)) {
@@ -172,15 +172,16 @@ export class Network {
                 Network.messageHandlers.set(id, resolve);
                 Network.socket!.send(JSON.stringify(['REQUEST', id, message])+'\n');
             } else {
+                const wrapper = (response: Record<string, unknown>) => {
+                    clearTimeout(timeout);
+                    resolve(response);
+                };
                 const timeout = setTimeout(() => {
-                    const idx = Network.messageQueue.findIndex(([, cb]) => cb === resolve);
+                    const idx = Network.messageQueue.findIndex(([, cb]) => cb === wrapper);
                     if (idx !== -1) Network.messageQueue.splice(idx, 1);
                     resolve({ success: false, error: 'Queued message timed out waiting for connection' });
                 }, 30000);
-                Network.messageQueue.push([message, (response) => {
-                    clearTimeout(timeout);
-                    resolve(response);
-                }]);
+                Network.messageQueue.push([message, wrapper]);
             }
         });
     }

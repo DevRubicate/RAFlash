@@ -68,7 +68,7 @@ avm1-wrapper-build: $(AVM1_WRAPPER_SWF)
 
 $(AVM1_WRAPPER_SWF): FORCE
 	@mkdir -p $(dir $@)
-	@$(HAXE) -cp AVM2Firmware -swf $@ -swf-version 16 -D swf-header=800:575:60:0 -main AVM1Wrapper
+	@$(HAXE) -cp AVM2Firmware -swf $@ -swf-version 16 -D swf-header=800:575:60:0 -main AVM1Wrapper && test -f $@
 
 # === AVM2 Firmware ===
 
@@ -79,7 +79,7 @@ avm2-build: $(AVM2_SWF)
 
 $(AVM2_SWF): FORCE
 	@mkdir -p $(dir $@)
-	@$(HAXE) -cp AVM2Firmware -swf $@ -swf-version 16 -D swf-header=800:575:60:0 -main Main
+	@$(HAXE) -cp AVM2Firmware -swf $@ -swf-version 16 -D swf-header=800:575:60:0 -main Main && test -f $@
 
 # === Compile to standalone executable ===
 
