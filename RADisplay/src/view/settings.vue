@@ -107,7 +107,7 @@
                             <input type="radio" value="compiled" v-model="settings.avm1ExecutionMode" @change="save">
                             <div class="setting-info">
                                 <span class="setting-name">Compiled</span>
-                                <span class="setting-desc">Compiles each achievement into a native Flash bytecode function at game load.</span>
+                                <span class="setting-desc">Compiles each achievement and rich presence into a native Flash bytecode function at game load. One-off evaluations from devtools are still interpreted.</span>
                             </div>
                         </label>
                         <button class="settings-button" @click="currentSubview = 'compiled'">Settings →</button>
