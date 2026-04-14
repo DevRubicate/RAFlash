@@ -1645,8 +1645,8 @@ export function compileAchievementsSWF(assets: unknown[]): NativeAchResult {
     for (let i = 0; i < (assets as Array<Record<string, unknown>>).length; i++) {
         const asset = (assets as Array<Record<string, unknown>>)[i];
 
-        // Skip non-achievement assets
-        if (asset.type === "RICH_PRESENCE") continue;
+        // Skip null/deleted entries and non-achievement assets
+        if (asset == null || asset.type === "RICH_PRESENCE") continue;
 
         const body = compileAchievementBody(asset);
         compiledIndices.push(i);

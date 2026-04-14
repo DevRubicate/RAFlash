@@ -1149,6 +1149,32 @@ let httpServer: Deno.HttpServer | null = null;
 
 // Native achievement compilation: per-achievement SWF
 let nativeAchResult: NativeAchResult | null = null;
+let nativeAchRecompileTimer: number | null = null;
+
+/** Recompile and reload the native achievement SWF. Debounced to avoid rapid recompiles during editing. */
+function scheduleNativeAchRecompile(): void {
+    if (settings.avm1ExecutionMode !== "compiled" || !firmwareConnected) return;
+    if (nativeAchRecompileTimer !== null) clearTimeout(nativeAchRecompileTimer);
+    nativeAchRecompileTimer = setTimeout(() => {
+        nativeAchRecompileTimer = null;
+        try {
+            nativeAchResult = compileAchievementsSWF(AppData.data.assets);
+            emitLog("engine", "info", `[native-ach] Recompiled ${nativeAchResult.compiledIndices.length} achievements`);
+            sendToFirmware("loadNativeAch", {
+                url: `http://${RAFLASH_DOMAIN}/native-ach.swf?t=${Date.now()}`,
+                compiledIndices: nativeAchResult.compiledIndices,
+            }, 0).then((response) => {
+                if (response.success) {
+                    emitLog("engine", "info", `[native-ach] Reloaded (${nativeAchResult!.swf.length} bytes)`);
+                } else {
+                    emitLog("engine", "warn", `[native-ach] Reload failed: ${response.error}`);
+                }
+            }).catch(() => {});
+        } catch (e) {
+            emitLog("engine", "warn", `[native-ach] Recompilation failed: ${e}`);
+        }
+    }, 300) as unknown as number;
+}
 
 // Flash socket policy file server (port 843)
 let policyListener: Deno.Listener | null = null;
@@ -1925,6 +1951,14 @@ async function handleApiRequest(
 
                 // NOTE: Asset changes are NOT auto-saved. Use saveAssets command for explicit saves.
 
+                // Recompile native achievement SWF if any asset-related paths changed
+                const hasAssetChanges = incomingDiff.edited?.some(
+                    ([path]) => path.startsWith('assets/')
+                );
+                if (hasAssetChanges) {
+                    scheduleNativeAchRecompile();
+                }
+
                 return { success: true };
             }
 
@@ -2080,6 +2114,7 @@ async function handleApiRequest(
                 const diff: Diff = { edited: [["assets", AppData.data.assets]] };
                 await sendToFirmware("editData", { changes: diff });
                 broadcastToDevtools("editData", diff);
+                scheduleNativeAchRecompile();
             }
 
             return { success: true, params: { deletedIds } };

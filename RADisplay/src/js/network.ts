@@ -1,5 +1,20 @@
 import { App } from './app.js';
 import { JSONDiff } from './JSONDiff.js';
+import { toRaw } from 'vue';
+
+/** Deep clone that strips Vue reactive proxies before serializing. */
+function deepCloneRaw(obj: unknown): unknown {
+    obj = toRaw(obj);
+    if (Array.isArray(obj)) return obj.map(deepCloneRaw);
+    if (obj && typeof obj === 'object') {
+        const clone: Record<string, unknown> = {};
+        for (const key of Object.keys(obj as Record<string, unknown>)) {
+            clone[key] = deepCloneRaw((obj as Record<string, unknown>)[key]);
+        }
+        return clone;
+    }
+    return obj;
+}
 
 type NetworkMessage = { command: string; params: Record<string, unknown> };
 type MessageHandler = (data: NetworkMessage) => Record<string, unknown> | Promise<Record<string, unknown>>;
@@ -32,9 +47,9 @@ export class Network {
                             break;
                         }
                         case 'editData': {
-                            // processIncomingDiff applies the server's changes to App.data (the working copy).
-                            // It also triggers any client-side watchers (if registered).
-                            const { fullDiff, derivedDiff } = JSONDiff.processIncomingDiff(App.data, data.params);
+                            // Use Vue-safe deep clone to avoid JSON.stringify corruption
+                            // on reactive proxies (produces null array entries otherwise).
+                            const { fullDiff, derivedDiff } = JSONDiff.processIncomingDiff(App.data, data.params, deepCloneRaw);
 
                             // Sync App.originalData to match App.data.
                             // originalData tracks "last known server state" - used to compute diffs on save().
@@ -42,7 +57,6 @@ export class Network {
                             JSONDiff.applyDataDiff(App.originalData, fullDiff);
 
                             // If client-side watchers generated changes, send them back to the server.
-                            // (In practice, watchers are typically only on the server side.)
                             if(!JSONDiff.isPointlessDiff(derivedDiff)) {
                                 await Network.send({command: 'editData', params: derivedDiff});
                             }

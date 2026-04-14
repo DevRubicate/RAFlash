@@ -178,11 +178,13 @@ export class JSONDiff {
      *   - `derivedDiff`: Only the watcher-generated changes.
      *     Sent back to the SOURCE client (they already have their own changes).
      */
-    static processIncomingDiff(target: Record<string, any>, clientDiff: Diff): { fullDiff: Diff; derivedDiff: Diff } {
-        const stateBefore = JSON.parse(JSON.stringify(target));
+    static processIncomingDiff(target: Record<string, any>, clientDiff: Diff, cloneFn?: (obj: any) => any): { fullDiff: Diff; derivedDiff: Diff } {
+        const clone = cloneFn ?? ((obj: any) => JSON.parse(JSON.stringify(obj)));
+
+        const stateBefore = clone(target);
 
         this.applyDataDiff(target, clientDiff);
-        const stateAfterClientChanges = JSON.parse(JSON.stringify(target));
+        const stateAfterClientChanges = clone(target);
 
         // Watchers may trigger other watchers (e.g., computed field A depends on B).
         // Loop until no more watcher-generated changes occur, with a safety limit.
@@ -193,7 +195,7 @@ export class JSONDiff {
                 break;
             }
 
-            const stateBeforeWatchers = JSON.parse(JSON.stringify(target));
+            const stateBeforeWatchers = clone(target);
             this._findAndTriggerWatchers(target, diffToProcess);
             diffToProcess = this.getDataDiff(stateBeforeWatchers, target);
 
