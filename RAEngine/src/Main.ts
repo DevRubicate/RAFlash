@@ -1241,14 +1241,8 @@ let richPresenceCheckInterval: number | null = null;
  * Called after a game closes before showing the file picker again.
  */
 function resetGameState(): void {
-    if (flashListener) {
-        try { flashListener.close(); } catch { /* already closed */ }
-        flashListener = null;
-    }
-    if (policyListener) {
-        try { policyListener.close(); } catch { /* already closed */ }
-        policyListener = null;
-    }
+    // NOTE: flashListener and policyListener are NOT closed here — both
+    // servers persist across game sessions (started once in main()).
     if (nativeAchRecompileTimer !== null) {
         clearTimeout(nativeAchRecompileTimer);
         nativeAchRecompileTimer = null;
