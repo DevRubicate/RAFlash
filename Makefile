@@ -108,6 +108,7 @@ dist: compile
 # Build, tag, and publish a GitHub release
 release: dist
 	$(eval VERSION := $(shell grep 'const VERSION' RAEngine/src/Main.ts | sed 's/.*"\(.*\)".*/\1/'))
+	@if [ -z "$(VERSION)" ]; then echo "Error: could not extract VERSION from RAEngine/src/Main.ts"; exit 1; fi
 	@if git rev-parse "v$(VERSION)" >/dev/null 2>&1; then echo "Error: tag v$(VERSION) already exists. Bump VERSION in RAEngine/src/Main.ts first."; exit 1; fi
 	@echo "Releasing v$(VERSION)..."
 	@git tag -a "v$(VERSION)" -m "v$(VERSION)"

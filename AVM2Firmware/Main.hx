@@ -162,8 +162,8 @@ class Main extends MovieClip {
 
         switch (data[0]) {
             case "RESPONSE":
-                if (!Std.isOfType(data[1], Int)) return;
-                var id:Int = data[1];
+                if (!Std.isOfType(data[1], Int) && !Std.isOfType(data[1], Float)) return;
+                var id:Int = Std.int(data[1]);
                 var result:Dynamic = data[2];
                 var callback = callbacks.get(id);
                 if (callback != null) {
@@ -187,10 +187,12 @@ class Main extends MovieClip {
         clearPendingCallbacks();
         if (gameLoaded) {
             showDisconnectOverlay(false);
+        }
+        // Always attempt reconnect — even before game loads the server may
+        // have restarted and we need to re-establish the connection.
+        if (initialSetupDone) {
             scheduleReconnect();
         }
-        // Before game loads, let Flash handle connection lifecycle naturally
-        // (policy file handshake causes a close/reconnect cycle)
     }
 
     private function onClose(e:Event):Void {
@@ -198,13 +200,19 @@ class Main extends MovieClip {
         clearPendingCallbacks();
         if (gameLoaded) {
             showDisconnectOverlay(false);
+        }
+        if (initialSetupDone) {
             scheduleReconnect();
         }
     }
 
     private function clearPendingCallbacks():Void {
         for (key in callbacks.keys()) {
+            var cb = callbacks.get(key);
             callbacks.remove(key);
+            if (cb != null) {
+                try { cb({success: false, error: "Connection lost"}); } catch (e:Dynamic) {}
+            }
         }
     }
 
@@ -257,8 +265,15 @@ class Main extends MovieClip {
         callbacks.set(id, callback);
 
         var msg = haxe.Json.stringify(["REQUEST", id, {command: command, params: params}]) + "\n";
-        socket.writeUTFBytes(msg);
-        socket.flush();
+        try {
+            socket.writeUTFBytes(msg);
+            socket.flush();
+        } catch (e:Dynamic) {
+            connected = false;
+            callbacks.remove(id);
+            log("sendCommand IO error: " + Std.string(e));
+            callback({success: false, error: "IO error"});
+        }
     }
 
     // === Request Handling ===
@@ -284,7 +299,11 @@ class Main extends MovieClip {
 
             case "setup":
                 if (initialSetupDone) {
-                    // Reconnect: re-apply gameConfig from server before syncing state back
+                    // Reconnect: clear stale UI/delta state, re-apply gameConfig from server
+                    Achievement.deltaValues = new Map();
+                    Toast.clearAll();
+                    Measure.clearAll();
+                    PrimedBadges.clearAll();
                     if (params.data != null && params.data.gameConfig != null) {
                         untyped AppData.data.gameConfig = params.data.gameConfig;
                     }
@@ -301,6 +320,7 @@ class Main extends MovieClip {
 
             case "evaluate":
                 if (params.formula == null) { sendResponse(id, {success: false, error: "Missing formula"}); return; }
+                if (gameRoot == null) { sendResponse(id, {success: false, error: "Game not loaded"}); return; }
                 var formula:Array<Dynamic> = params.formula;
                 var result = Evaluate.evaluate(formula, 1, formula.length, [gameRoot], cast ["stage"], gameRoot);
                 var formatted = Evaluate.formatOutput(result != null ? result : [], 0);
@@ -308,6 +328,7 @@ class Main extends MovieClip {
 
             case "evaluateMultiple":
                 if (params.formulas == null) { sendResponse(id, {success: false, error: "Missing formulas"}); return; }
+                if (gameRoot == null) { sendResponse(id, {success: false, error: "Game not loaded"}); return; }
                 var formulas:Array<Dynamic> = params.formulas;
                 var results:Array<Dynamic> = [];
                 var fi:Int = 0;

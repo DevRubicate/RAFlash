@@ -294,6 +294,8 @@ class Main {
      */
     private static function resetRuntimeState():Void {
         gameLoaded = false;
+        processingActive = true;
+        interpreterFastPath = true;
         _soundFixState = 0;
         _soundFixDeadline = 0;
         deltaValues = {};
@@ -777,12 +779,15 @@ class Main {
                 }
             }
         } catch (e:Error) {
-            // Parse failed — likely an incomplete fragment, keep buffering.
-            // If buffer is too large, it's unrecoverable — clear and log.
+            // Parse failed. XMLSocket delivers complete null-terminated messages,
+            // so a failure means genuinely corrupt data, not a partial message.
+            // Discard this buffer to avoid blocking all subsequent messages.
             if (receiveBuffer.length > 1000000) {
                 log("Buffer overflow (" + receiveBuffer.length + " bytes), discarding. First 80 chars: " + receiveBuffer.substring(0, 80));
-                receiveBuffer = "";
+            } else {
+                log("JSON parse error, discarding buffer (" + receiveBuffer.length + " bytes): " + e.message);
             }
+            receiveBuffer = "";
         }
     }
 
@@ -1388,30 +1393,38 @@ class Main {
             return {passed: false, valid: false, valueA: 0};
         }
 
-        // Handle Delta type for A side
+        // Handle Delta type: always store both sides first, then check readiness
+        var needDeltaA:Boolean = (requirement.typeA == "DELTA");
+        var needDeltaB:Boolean = (requirement.typeB == "DELTA");
+        var deltaData:Object = deltaValues[requirement.id];
+
+        // Store current values for both sides before checking readiness
+        if (needDeltaA) {
+            storeDeltaValue(requirement.id, "A", currentA.length == 1 ? currentA[0] : undefined);
+        }
+        if (needDeltaB) {
+            storeDeltaValue(requirement.id, "B", currentB.length == 1 ? currentB[0] : undefined);
+        }
+
+        // Now check readiness and compute results
         var resultA:Array;
-        if (requirement.typeA == "DELTA") {
-            var deltaData:Object = deltaValues[requirement.id];
+        if (needDeltaA) {
             if (deltaData == null || !deltaData.hasA) {
-                storeDeltaValue(requirement.id, "A", currentA.length == 1 ? currentA[0] : undefined);
                 return {passed: false, valid: false, valueA: 0};
             }
             resultA = (deltaData.prevA === undefined) ? [] : [deltaData.prevA];
-            storeDeltaValue(requirement.id, "A", currentA.length == 1 ? currentA[0] : undefined);
         } else {
             resultA = currentA;
         }
 
-        // Handle Delta type for B side
         var resultB:Array;
-        if (requirement.typeB == "DELTA") {
+        if (needDeltaB) {
+            // Re-read since storeDeltaValue for A may have created it
             var deltaBData:Object = deltaValues[requirement.id];
             if (deltaBData == null || !deltaBData.hasB) {
-                storeDeltaValue(requirement.id, "B", currentB.length == 1 ? currentB[0] : undefined);
                 return {passed: false, valid: false, valueA: 0};
             }
             resultB = (deltaBData.prevB === undefined) ? [] : [deltaBData.prevB];
-            storeDeltaValue(requirement.id, "B", currentB.length == 1 ? currentB[0] : undefined);
         } else {
             resultB = currentB;
         }
@@ -1661,7 +1674,12 @@ class Main {
      */
     private static function preprocessFormula(formula:Array):Void {
         formula[0] = 1; // Mark as preprocessed
-        for (var i:Number = 1; i < formula.length; i++) {
+        preprocessRange(formula, 1, formula.length);
+    }
+
+    /** Recursively preprocess a range of tokens within a formula array. */
+    private static function preprocessRange(formula:Array, start:Number, end:Number):Void {
+        for (var i:Number = start; i < end; i++) {
             switch (formula[i]) {
                 case "VALUE":
                     i++;
@@ -1676,44 +1694,25 @@ class Main {
                     i++;
                     var remBlockLen:Number = parseInt(formula[i], 10);
                     formula[i] = remBlockLen;
-                    // Recursively preprocess the inner tokens of the REMEMBER block
                     var remEnd:Number = i + remBlockLen;
-                    for (var ri:Number = i + 1; ri <= remEnd && ri < formula.length; ri++) {
-                        switch (formula[ri]) {
-                            case "VALUE":
-                                ri++;
-                                formula[ri] = parseInt(formula[ri], 10);
-                                break;
-                            case "OBJECT_ACCESS":
-                            case "ARRAY_ACCESS":
-                                ri++;
-                                formula[ri] = parseInt(formula[ri], 10);
-                                break;
-                            case "TERNARY":
-                                ri++;
-                                var innerThenLen:Number = parseInt(formula[ri], 10);
-                                formula[ri] = innerThenLen;
-                                var innerElseLenPos:Number = ri + 1 + innerThenLen;
-                                if (innerElseLenPos < formula.length) {
-                                    formula[innerElseLenPos] = parseInt(formula[innerElseLenPos], 10);
-                                }
-                                break;
-                            case "STRING":
-                            case "IDENTIFIER":
-                                ri++;
-                                break;
-                        }
-                    }
+                    preprocessRange(formula, i + 1, remEnd + 1);
                     i = remEnd;
                     break;
                 case "TERNARY":
                     i++;
                     var thenLen:Number = parseInt(formula[i], 10);
                     formula[i] = thenLen;
+                    var thenStart:Number = i + 1;
+                    var thenEnd:Number = thenStart + thenLen;
+                    preprocessRange(formula, thenStart, thenEnd);
                     // Pre-parse elseLen which sits right after the then-block
-                    var elseLenPos:Number = i + 1 + thenLen;
-                    if (elseLenPos < formula.length) {
-                        formula[elseLenPos] = parseInt(formula[elseLenPos], 10);
+                    if (thenEnd < end) {
+                        var elseLen:Number = parseInt(formula[thenEnd], 10);
+                        formula[thenEnd] = elseLen;
+                        var elseStart:Number = thenEnd + 1;
+                        var elseEnd:Number = elseStart + elseLen;
+                        preprocessRange(formula, elseStart, elseEnd);
+                        i = elseEnd - 1; // -1 because loop will ++i
                     }
                     break;
                 case "STRING":
@@ -1765,6 +1764,8 @@ class Main {
         };
         wrapper.__raHookId = id;
         wrapper.__raHookOrig = orig;
+        // Hide internal properties from for...in enumeration
+        _global.ASSetPropFlags(wrapper, ["__raHookId", "__raHookOrig"], 1);
         parent[key] = wrapper;
         // If the assignment didn't take (read-only / native slot),
         // mark the original so we don't keep allocating fresh ids on
@@ -2656,24 +2657,43 @@ class Main {
 
                     var condition:Array = Array(stack.pop());
 
-                    // Evaluate both branches
-                    var thenResult:Array = evaluate(formula, thenStart, thenEnd, context, keys);
-                    var elseResult:Array = evaluate(formula, elseStart, elseEnd, context, keys);
-
-                    if (thenResult == null) thenResult = [];
-                    if (elseResult == null) elseResult = [];
-
-                    // Element-wise selection based on condition
-                    var result:Array = [];
-                    var len:Number = condition.length;
-                    for (var j:Number = 0; j < len; j++) {
-                        var cond = condition[j];
-                        var isTruthy:Boolean = (cond != 0 && cond != false && cond != null && cond != "");
-                        var thenVal = (thenResult.length == 1) ? thenResult[0] : (j < thenResult.length ? thenResult[j] : null);
-                        var elseVal = (elseResult.length == 1) ? elseResult[0] : (j < elseResult.length ? elseResult[j] : null);
-                        result.push(isTruthy ? thenVal : elseVal);
+                    // Check if condition is uniformly truthy or falsy
+                    var allTruthy:Boolean = true;
+                    var allFalsy:Boolean = true;
+                    for (var cj:Number = 0; cj < condition.length; cj++) {
+                        var cv = condition[cj];
+                        var cvTruthy:Boolean = (cv != 0 && cv != false && cv != null && cv != "");
+                        if (cvTruthy) allFalsy = false;
+                        else allTruthy = false;
                     }
-                    stack.push(result);
+
+                    if (allTruthy) {
+                        // Only evaluate then branch
+                        var thenOnly:Array = evaluate(formula, thenStart, thenEnd, context, keys);
+                        stack.push(thenOnly != null ? thenOnly : []);
+                    } else if (allFalsy) {
+                        // Only evaluate else branch
+                        var elseOnly:Array = evaluate(formula, elseStart, elseEnd, context, keys);
+                        stack.push(elseOnly != null ? elseOnly : []);
+                    } else {
+                        // Mixed condition - must evaluate both branches
+                        var thenResult:Array = evaluate(formula, thenStart, thenEnd, context, keys);
+                        var elseResult:Array = evaluate(formula, elseStart, elseEnd, context, keys);
+                        if (thenResult == null) thenResult = [];
+                        if (elseResult == null) elseResult = [];
+
+                        // Element-wise selection based on condition
+                        var result:Array = [];
+                        var len:Number = condition.length;
+                        for (var j:Number = 0; j < len; j++) {
+                            var cond = condition[j];
+                            var isTruthy:Boolean = (cond != 0 && cond != false && cond != null && cond != "");
+                            var thenVal = (thenResult.length == 1) ? thenResult[0] : (j < thenResult.length ? thenResult[j] : null);
+                            var elseVal = (elseResult.length == 1) ? elseResult[0] : (j < elseResult.length ? elseResult[j] : null);
+                            result.push(isTruthy ? thenVal : elseVal);
+                        }
+                        stack.push(result);
+                    }
                     break;
                 }
                 default: {
@@ -2809,7 +2829,7 @@ class Main {
                 if ("undefined" == value) {
                     output.push(path);
                 }
-            } else if (target == NaN) {
+            } else if (typeof(target) == "number" && isNaN(Number(target))) {
                 if ("NaN" == value) {
                     output.push(path);
                 }
@@ -2972,7 +2992,7 @@ class Main {
                 output.push({value: "null"});
             } else if (value == undefined) {
                 output.push({value: "undefined"});
-            } else if (value == NaN) {
+            } else if (typeof(value) == "number" && isNaN(Number(value))) {
                 output.push({value: "NaN"});
             } else if (typeof(value) == "object") {
                 if (level == 0 && singular) {
@@ -2991,7 +3011,7 @@ class Main {
             } else if (typeof(value) == "function") {
                 output.push({value: "[Function]"});
             } else {
-                output.push({value: "Unknown " + value + ")"});
+                output.push({value: "Unknown (" + value + ")"});
             }
         }
         return {
@@ -3275,9 +3295,10 @@ class Main {
             var assetTriggered:Boolean = true;
             var hasRequirements:Boolean = false;
 
-            // TRIGGER flag tracking - for primed state detection
-            var allNonTriggerMet:Boolean = true;
-            var allTriggerMet:Boolean = true;
+            // TRIGGER flag tracking - per group for primed state detection
+            var groupNonTriggerMet:Array = [];  // Boolean per group
+            var groupTriggerMet:Array = [];     // Boolean per group
+            var groupHasTrigger:Array = [];     // Boolean per group
             var hasTriggerCondition:Boolean = false;
 
             // === PHASE 0: Pause If detection (per group) ===
@@ -3552,6 +3573,11 @@ class Main {
                 var groupReqs:Array = [];
                 var groupAllPassed:Boolean = true;
 
+                // Per-group trigger tracking
+                groupNonTriggerMet[j] = true;
+                groupTriggerMet[j] = true;
+                groupHasTrigger[j] = false;
+
                 // First, add Pause If results from Phase 0 (Pause If is exempt from group pass check)
                 for (var pi:Number = 0; pi < groupPauseIfResults[j].length; ++pi) {
                     groupReqs.push(groupPauseIfResults[j][pi]);
@@ -3736,9 +3762,10 @@ class Main {
                     // Non-flagged requirements, MEASURED/MEASURED_IF, and TRIGGER count toward group satisfaction
                     var flagSat:String = requirement.flag;
                     if (flagSat == null || flagSat == "" || flagSat == "MEASURED" || flagSat == "MEASURED_IF" || flagSat == "TRIGGER") {
-                        // Track TRIGGER requirements separately for primed state
+                        // Track TRIGGER requirements separately for primed state (per group)
                         if (flagSat == "TRIGGER") {
                             hasTriggerCondition = true;
+                            groupHasTrigger[j] = true;
                         }
 
                         var maxHitsEval:Number = requirement.maxHits || 0;
@@ -3785,11 +3812,11 @@ class Main {
                         }
                         if (!reqSatisfied) {
                             groupAllPassed = false;
-                            // Track TRIGGER vs non-TRIGGER separately for primed state
+                            // Track TRIGGER vs non-TRIGGER separately for primed state (per group)
                             if (flagSat == "TRIGGER") {
-                                allTriggerMet = false;
+                                groupTriggerMet[j] = false;
                             } else {
-                                allNonTriggerMet = false;
+                                groupNonTriggerMet[j] = false;
                             }
                         }
                     }
@@ -3950,7 +3977,24 @@ class Main {
                 assetTriggered = coreGroupPassed && (!hasAltGroups || anyAltGroupPassed);
 
                 // === PHASE 4.5: TRIGGER flag - primed state handling ===
+                // Compute primed state from the groups that would contribute to a trigger:
+                // Core group is always included; for alt groups, use the best-passing one.
                 if (hasTriggerCondition) {
+                    var allNonTriggerMet:Boolean = true;
+                    var allTriggerMet:Boolean = true;
+                    for (var pri:Number = 0; pri < groupResults.length; ++pri) {
+                        var prGr:Object = groupResults[pri];
+                        if (prGr.isPaused) continue;
+                        if (prGr.type == "CORE" || prGr.allPassed || prGr.type == undefined) {
+                            // Core always contributes; alt groups contribute if they passed
+                            if (groupNonTriggerMet[pri] === false) allNonTriggerMet = false;
+                            if (groupTriggerMet[pri] === false) allTriggerMet = false;
+                        }
+                    }
+                    // If no alt group passed, pick the one closest to passing for trigger state
+                    if (hasAltGroups && !anyAltGroupPassed) {
+                        allNonTriggerMet = false;
+                    }
                     if (allNonTriggerMet && !allTriggerMet) {
                         // PRIMED state - all prerequisites met, waiting for trigger condition
                         if (!achievement._primed) {
@@ -4202,13 +4246,13 @@ class Main {
                         var mCacheKeyB2:String = mReq.addressB;
 
                         var mResultA:Array = frameCache[mCacheKeyA];
-                        if (mResultA == null) {
+                        if (mResultA === CACHE_MISS || !frameCache.hasOwnProperty(mCacheKeyA)) {
                             mResultA = evaluate(mReq.compiledA, 1, mReq.compiledA.length, _stageContext, _stageKeys);
                             frameCache[mCacheKeyA] = mResultA;
                         }
 
                         var mResultB2:Array = frameCache[mCacheKeyB2];
-                        if (mResultB2 == null) {
+                        if (mResultB2 === CACHE_MISS || !frameCache.hasOwnProperty(mCacheKeyB2)) {
                             mResultB2 = evaluate(mReq.compiledB, 1, mReq.compiledB.length, _stageContext, _stageKeys);
                             frameCache[mCacheKeyB2] = mResultB2;
                         }

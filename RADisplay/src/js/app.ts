@@ -1,6 +1,6 @@
 import { reactive }                            from 'vue';
 import { JSONDiff }                     from './JSONDiff.js';
-import { Network }                      from './network.js';
+import { Network, deepCloneRaw }        from './network.js';
 
 interface AppState {
     ready: boolean;
@@ -73,6 +73,6 @@ export const App: AppState = reactive({
     async save() {
         const diff = JSONDiff.getDataDiff(App.originalData, App.data);
         await Network.send({command: 'editData', params: diff});
-        App.originalData = JSON.parse(JSON.stringify(App.data));
+        App.originalData = deepCloneRaw(App.data) as Record<string, any>;
     },
 });

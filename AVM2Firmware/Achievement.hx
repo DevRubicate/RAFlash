@@ -13,7 +13,7 @@ class Achievement {
 
     // State
     public static var processingActive:Bool = true;
-    private static var deltaValues:Map<String, Dynamic> = new Map();
+    public static var deltaValues:Map<String, Dynamic> = new Map();
     private static var diffEdits:Array<Dynamic> = [];
     private static var lastRichPresenceTime:Float = 0;
 
@@ -196,7 +196,7 @@ class Achievement {
         while (k + 1 < reqs.length) {
             k++;
             while (k < reqs.length && skipIndices.exists(k)) k++;
-            if (k >= reqs.length) return {chainResult: false, terminalIndex: k - 1, valid: false};
+            if (k >= reqs.length) return {chainResult: chainResult, terminalIndex: k - 1, valid: true};
 
             var nextReq:Dynamic = reqs[k];
             var nextEval:Dynamic = evaluateRequirementCondition(nextReq, frameCache, gameRoot);
@@ -213,7 +213,8 @@ class Achievement {
             currentOp = Std.string(untyped nextReq.flag);
         }
 
-        return {chainResult: false, terminalIndex: k, valid: false};
+        // Chain extends to end of requirements array — treat last element as terminal
+        return {chainResult: chainResult, terminalIndex: k, valid: true};
     }
 
     // === Main Achievement Loop ===
@@ -251,9 +252,10 @@ class Achievement {
 
             var assetTriggered:Bool = true;
             var hasRequirements:Bool = false;
-            var allNonTriggerMet:Bool = true;
-            var allTriggerMet:Bool = true;
             var hasTriggerCondition:Bool = false;
+            var groupNonTriggerMet:Array<Bool> = [];
+            var groupTriggerMet:Array<Bool> = [];
+            var groupHasTrigger:Array<Bool> = [];
 
             // === PHASE 0: Pause If detection ===
             var groups:Array<Dynamic> = untyped achievement.groups;
@@ -273,17 +275,26 @@ class Achievement {
                 var chainInfo:Map<Int, Dynamic> = new Map();
                 var rnifHandled:Map<Int, Bool> = new Map();
 
-                // First pass: identify chains ending in Pause If
+                // First pass: identify chains ending in Pause If.
+                // Scan flags first to find PauseIf terminals, then only evaluate those chains
+                // (avoids double-evaluating non-PauseIf chains and corrupting DELTA tracking).
                 var k:Int = 0;
                 while (k < reqCount) {
                     var requirement:Dynamic = reqs[k];
                     var flag:String = Std.string(untyped requirement.flag);
                     if (flag == "AND_NEXT" || flag == "OR_NEXT") {
-                        var emptySkip:Map<Int, Bool> = new Map();
-                        var cr:Dynamic = evaluateChain(group, k, frameCache, emptySkip, gameRoot);
-                        if (cr.terminalIndex < reqCount) {
-                            var termReq:Dynamic = reqs[cr.terminalIndex];
-                            if (untyped termReq.flag == "PAUSE_IF") {
+                        // Scan forward without evaluating to find chain terminal
+                        var scanK:Int = k;
+                        while (scanK + 1 < reqCount) {
+                            scanK++;
+                            var scanFlag:String = Std.string(untyped reqs[scanK].flag);
+                            if (scanFlag != "AND_NEXT" && scanFlag != "OR_NEXT") break;
+                        }
+                        // Only evaluate if the terminal is a PauseIf
+                        if (scanK < reqCount && untyped reqs[scanK].flag == "PAUSE_IF") {
+                            var emptySkip:Map<Int, Bool> = new Map();
+                            var cr:Dynamic = evaluateChain(group, k, frameCache, emptySkip, gameRoot);
+                            if (cr.terminalIndex < reqCount) {
                                 var cm:Int = k;
                                 while (cm < cr.terminalIndex) {
                                     chainInfo.set(cm, {isChainMember: true, terminalIndex: cr.terminalIndex});
@@ -291,8 +302,10 @@ class Achievement {
                                 }
                                 chainInfo.set(cr.terminalIndex, {isTerminal: true, chainResult: cr.chainResult, chainValid: cr.valid});
                             }
+                            k = cr.terminalIndex;
+                        } else {
+                            k = scanK;
                         }
-                        k = cr.terminalIndex;
                     }
                     k++;
                 }
@@ -437,6 +450,9 @@ class Achievement {
 
                 var groupReqs:Array<Dynamic> = [];
                 var groupAllPassed:Bool = true;
+                groupNonTriggerMet.push(true);
+                groupTriggerMet.push(true);
+                groupHasTrigger.push(false);
 
                 // Add Phase 0 Pause If results
                 var piResults:Array<Dynamic> = groupPauseIfResults[j];
@@ -569,7 +585,10 @@ class Achievement {
                     // Group satisfaction check
                     var flagSat:String = Std.string(untyped requirement.flag);
                     if (flagSat == "" || flagSat == "null" || flagSat == "MEASURED" || flagSat == "MEASURED_IF" || flagSat == "TRIGGER") {
-                        if (flagSat == "TRIGGER") hasTriggerCondition = true;
+                        if (flagSat == "TRIGGER") {
+                            hasTriggerCondition = true;
+                            groupHasTrigger[j] = true;
+                        }
 
                         var maxHitsEval:Int = untyped requirement.maxHits != null ? requirement.maxHits : 0;
                         var currentHitsEval:Int = untyped requirement.hits != null ? requirement.hits : 0;
@@ -607,8 +626,8 @@ class Achievement {
 
                         if (!reqSatisfied) {
                             groupAllPassed = false;
-                            if (flagSat == "TRIGGER") allTriggerMet = false;
-                            else allNonTriggerMet = false;
+                            if (flagSat == "TRIGGER") groupTriggerMet[j] = false;
+                            else groupNonTriggerMet[j] = false;
                         }
                     }
 
@@ -754,7 +773,20 @@ class Achievement {
                 assetTriggered = coreGroupPassed && (!hasAltGroups || anyAltGroupPassed);
 
                 // === PHASE 4.5: TRIGGER flag - primed state ===
+                // Compute from per-group tracking: core always contributes, alt groups only if they passed
                 if (hasTriggerCondition) {
+                    var allNonTriggerMet:Bool = true;
+                    var allTriggerMet:Bool = true;
+                    var pri:Int = 0;
+                    while (pri < groupResults.length) {
+                        var prGr:Dynamic = groupResults[pri];
+                        if (!prGr.isPaused && (Std.string(untyped prGr.type) == "CORE" || Std.string(untyped prGr.type) == "null" || prGr.allPassed)) {
+                            if (pri < groupNonTriggerMet.length && !groupNonTriggerMet[pri]) allNonTriggerMet = false;
+                            if (pri < groupTriggerMet.length && !groupTriggerMet[pri]) allTriggerMet = false;
+                        }
+                        pri++;
+                    }
+                    if (hasAltGroups && !anyAltGroupPassed) allNonTriggerMet = false;
                     if (allNonTriggerMet && !allTriggerMet) {
                         if (untyped achievement._primed != true) {
                             var primedImageUrl:String = "http://raflash.local/asset-image/" + Std.string(untyped achievement.id);

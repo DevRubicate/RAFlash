@@ -181,10 +181,9 @@
             params: {
                 edited: [
                     ['gameConfig', {
-                        title: config.title || '',
+                        ...config,
                         hashOverride: hashOverride.value,
                         originUrl: originUrl.value,
-                        badgeImage: config.badgeImage || '',
                         scaleMode: scaleMode.value,
                         align: align.value,
                     }]

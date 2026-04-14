@@ -396,8 +396,14 @@ onMounted(async () => {
 
     const response = await Network.send({ command: 'getSettings', params: {} });
     if (response.success) {
-        // Merge saved settings over defaults (preserves new defaults for new settings)
-        Object.assign(settings.value, response.params);
+        // Merge saved settings over defaults, filtering to only known keys
+        // to avoid merging non-setting metadata from the response
+        const knownKeys = Object.keys(settings.value);
+        for (const key of knownKeys) {
+            if (key in response.params) {
+                settings.value[key] = response.params[key];
+            }
+        }
     }
     ready.value = true;
 });

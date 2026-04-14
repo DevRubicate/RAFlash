@@ -455,7 +455,6 @@
             for (const req of group.requirements || []) {
                 req.id = App.getFakeId();
                 req.hits = 0;
-                req.maxHits = 0;
             }
         }
 

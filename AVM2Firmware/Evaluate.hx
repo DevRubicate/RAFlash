@@ -387,22 +387,39 @@ class Evaluate {
 
                 var condition:Array<Dynamic> = safePop(stack);
 
-                var thenResult = evaluate(formula, thenStart, thenEnd, context, keys, gameRoot);
-                var elseResult = evaluate(formula, elseStart, elseEnd, context, keys, gameRoot);
-
-                if (thenResult == null) thenResult = [];
-                if (elseResult == null) elseResult = [];
-
-                var result:Array<Dynamic> = [];
-                var j:Int = 0;
-                while (j < condition.length) {
-                    var cond:Dynamic = condition[j];
-                    var thenVal:Dynamic = (thenResult.length == 1) ? thenResult[0] : (j < thenResult.length ? thenResult[j] : null);
-                    var elseVal:Dynamic = (elseResult.length == 1) ? elseResult[0] : (j < elseResult.length ? elseResult[j] : null);
-                    result.push(isTruthy(cond) ? thenVal : elseVal);
-                    j++;
+                // Check if condition is uniformly truthy or falsy to avoid evaluating both branches
+                var allTrue:Bool = true;
+                var allFalse:Bool = true;
+                var ci:Int = 0;
+                while (ci < condition.length) {
+                    if (isTruthy(condition[ci])) allFalse = false;
+                    else allTrue = false;
+                    ci++;
                 }
-                stack.push(result);
+
+                if (allTrue) {
+                    var onlyThen = evaluate(formula, thenStart, thenEnd, context, keys, gameRoot);
+                    stack.push(onlyThen != null ? onlyThen : []);
+                } else if (allFalse) {
+                    var onlyElse = evaluate(formula, elseStart, elseEnd, context, keys, gameRoot);
+                    stack.push(onlyElse != null ? onlyElse : []);
+                } else {
+                    var thenResult = evaluate(formula, thenStart, thenEnd, context, keys, gameRoot);
+                    var elseResult = evaluate(formula, elseStart, elseEnd, context, keys, gameRoot);
+                    if (thenResult == null) thenResult = [];
+                    if (elseResult == null) elseResult = [];
+
+                    var result:Array<Dynamic> = [];
+                    var j:Int = 0;
+                    while (j < condition.length) {
+                        var cond:Dynamic = condition[j];
+                        var thenVal:Dynamic = (thenResult.length == 1) ? thenResult[0] : (j < thenResult.length ? thenResult[j] : null);
+                        var elseVal:Dynamic = (elseResult.length == 1) ? elseResult[0] : (j < elseResult.length ? elseResult[j] : null);
+                        result.push(isTruthy(cond) ? thenVal : elseVal);
+                        j++;
+                    }
+                    stack.push(result);
+                }
                 i = elseEnd;
             } else {
                 // Unknown token

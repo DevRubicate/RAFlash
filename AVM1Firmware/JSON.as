@@ -46,7 +46,13 @@ class JSON {
             return '"' + clean + '"';
         }
         
-        if (type == "number" || type == "boolean") {
+        if (type == "number") {
+            // NaN and Infinity are not valid JSON — emit null per spec
+            if (isNaN(Number(obj)) || !isFinite(Number(obj))) return "null";
+            return String(obj);
+        }
+
+        if (type == "boolean") {
             return String(obj);
         }
         

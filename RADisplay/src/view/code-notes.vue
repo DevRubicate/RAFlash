@@ -328,13 +328,7 @@
     };
 
     const save = async () => {
-        await Network.send({
-            command: 'editData',
-            params: {
-                edited: [['codeNotes', JSON.parse(JSON.stringify(App.data.codeNotes))]]
-            }
-        });
-        App.originalData.codeNotes = JSON.parse(JSON.stringify(App.data.codeNotes));
+        await App.save();
     };
 
     // Setup observer and interval on mount
@@ -378,15 +372,17 @@
             });
 
             if (reply.success && reply.params.results) {
+                let updated = { ...rowValues.value };
                 for (let i = 0; i < pathsWithIndices.length; i++) {
                     const { index } = pathsWithIndices[i];
                     const result = reply.params.results[i];
                     if (result?.output?.length > 0) {
-                        rowValues.value[index] = result.output[0].value;
+                        updated[index] = result.output[0].value;
                     } else {
-                        rowValues.value[index] = '-';
+                        updated[index] = '-';
                     }
                 }
+                rowValues.value = updated;
             }
         }, 1000);
     });

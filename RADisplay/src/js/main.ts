@@ -146,7 +146,7 @@ async function mountApp() {
         // Use your existing display function
         // The stack trace from err.stack will now be correctly source-mapped
         displayError(
-            `A Vue Component Error Occurred - ${instance?._?.type?.__name}`,
+            `A Vue Component Error Occurred - ${instance?.$options?.name ?? instance?.$.type?.name}`,
             error.message,
             error.stack || 'Stack trace not available.'
         );

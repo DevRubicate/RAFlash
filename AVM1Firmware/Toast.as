@@ -40,6 +40,8 @@ class Toast {
     // Active toasts (for stacking) - separate for left and right
     private static var activeToastsLeft:Array = [];
     private static var activeToastsRight:Array = [];
+    private static var DEPTH_MIN:Number = 999999;
+    private static var DEPTH_MAX:Number = 1048000;
     private static var toastDepth:Number = 999999;
 
     // Host clip for toast containers. In parent mode this is _root (the
@@ -79,6 +81,7 @@ class Toast {
 
         // Create container MovieClip at a very high depth (above game content)
         var host:MovieClip = (hostClip != null) ? hostClip : _root;
+        if (toastDepth > DEPTH_MAX) toastDepth = DEPTH_MIN;
         var container:MovieClip = host.createEmptyMovieClip("toast_" + toastDepth, toastDepth++);
 
         // Create text fields to measure sizes
@@ -325,10 +328,11 @@ class Toast {
             target._height = target._height * scale;
             target._x = (Toast.IMAGE_SIZE - target._width) / 2;
             target._y = (Toast.IMAGE_SIZE - target._height) / 2;
+            mcLoader.removeListener(listener);
         };
 
         listener.onLoadError = function(target:MovieClip, errorCode:String, httpStatus:Number):Void {
-            // Silently ignore - toast will show without image
+            mcLoader.removeListener(listener);
         };
 
         mcLoader.addListener(listener);

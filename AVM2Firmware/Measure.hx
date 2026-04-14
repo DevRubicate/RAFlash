@@ -7,6 +7,7 @@ import flash.text.TextField;
 import flash.text.TextFormat;
 import flash.text.TextFieldAutoSize;
 import flash.events.Event;
+import flash.events.IOErrorEvent;
 import flash.net.URLRequest;
 import haxe.Timer;
 
@@ -57,6 +58,15 @@ class Measure extends Sprite {
     private var titleField:TextField;
     private var descField:TextField;
     private var progressField:TextField;
+
+    public static function clearAll():Void {
+        for (measure in activeMeasures) {
+            measure.removeEventListener(Event.ENTER_FRAME, measure.onEnterFrame);
+            if (measure.parent != null) measure.parent.removeChild(measure);
+        }
+        activeMeasures = [];
+        measureByAsset = new Map();
+    }
 
     public static function show(title:String, description:String, progress:String, imageUrl:String):Void {
         new Measure(title, description, progress, imageUrl, null);
@@ -183,6 +193,9 @@ class Measure extends Sprite {
                 content.height = content.height * s;
                 content.x = (IMAGE_SIZE - content.width) / 2;
                 content.y = (IMAGE_SIZE - content.height) / 2;
+            });
+            loader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, function(e:Event):Void {
+                // Silently ignore — measure will show without image
             });
             loader.load(new URLRequest(imageUrlCopy));
             imageHolder.addChild(loader);

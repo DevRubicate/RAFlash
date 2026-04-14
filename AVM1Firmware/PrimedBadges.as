@@ -16,6 +16,8 @@ class PrimedBadges {
     // Track active badges by asset ID
     private static var activeBadges:Object = {};  // assetId -> MovieClip
     private static var badgeOrder:Array = [];     // assetIds in display order (right to left)
+    private static var DEPTH_MIN:Number = 999500;
+    private static var DEPTH_MAX:Number = 999900;
     private static var badgeDepth:Number = 999500;
 
     // Host clip — set to the firmware's own clip in child mode so we don't
@@ -39,6 +41,7 @@ class PrimedBadges {
 
         // Create container MovieClip
         var host:MovieClip = (hostClip != null) ? hostClip : _root;
+        if (badgeDepth > DEPTH_MAX) badgeDepth = DEPTH_MIN;
         var container:MovieClip = host.createEmptyMovieClip("primedBadge_" + assetId, badgeDepth++);
         container._alpha = ALPHA;
 
@@ -176,10 +179,11 @@ class PrimedBadges {
             target._height = target._height * scale;
             target._x = (PrimedBadges.IMAGE_SIZE - target._width) / 2;
             target._y = (PrimedBadges.IMAGE_SIZE - target._height) / 2;
+            mcLoader.removeListener(listener);
         };
 
         listener.onLoadError = function(target:MovieClip, errorCode:String, httpStatus:Number):Void {
-            // Silently ignore - badge will show placeholder
+            mcLoader.removeListener(listener);
         };
 
         mcLoader.addListener(listener);

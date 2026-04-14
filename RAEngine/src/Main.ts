@@ -50,6 +50,8 @@ function detectPattern(bytecode: unknown[]): unknown[] | null {
     const len = bytecode.length;
     const b = bytecode as string[];
 
+    if (len < 2 || b[0] !== 'VERSION_1') return null;
+
     // Pattern 0: Literal number — VERSION_1, VALUE, <n>
     if (len === 3 && b[1] === 'VALUE')
         return [0, Number(b[2])];
@@ -1012,7 +1014,7 @@ function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8A
     // byte length and use it as the ActionIf branch offset for the guard.
     const body: number[] = [];
 
-    // ----- Call 1: _root.createEmptyMovieClip("__raflash", 1048575) -----
+    // ----- Call 1: _root.createEmptyMovieClip("__raflash", 983741) -----
     {
         const payload: number[] = [];
         pushInt32(CHILD_DEPTH, payload);
@@ -1182,6 +1184,9 @@ function scheduleNativeAchRecompile(): void {
     }, 300) as unknown as number;
 }
 
+// Flash socket server listener (stored at module scope so it can be closed on shutdown)
+let flashListener: Deno.TcpListener | null = null;
+
 // Flash socket policy file server (port 843)
 let policyListener: Deno.Listener | null = null;
 
@@ -1236,10 +1241,19 @@ let richPresenceCheckInterval: number | null = null;
  * Called after a game closes before showing the file picker again.
  */
 function resetGameState(): void {
+    if (flashListener) {
+        try { flashListener.close(); } catch { /* already closed */ }
+        flashListener = null;
+    }
     if (policyListener) {
         try { policyListener.close(); } catch { /* already closed */ }
         policyListener = null;
     }
+    if (nativeAchRecompileTimer !== null) {
+        clearTimeout(nativeAchRecompileTimer);
+        nativeAchRecompileTimer = null;
+    }
+    nativeAchResult = null;
     firmwareWriter = null;
     firmwareConnected = false;
     resetFirmwareConnectPromise();
@@ -1832,7 +1846,11 @@ async function handleApiRequest(
                 if (!res.ok) return { success: false, error: "Failed to check for updates" };
                 const release = await res.json();
                 const latest = release.tag_name.replace(/^v/, "");
-                const isNewer = latest !== VERSION;
+                const isNewer = latest !== VERSION && (() => {
+                    const [aMaj = 0, aMin = 0, aPat = 0] = VERSION.split('.').map(Number);
+                    const [bMaj = 0, bMin = 0, bPat = 0] = latest.split('.').map(Number);
+                    return bMaj > aMaj || (bMaj === aMaj && (bMin > aMin || (bMin === aMin && bPat > aPat)));
+                })();
                 const asset = release.assets?.find((a: Record<string, unknown>) => (a.name as string).endsWith(".zip"));
                 return {
                     success: true,
@@ -1974,7 +1992,7 @@ async function handleApiRequest(
                     ([path]) => path.startsWith('gameConfig')
                 );
                 if (hasCodeNotesChanges || hasGameConfigChanges) {
-                    await AppData.saveData();
+                    await AppData.saveData().catch(e => emitLog("engine", "warn", `Auto-save failed: ${e}`));
                 }
 
                 // NOTE: Asset changes are NOT auto-saved. Use saveAssets command for explicit saves.
@@ -2306,6 +2324,7 @@ async function showFilePicker(invalidDropMessage?: string | null): Promise<{ gam
  */
 async function startFlashServer(): Promise<void> {
     const listener = Deno.listen({ port: FLASH_PORT });
+    flashListener = listener;
 
     // Flash socket policy file
     const POLICY_FILE = '<?xml version="1.0"?><cross-domain-policy><allow-access-from domain="*" to-ports="*" /></cross-domain-policy>\0';
@@ -2352,10 +2371,18 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
     const writer = conn.writable.getWriter();
 
     try {
-        const { done, value } = await reader.read();
-        if (done) return;
-
-        httpBuffer = decoder.decode(value);
+        // Read initial data — loop until we have enough to determine request type.
+        // HTTP requests need at least the first line; XMLSocket sends a policy request or JSON.
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) return;
+            httpBuffer += decoder.decode(value);
+            // We have enough to determine the request type once we see a newline (HTTP)
+            // or a null byte (XMLSocket policy) or a JSON start character
+            if (httpBuffer.includes('\n') || httpBuffer.includes('\0') || httpBuffer.startsWith('{') || httpBuffer.startsWith('<')) break;
+            // Safety: don't buffer more than 64KB
+            if (httpBuffer.length > 65536) break;
+        }
         // HTTP request for firmware SWF
         if (httpBuffer.startsWith(`GET ${avmConfig.firmwareUrl}`)) {
             let swfData: Uint8Array;
@@ -2459,7 +2486,10 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
                 // game (e.g. zeroing the frameRate fraction, changing RECT Nbits
                 // and shifting the tag stream, forcing Xmin/Ymin to zero).
                 const rsOriginUrl = AppData.data.gameConfig.originUrl;
-                const rsDomain = rsOriginUrl ? new URL(rsOriginUrl).host : RAFLASH_DOMAIN;
+                let rsDomain = RAFLASH_DOMAIN;
+                if (rsOriginUrl) {
+                    try { rsDomain = new URL(rsOriginUrl).host; } catch { /* malformed URL, use default */ }
+                }
                 const rsFirmwareUrl = `http://${rsDomain}/avm1-firmware.swf`;
                 swfData = injectFirmwareLoader(swfData, rsFirmwareUrl);
             }
@@ -2806,7 +2836,7 @@ function handleFirmwareData(data: string): void {
                     }
 
                     // Persist changes to disk
-                    AppData.saveData();
+                    AppData.saveData().catch(e => emitLog("engine", "warn", `Save failed: ${e}`));
                 }
             } else if (parsed.type === "syncState") {
                 // Firmware reconnected - its state is authoritative
@@ -2816,7 +2846,7 @@ function handleFirmwareData(data: string): void {
                     if (!JSONDiff.isPointlessDiff(diff)) {
                         JSONDiff.applyDataDiff(AppData.data, diff);
                         broadcastToDevtools("editData", diff);
-                        AppData.saveData();
+                        AppData.saveData().catch(e => emitLog("engine", "warn", `Save failed: ${e}`));
                     }
                     emitLog("firmware", "info", "State synced after reconnect");
                 }

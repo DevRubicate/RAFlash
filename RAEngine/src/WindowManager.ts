@@ -380,7 +380,7 @@ export class WindowManager {
             if (hwnd) {
                 // Set window title if provided
                 if (title) {
-                    const titleUtf16 = new Uint16Array([...title].map(c => c.charCodeAt(0)).concat(0));
+                    const titleUtf16 = new Uint16Array(Array.from({length: title.length + 1}, (_, i) => i < title.length ? title.charCodeAt(i) : 0));
                     user32.symbols.SetWindowTextW(hwnd, titleUtf16);
                 }
 
@@ -463,7 +463,7 @@ export class WindowManager {
         // Set window title if provided
         if (title) {
             // Convert to UTF-16 (null-terminated)
-            const titleUtf16 = new Uint16Array([...title].map(c => c.charCodeAt(0)).concat(0));
+            const titleUtf16 = new Uint16Array(Array.from({length: title.length + 1}, (_, i) => i < title.length ? title.charCodeAt(i) : 0));
             user32.symbols.SetWindowTextW(hwnd, titleUtf16);
         }
 
@@ -509,7 +509,7 @@ export class WindowManager {
         const hwnd = this.findWindowByPid(pid);
         if (!hwnd) return false;
 
-        const titleUtf16 = new Uint16Array([...title].map(c => c.charCodeAt(0)).concat(0));
+        const titleUtf16 = new Uint16Array(Array.from({length: title.length + 1}, (_, i) => i < title.length ? title.charCodeAt(i) : 0));
         user32.symbols.SetWindowTextW(hwnd, titleUtf16);
         return true;
     }
@@ -531,7 +531,7 @@ export class WindowManager {
         if (!isWindows || !user32) return false;
 
         // Convert path to UTF-16 null-terminated
-        const pathUtf16 = new Uint16Array([...icoPath].map(c => c.charCodeAt(0)).concat(0));
+        const pathUtf16 = new Uint16Array(Array.from({length: icoPath.length + 1}, (_, i) => i < icoPath.length ? icoPath.charCodeAt(i) : 0));
 
         // Load small icon (16x16 for titlebar)
         const hIconSmall = user32.symbols.LoadImageW(
@@ -598,7 +598,7 @@ export class WindowManager {
             if (hwnd) {
                 // Set window title if provided
                 if (title) {
-                    const titleUtf16 = new Uint16Array([...title].map(c => c.charCodeAt(0)).concat(0));
+                    const titleUtf16 = new Uint16Array(Array.from({length: title.length + 1}, (_, i) => i < title.length ? title.charCodeAt(i) : 0));
                     user32.symbols.SetWindowTextW(hwnd, titleUtf16);
                 }
 

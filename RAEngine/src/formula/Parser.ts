@@ -60,32 +60,32 @@ const OperatorDetails: Partial<
     [NODE_TYPE.EQUAL]: {
         type: 'BINARY',
         associativity: 'LEFT',
-        precedence: 1
+        precedence: 0.5
     },
     [NODE_TYPE.NOT_EQUAL]: {
         type: 'BINARY',
         associativity: 'LEFT',
-        precedence: 1,
+        precedence: 0.5,
     },
     [NODE_TYPE.GREATER_THAN]: {
         type: 'BINARY',
         associativity: 'LEFT',
-        precedence: 1,
+        precedence: 0.5,
     },
     [NODE_TYPE.GREATER_THAN_OR_EQUAL]: {
         type: 'BINARY',
         associativity: 'LEFT',
-        precedence: 1,
+        precedence: 0.5,
     },
     [NODE_TYPE.LESS_THAN]: {
         type: 'BINARY',
         associativity: 'LEFT',
-        precedence: 1,
+        precedence: 0.5,
     },
     [NODE_TYPE.LESS_THAN_OR_EQUAL]: {
         type: 'BINARY',
         associativity: 'LEFT',
-        precedence: 1,
+        precedence: 0.5,
     },
     [NODE_TYPE.AND]: {
         type: 'BINARY',

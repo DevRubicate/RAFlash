@@ -330,7 +330,7 @@
 </style>
 
 <script setup>
-    import { ref, computed } from 'vue';
+    import { ref, computed, watch } from 'vue';
     import { App }          from '../js/app.ts';
     import { Network }      from '../js/network.ts';
 
@@ -411,11 +411,17 @@
 
     const selectedPoints = ref(null);
     const selectedProgressionType = ref(null);
-    const selectedGroup = ref(null);
+    const _selectedGroupId = ref(null);
     const selectedRequirement = ref(null);
     const selectedAssetId = ref(null);
     const fileInput = ref(null);
     const saving = ref(false);
+
+    // Look up group from App.data each time instead of holding a stale object reference
+    const selectedGroup = computed(() => {
+        if (_selectedGroupId.value === null) return null;
+        return selectedAsset.value.groups.find(g => g.id === _selectedGroupId.value) ?? null;
+    });
 
     // Computed that always looks up the asset from App.data.assets
     // This ensures reactivity when external changes occur
@@ -498,10 +504,10 @@
 
     const selectedGroupId = computed({
         get() {
-            return selectedGroup.value?.id ?? null;
+            return _selectedGroupId.value;
         },
         set(value) {
-            selectedGroup.value = selectedAsset.value.groups.find(group => group.id === value) ?? null;
+            _selectedGroupId.value = value;
         }
     });
 
@@ -521,7 +527,7 @@
             selectedAsset.value.groups.push({
                 id: App.getFakeId(), type: 'ALT', requirements: []
             });
-            if (selectedAsset.value.groups.length === 1) {
+            if (selectedAsset.value.groups.length === 2) {
                 selectedAsset.value.groups.push({
                     id: App.getFakeId(), type: 'ALT', requirements: []
                 });
@@ -684,6 +690,14 @@
         }
     };
 
+    // Sync local refs when the underlying asset data changes (e.g. external edits)
+    watch(() => selectedAsset.value.points, (newVal) => {
+        selectedPoints.value = newVal;
+    });
+    watch(() => selectedAsset.value.progressionType, (newVal) => {
+        selectedProgressionType.value = newVal;
+    });
+
     App.initialize().then(() => {
         const asset = App.data.assets.find((a) => a.id === App.windowParams.selectedAssetId);
         if (!asset) {
@@ -691,7 +705,7 @@
             return;
         }
         selectedAssetId.value = asset.id;
-        selectedGroup.value = asset.groups.find((g) => g.type === 'CORE');
+        _selectedGroupId.value = asset.groups.find((g) => g.type === 'CORE')?.id ?? null;
         selectedPoints.value = asset.points;
         selectedProgressionType.value = asset.progressionType;
         App.ready = true;

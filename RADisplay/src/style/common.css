@@ -163,7 +163,7 @@ html, body {
 }
 
 .form-group-small  { flex: 0 1 130px; }
-.form-group-x-small { flex: 0 1 130px; }
+.form-group-x-small { flex: 0 1 90px; }
 
 .form-group input[type="text"],
 .form-group select,

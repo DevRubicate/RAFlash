@@ -115,6 +115,9 @@ export function patchFlashPlayer(inputPath: string, outputPath: string, proxyNam
     // Place data at the tail end of .reloc virtual content (overwriting relocation
     // entries, which are only used during initial image mapping before imports resolve).
     // This matches how CFF Explorer places rebuilt import data.
+    if (relocVSize < totalNeeded) {
+        throw new Error(`Not enough space in .reloc for import data (need ${totalNeeded}, have ${relocVSize})`);
+    }
     const dataOffset = ((relocVSize - totalNeeded) & ~15); // align down to 16 bytes
     if (dataOffset < relocVSize / 2) {
         throw new Error(`Not enough space in .reloc for import data`);

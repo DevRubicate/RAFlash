@@ -53,8 +53,10 @@ class JSONDiff {
      * Applies an incoming diff to the target object.
      */
     static public function processIncomingDiff(target:Object, clientDiff:Object):Object {
+        var stateBefore:Object = JSON.parse(JSON.stringify(target));
         JSONDiff.applyDataDiff(target, clientDiff);
-        return { fullDiff: clientDiff, derivedDiff: { edited: [] } };
+        var fullDiff:Object = JSONDiff.getDataDiff(stateBefore, target);
+        return { fullDiff: fullDiff, derivedDiff: { edited: [] } };
     }
 
     /**

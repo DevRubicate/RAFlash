@@ -157,28 +157,18 @@ class TestJSONDiff {
         TestRunner.assert(foundBob, "merged diff should have name='Bob'");
         TestRunner.endTest();
 
-        TestRunner.test("mergeDiffs - throws on conflict: modifying deleted path");
+        TestRunner.test("mergeDiffs - returns null on conflict: modifying deleted path");
         var mergeA3:Object = { edited: [["user", JSONDiff.DELETE_SENTINEL]] };
         var mergeB3:Object = { edited: [["user/name", "Bob"]] };
-        var threw3:Boolean = false;
-        try {
-            JSONDiff.mergeDiffs(mergeA3, mergeB3);
-        } catch (e:Error) {
-            threw3 = true;
-        }
-        TestRunner.assert(threw3, "should throw on conflict");
+        var mergeResult3:Object = JSONDiff.mergeDiffs(mergeA3, mergeB3);
+        TestRunner.assert(mergeResult3 == null, "should return null on conflict");
         TestRunner.endTest();
 
-        TestRunner.test("mergeDiffs - throws on conflict: modifying primitive child");
+        TestRunner.test("mergeDiffs - returns null on conflict: modifying primitive child");
         var mergeA4:Object = { edited: [["config", 123]] };
         var mergeB4:Object = { edited: [["config/timeout", 5000]] };
-        var threw4:Boolean = false;
-        try {
-            JSONDiff.mergeDiffs(mergeA4, mergeB4);
-        } catch (e:Error) {
-            threw4 = true;
-        }
-        TestRunner.assert(threw4, "should throw on conflict");
+        var mergeResult4:Object = JSONDiff.mergeDiffs(mergeA4, mergeB4);
+        TestRunner.assert(mergeResult4 == null, "should return null on conflict");
         TestRunner.endTest();
 
         TestRunner.test("isPointlessDiff - null diff returns true");

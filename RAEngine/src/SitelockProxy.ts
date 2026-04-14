@@ -38,15 +38,66 @@ function httpResponse(status: number, statusText: string, headers: Record<string
     return result;
 }
 
-async function forwardRequest(targetUrl: URL, requestLine: string, rawHeaders: string): Promise<Uint8Array> {
+/** Read from a reader until we have at least a full HTTP header block (\r\n\r\n). */
+async function readFullRequest(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<{ raw: Uint8Array; text: string } | null> {
+    const chunks: Uint8Array[] = [];
+    let totalLen = 0;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done || !value) {
+            if (totalLen === 0) return null;
+            break;
+        }
+        chunks.push(value);
+        totalLen += value.length;
+
+        // Check if we have the full header
+        const combined = concatChunks(chunks, totalLen);
+        const text = new TextDecoder().decode(combined);
+        if (text.includes('\r\n\r\n')) {
+            return { raw: combined, text };
+        }
+
+        // Safety limit: 64KB for headers
+        if (totalLen > 65536) break;
+    }
+
+    const combined = concatChunks(chunks, totalLen);
+    return { raw: combined, text: new TextDecoder().decode(combined) };
+}
+
+function concatChunks(chunks: Uint8Array[], totalLen: number): Uint8Array {
+    if (chunks.length === 1) return chunks[0];
+    const result = new Uint8Array(totalLen);
+    let offset = 0;
+    for (const chunk of chunks) {
+        result.set(chunk, offset);
+        offset += chunk.length;
+    }
+    return result;
+}
+
+async function forwardRequest(targetUrl: URL, method: string, rawHeaders: string, body?: Uint8Array): Promise<Uint8Array> {
     const port = parseInt(targetUrl.port) || 80;
     const conn = await Deno.connect({ hostname: targetUrl.hostname, port });
     try {
         const writer = conn.writable.getWriter();
 
         // Rewrite request line to use relative path (as the real server expects)
-        const relativeRequest = `GET ${targetUrl.pathname}${targetUrl.search} HTTP/1.1\r\n${rawHeaders}\r\n`;
-        await writer.write(encoder.encode(relativeRequest));
+        // Force Connection: close so the upstream server closes when done
+        const headersWithClose = rawHeaders.replace(/Connection:\s*keep-alive/i, 'Connection: close');
+        let request = `${method} ${targetUrl.pathname}${targetUrl.search} HTTP/1.1\r\n${headersWithClose}\r\n`;
+        const requestBytes = encoder.encode(request);
+
+        if (body && body.length > 0) {
+            const full = new Uint8Array(requestBytes.length + body.length);
+            full.set(requestBytes);
+            full.set(body, requestBytes.length);
+            await writer.write(full);
+        } else {
+            await writer.write(requestBytes);
+        }
         writer.releaseLock();
 
         // Read full response
@@ -77,11 +128,11 @@ async function handleConnection(conn: Deno.TcpConn) {
 
     try {
         const reader = conn.readable.getReader();
-        const { done, value } = await reader.read();
+        const result = await readFullRequest(reader);
         reader.releaseLock();
-        if (done || !value) return;
+        if (!result) return;
 
-        const request = new TextDecoder().decode(value);
+        const { raw, text: request } = result;
         const lines = request.split('\r\n');
         const requestLine = lines[0];
 
@@ -95,10 +146,15 @@ async function handleConnection(conn: Deno.TcpConn) {
             return;
         }
 
+        const method = match[1];
         const targetUrl = new URL(match[2]);
         const rawHeaders = lines.slice(1).join('\r\n');
 
-        const method = match[1];
+        // Extract body if present (everything after \r\n\r\n)
+        const headerEnd = raw.indexOf(0x0D); // Find the split point in raw bytes
+        const headerEndStr = request.indexOf('\r\n\r\n');
+        const body = headerEndStr >= 0 ? raw.slice(new TextEncoder().encode(request.slice(0, headerEndStr + 4)).length) : undefined;
+
         const log = config.onRequest;
 
         // Game domain → forward to the flash server (same-origin with firmware for sandbox compat)
@@ -107,7 +163,7 @@ async function handleConnection(conn: Deno.TcpConn) {
                 const localUrl = new URL(targetUrl.href);
                 localUrl.hostname = '127.0.0.1';
                 localUrl.port = String(config.flashPort);
-                const response = await forwardRequest(localUrl, requestLine, rawHeaders);
+                const response = await forwardRequest(localUrl, method, rawHeaders, body);
                 const writer = conn.writable.getWriter();
                 await writer.write(response);
                 writer.releaseLock();
@@ -128,7 +184,7 @@ async function handleConnection(conn: Deno.TcpConn) {
                 const localUrl = new URL(targetUrl.href);
                 localUrl.hostname = '127.0.0.1';
                 localUrl.port = String(config.flashPort);
-                const response = await forwardRequest(localUrl, requestLine, rawHeaders);
+                const response = await forwardRequest(localUrl, method, rawHeaders, body);
                 const writer = conn.writable.getWriter();
                 await writer.write(response);
                 writer.releaseLock();
@@ -145,7 +201,7 @@ async function handleConnection(conn: Deno.TcpConn) {
 
         // Unknown host — forward to original destination
         try {
-            const response = await forwardRequest(targetUrl, requestLine, rawHeaders);
+            const response = await forwardRequest(targetUrl, method, rawHeaders, body);
             const writer = conn.writable.getWriter();
             await writer.write(response);
             writer.releaseLock();

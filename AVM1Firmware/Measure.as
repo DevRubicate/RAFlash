@@ -38,6 +38,8 @@ class Measure {
 
     // Active measures (for stacking) - right side only
     private static var activeMeasures:Array = [];
+    private static var DEPTH_MIN:Number = 998000;
+    private static var DEPTH_MAX:Number = 999000;
     private static var measureDepth:Number = 998000;
 
     // Track measures by asset ID for timer resets
@@ -125,6 +127,7 @@ class Measure {
     private static function createMeasure(title:String, description:String, progress:String, imageUrl:String, assetId:Number):MovieClip {
         // Create container MovieClip at a very high depth (above game content)
         var host:MovieClip = (hostClip != null) ? hostClip : _root;
+        if (measureDepth > DEPTH_MAX) measureDepth = DEPTH_MIN;
         var container:MovieClip = host.createEmptyMovieClip("measure_" + measureDepth, measureDepth++);
         container.assetId = assetId;
 
@@ -366,10 +369,11 @@ class Measure {
             target._height = target._height * scale;
             target._x = (Measure.IMAGE_SIZE - target._width) / 2;
             target._y = (Measure.IMAGE_SIZE - target._height) / 2;
+            mcLoader.removeListener(listener);
         };
 
         listener.onLoadError = function(target:MovieClip, errorCode:String, httpStatus:Number):Void {
-            // Silently ignore - measure will show without image
+            mcLoader.removeListener(listener);
         };
 
         mcLoader.addListener(listener);

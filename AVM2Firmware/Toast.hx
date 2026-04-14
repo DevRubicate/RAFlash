@@ -7,6 +7,7 @@ import flash.text.TextField;
 import flash.text.TextFormat;
 import flash.text.TextFieldAutoSize;
 import flash.events.Event;
+import flash.events.IOErrorEvent;
 import flash.net.URLRequest;
 import haxe.Timer;
 
@@ -63,6 +64,19 @@ class Toast extends Sprite {
     private var targetX:Float;
     private var hiddenX:Float;
     private var toastWidth:Float;
+
+    public static function clearAll():Void {
+        for (toast in activeToastsLeft) {
+            toast.removeEventListener(Event.ENTER_FRAME, toast.onEnterFrame);
+            if (toast.parent != null) toast.parent.removeChild(toast);
+        }
+        for (toast in activeToastsRight) {
+            toast.removeEventListener(Event.ENTER_FRAME, toast.onEnterFrame);
+            if (toast.parent != null) toast.parent.removeChild(toast);
+        }
+        activeToastsLeft = [];
+        activeToastsRight = [];
+    }
 
     /**
      * Show a toast notification
@@ -175,6 +189,9 @@ class Toast extends Sprite {
                 content.height = content.height * scale;
                 content.x = (IMAGE_SIZE - content.width) / 2;
                 content.y = (IMAGE_SIZE - content.height) / 2;
+            });
+            loader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, function(e:Event):Void {
+                // Silently ignore — toast will show without image
             });
             loader.load(new URLRequest(imageUrlCopy));
             imageHolder.addChild(loader);

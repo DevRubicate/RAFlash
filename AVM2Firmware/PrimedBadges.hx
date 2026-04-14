@@ -4,6 +4,7 @@ import flash.display.Sprite;
 import flash.display.Graphics;
 import flash.display.Loader;
 import flash.events.Event;
+import flash.events.IOErrorEvent;
 import flash.net.URLRequest;
 
 /**
@@ -34,6 +35,12 @@ class PrimedBadges extends Sprite {
     public static function show(assetId:Int, imageUrl:String):Void {
         if (activeBadges.exists(assetId)) return;
         new PrimedBadges(assetId, imageUrl);
+    }
+
+    public static function clearAll():Void {
+        for (assetId in activeBadges.keys()) {
+            hide(assetId);
+        }
     }
 
     public static function hide(assetId:Int):Void {
@@ -83,6 +90,9 @@ class PrimedBadges extends Sprite {
                 content.height = content.height * s;
                 content.x = (IMAGE_SIZE - content.width) / 2;
                 content.y = (IMAGE_SIZE - content.height) / 2;
+            });
+            loader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, function(e:Event):Void {
+                // Silently ignore — badge will show placeholder
             });
             loader.load(new URLRequest(imageUrlCopy));
             imageHolder.addChild(loader);

@@ -32,6 +32,7 @@ export class Network {
     static reconnectAttempts = 0;
     static maxReconnectAttempts = 10;
     static wasConnected = false;
+    static isReconnecting = false;
 
     static initialize(): Promise<void> {
         return new Promise((resolve) => {
@@ -103,6 +104,13 @@ export class Network {
             };
             Network.socket.onclose = () => {
                 Network.ready = false;
+
+                // Reject all pending message handlers so callers don't hang forever
+                for (const [id, handler] of Network.messageHandlers) {
+                    handler({ success: false, error: 'WebSocket closed' } as Record<string, unknown>);
+                }
+                Network.messageHandlers.clear();
+
                 if (!Network.wasConnected) return;
 
                 if (Network.reconnectAttempts >= Network.maxReconnectAttempts) {
@@ -112,6 +120,7 @@ export class Network {
 
                 const delay = Math.min(1000 * Math.pow(2, Network.reconnectAttempts), 10000);
                 Network.reconnectAttempts++;
+                Network.isReconnecting = true;
                 setTimeout(() => Network.connect(), delay);
             };
             Network.socket.onmessage = async (event: MessageEvent) => {
@@ -125,6 +134,16 @@ export class Network {
                         const [type, id, message] = arr;
                         if(type === 'SETUP') {
                             Network.ready = true;
+                            // Re-send setup command after reconnect to refresh App.data
+                            if (Network.isReconnecting) {
+                                Network.isReconnecting = false;
+                                Network.send({command: 'setup', params: {windowId: App.windowId}})
+                                .then((response) => {
+                                    if (response.success && Network.onMessageCallback) {
+                                        Network.onMessageCallback({command: 'setup', params: response.params as Record<string, unknown>});
+                                    }
+                                }).catch(console.error);
+                            }
                             Network.messageQueue.forEach(([message, callback]) => {
                                 Network.send(message).then(callback).catch(console.error);
                             });
@@ -169,7 +188,16 @@ export class Network {
         return new Promise((resolve) => {
             if(Network.ready) {
                 const id = Network.currentMessageId++;
-                Network.messageHandlers.set(id, resolve);
+                const timeout = setTimeout(() => {
+                    if (Network.messageHandlers.has(id)) {
+                        Network.messageHandlers.delete(id);
+                        resolve({ success: false, error: 'Message timed out waiting for response' });
+                    }
+                }, 30000);
+                Network.messageHandlers.set(id, (response) => {
+                    clearTimeout(timeout);
+                    resolve(response);
+                });
                 Network.socket!.send(JSON.stringify(['REQUEST', id, message])+'\n');
             } else {
                 const wrapper = (response: Record<string, unknown>) => {

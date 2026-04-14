@@ -37,7 +37,9 @@ export class UserProfile {
      * Load an existing profile from disk.
      */
     static async loadUser(name: string): Promise<void> {
-        const path = `${PROFILES_DIR}/${name}.json`;
+        const sanitized = name.replace(/[/\\:*?"<>|]/g, "").trim();
+        if (!sanitized) throw new Error("Invalid profile name");
+        const path = `${PROFILES_DIR}/${sanitized}.json`;
         const content = await Deno.readTextFile(path);
         this.data = JSON.parse(content) as UserProfileData;
         this.currentName = name;
