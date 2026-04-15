@@ -2522,10 +2522,17 @@ class Main {
                             // Synthetic .triggered on hooked functions:
                             // resolves to 1 if the wrapper fired during
                             // the current snapshot window, 0 otherwise.
+                            // Returns "ERROR" if the function couldn't be hooked (read-only slot).
                             if (propName == "triggered"
                                     && typeof(targets[j]) == "function"
                                     && targets[j].__raHookId != undefined) {
                                 result.push(_global.__raHookSeen[targets[j].__raHookId] == true ? 1 : 0);
+                                continue;
+                            }
+                            if (propName == "triggered"
+                                    && typeof(targets[j]) == "function"
+                                    && targets[j].__raHookSkip == true) {
+                                result.push("ERROR");
                                 continue;
                             }
                             var value = targets[j][propName];
@@ -2554,8 +2561,12 @@ class Main {
                         // Synthetic .triggered for hooked functions, so
                         // generic-path filters like `key == "triggered"`
                         // resolve to the snapshot value.
+                        // Returns "ERROR" for functions that couldn't be hooked.
                         if (typeof(target) == "function" && target.__raHookId != undefined) {
                             childThis.push(_global.__raHookSeen[target.__raHookId] == true ? 1 : 0);
+                            childKeys.push("triggered");
+                        } else if (typeof(target) == "function" && target.__raHookSkip == true) {
+                            childThis.push("ERROR");
                             childKeys.push("triggered");
                         }
 

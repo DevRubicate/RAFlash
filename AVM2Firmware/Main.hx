@@ -550,6 +550,7 @@ class Main extends MovieClip {
     // === Frame Loop ===
 
     private function onEnterFrame(e:Event):Void {
+        Evaluate.snapshotHooks();
         Achievement.checkAchievements(gameRoot, sendMessage, sendEditData);
         processWatchers();
     }

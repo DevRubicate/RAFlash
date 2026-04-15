@@ -7,6 +7,7 @@ import flash.display.Loader;
 import flash.display.MovieClip;
 import flash.display.Sprite;
 import flash.text.TextField;
+import flash.utils.Dictionary;
 #end
 
 /**
@@ -25,6 +26,17 @@ class Evaluate {
     // These are recognized by enumerateProperties/readProperty for special handling.
     public static var ROOT_SENTINEL:Dynamic = {__raflash_type: "root"};
     public static var CLASS_SENTINEL:Dynamic = {__raflash_type: "class"};
+
+    // Function-call hook state. Maps wrapper Function → Int hook ID.
+    // Uses Dictionary (identity keys) because AS3 Function objects are sealed
+    // and cannot have custom properties stamped on them.
+    #if flash
+    private static var hookIds:Dictionary = null;
+    private static var hookSkipped:Dictionary = null;
+    #end
+    private static var hookSeen:Map<Int, Bool> = new Map();
+    private static var hookPending:Map<Int, Bool> = new Map();
+    private static var hookNextId:Int = 0;
 
     // Cached game class registry: className → classRef. Built lazily on first use.
     private static var gameClassRegistry:Map<String, Dynamic> = null;
@@ -230,6 +242,92 @@ class Evaluate {
             } catch (e:Dynamic) { return false; }
         }
         return false;
+    }
+
+    // === Function Hook API ===
+
+    /**
+     * Move pending hook calls → seen. Called once per frame from Main.onEnterFrame
+     * before achievement evaluation, so all formulas within one frame see a
+     * consistent snapshot of which hooked functions fired.
+     */
+    public static function snapshotHooks():Void {
+        hookSeen = hookPending;
+        hookPending = new Map();
+    }
+
+    /**
+     * Wrap a function value with a hook that records calls.
+     * Returns the wrapper for function values; returns the original value
+     * unchanged for non-functions or if the replacement didn't stick (sealed slot).
+     */
+    private static function wrapHook(parent:Dynamic, key:String, value:Dynamic):Dynamic {
+        if (untyped __typeof__(value) != "function") return value;
+
+        #if flash
+        if (hookIds == null) {
+            hookIds = new Dictionary(false);
+            hookSkipped = new Dictionary(false);
+        }
+        // Already wrapped or previously failed
+        if (hookIds[value] != null) return value;
+        if (hookSkipped[value] != null) return value;
+
+        var id:Int = ++hookNextId;
+        var orig:Dynamic = value;
+        // Create wrapper that records the call and delegates to original.
+        // Reflect.makeVarArgs produces a proper AS3 ...rest function on Flash target.
+        var wrapper:Dynamic = Reflect.makeVarArgs(function(args:Array<Dynamic>):Dynamic {
+            hookPending.set(id, true);
+            return Reflect.callMethod(parent, orig, args);
+        });
+        hookIds[wrapper] = id;
+
+        // Try to replace the function on the parent object
+        try {
+            untyped parent[key] = wrapper;
+        } catch (e:Dynamic) {}
+        // Verify the assignment took
+        try {
+            if (untyped parent[key] != wrapper) {
+                hookSkipped[value] = true;
+                return value;
+            }
+        } catch (e:Dynamic) {
+            hookSkipped[value] = true;
+            return value;
+        }
+        return wrapper;
+        #else
+        return value;
+        #end
+    }
+
+    /**
+     * Check whether a value is a hooked function wrapper and return its hook ID,
+     * or -1 if it is not hooked.
+     */
+    private static function getHookId(value:Dynamic):Int {
+        #if flash
+        if (hookIds == null) return -1;
+        var id:Dynamic = hookIds[value];
+        return id != null ? cast(id, Int) : -1;
+        #else
+        return -1;
+        #end
+    }
+
+    /**
+     * Check whether a value is a function that we tried and failed to hook
+     * (e.g., sealed slot on a non-dynamic class).
+     */
+    private static function isHookSkipped(value:Dynamic):Bool {
+        #if flash
+        if (hookSkipped == null) return false;
+        return hookSkipped[value] != null;
+        #else
+        return false;
+        #end
     }
 
     // === Public API ===
@@ -489,9 +587,25 @@ class Evaluate {
                     var j:Int = 0;
                     while (j < targets.length) {
                         var target:Dynamic = targets[j];
+                        // Synthetic .triggered on hooked functions:
+                        // resolves to 1 if the wrapper fired this frame, 0 otherwise.
+                        // Returns "ERROR" if the function couldn't be hooked (sealed slot).
+                        if (propName == "triggered") {
+                            var hid:Int = getHookId(target);
+                            if (hid >= 0) {
+                                result.push(hookSeen.exists(hid) ? 1 : 0);
+                                j++;
+                                continue;
+                            }
+                            if (isHookSkipped(target)) {
+                                result.push("ERROR");
+                                j++;
+                                continue;
+                            }
+                        }
                         var value:Dynamic = readProperty(target, propName);
                         if (value != null || hasProperty(target, propName)) {
-                            result.push(value);
+                            result.push(wrapHook(target, propName, value));
                         }
                         j++;
                     }
@@ -505,6 +619,18 @@ class Evaluate {
                         var props = enumerateProperties(target);
                         var childThis:Array<Dynamic> = props.values;
                         var childKeys:Array<Dynamic> = props.keys;
+
+                        // Synthetic .triggered for hooked functions, so
+                        // generic-path filters like `key == "triggered"` work.
+                        // Returns "ERROR" for functions that couldn't be hooked.
+                        var hid:Int = getHookId(target);
+                        if (hid >= 0) {
+                            childKeys.push("triggered");
+                            childThis.push(hookSeen.exists(hid) ? 1 : 0);
+                        } else if (isHookSkipped(target)) {
+                            childKeys.push("triggered");
+                            childThis.push("ERROR");
+                        }
 
                         var filterResult = evaluate(formula, i + 1, i + amount + 1, childThis, childKeys, gameRoot);
                         if (filterResult != null) {
