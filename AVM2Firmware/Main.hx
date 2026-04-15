@@ -510,6 +510,30 @@ class Main extends MovieClip {
 
         sendMessage("gameLoaded", {bytes: bytes});
 
+        // Suppress uncaught error events from the game (IOError, SecurityError, etc.)
+        // Try multiple targets since the effective root varies between child/parent mode.
+        var _self = this;
+        for (target in ([
+            untyped gameRoot.loaderInfo,
+            untyped gameRoot.stage.loaderInfo,
+            untyped flash.Lib.current.loaderInfo
+        ] : Array<Dynamic>)) {
+            try {
+                untyped target.uncaughtErrorEvents.addEventListener(
+                    "uncaughtError", function(evt:Dynamic) {
+                        untyped evt.preventDefault();
+                        try {
+                            var err:Dynamic = untyped evt.error;
+                            var msg:String = Std.isOfType(err, String) ? err : Std.string(untyped err.message);
+                            _self.sendMessage("log", {message: "Suppressed game error: " + msg});
+                        } catch (e3:Dynamic) {
+                            _self.sendMessage("log", {message: "Suppressed unknown game error"});
+                        }
+                    }
+                );
+            } catch (e2:Dynamic) {}
+        }
+
         // Setup F12 key listener and frame loop after game loads
         setupKeyListener();
         addEventListener(Event.ENTER_FRAME, onEnterFrame);

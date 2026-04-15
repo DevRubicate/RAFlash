@@ -199,18 +199,12 @@ async function handleConnection(conn: Deno.TcpConn) {
             return;
         }
 
-        // Unknown host — forward to original destination
-        try {
-            const response = await forwardRequest(targetUrl, method, rawHeaders, body);
+        // Unknown host — block and return 404 (never forward to real internet)
+        {
             const writer = conn.writable.getWriter();
-            await writer.write(response);
+            await writer.write(httpResponse(404, 'Not Found', { 'Connection': 'close', 'Content-Length': '0' }));
             writer.releaseLock();
-            log?.(method, match[2], 200);
-        } catch {
-            const writer = conn.writable.getWriter();
-            await writer.write(httpResponse(502, 'Bad Gateway', { 'Connection': 'close' }));
-            writer.releaseLock();
-            log?.(method, match[2], 502);
+            log?.(method, match[2], 404);
         }
         conn.close();
     } catch {
