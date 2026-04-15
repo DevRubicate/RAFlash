@@ -19,6 +19,17 @@ class Achievement {
 
     private static inline var RICH_PRESENCE_INTERVAL:Float = 1000;
 
+    /**
+     * Safely convert a Dynamic value to Float.
+     * Haxe's (x : Float) type annotation generates AS3's `x as Number` which
+     * returns 0 for strings instead of parsing them. This uses Std.parseFloat
+     * to properly coerce string values like "67" to 67.0.
+     */
+    private static function toFloat(v:Dynamic):Float {
+        if (Std.isOfType(v, Float) || Std.isOfType(v, Int)) return v;
+        return Std.parseFloat(Std.string(v));
+    }
+
     // === Diff Tracking ===
 
     private static function diffSet(target:Dynamic, key:String, value:Dynamic, path:String):Void {
@@ -80,13 +91,13 @@ class Achievement {
         // Evaluate with caching
         var currentA:Array<Dynamic> = frameCache.exists(cacheKeyA) ? frameCache.get(cacheKeyA) : null;
         if (currentA == null) {
-            currentA = Evaluate.evaluate(compiledA, 1, compiledA.length, [gameRoot], cast ["stage"], gameRoot);
+            currentA = Evaluate.evaluate(compiledA, 1, compiledA.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
             if (currentA != null) frameCache.set(cacheKeyA, currentA);
         }
 
         var currentB:Array<Dynamic> = frameCache.exists(cacheKeyB) ? frameCache.get(cacheKeyB) : null;
         if (currentB == null) {
-            currentB = Evaluate.evaluate(compiledB, 1, compiledB.length, [gameRoot], cast ["stage"], gameRoot);
+            currentB = Evaluate.evaluate(compiledB, 1, compiledB.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
             if (currentB != null) frameCache.set(cacheKeyB, currentB);
         }
 
@@ -124,16 +135,32 @@ class Achievement {
         }
 
         // Add accumulator from AddSource/SubSource chain to left side
+        // Compare using numeric coercion. This matches AS2 behavior where
+        // "67" >= 30 auto-coerces the string to a number. toFloat handles
+        // string→number conversion that Haxe's (x : Float) annotation doesn't.
+        // For string equality (e.g. heroName == "Bob"), toFloat returns NaN for
+        // both sides of non-numeric strings, so we fall back to raw comparison.
         var passed:Bool = false;
         var cmp:String = Std.string(untyped requirement.cmp);
-        var a:Float = (resultA[0] : Float) + accumulator;
-        var b:Float = (resultB[0] : Float);
-        if (cmp == "==") passed = a == b;
-        else if (cmp == "!=") passed = a != b;
-        else if (cmp == ">") passed = a > b;
-        else if (cmp == ">=") passed = a >= b;
-        else if (cmp == "<") passed = a < b;
-        else if (cmp == "<=") passed = a <= b;
+        var a:Float = toFloat(resultA[0]) + accumulator;
+        var b:Float = toFloat(resultB[0]);
+        var numericValid:Bool = !Math.isNaN(a) && !Math.isNaN(b);
+
+        if (cmp == "==" || cmp == "!=") {
+            // Try numeric first, fall back to raw Dynamic comparison for strings
+            if (numericValid) {
+                passed = cmp == "==" ? a == b : a != b;
+            } else {
+                var rawA:Dynamic = accumulator != 0 ? a : resultA[0];
+                var rawB:Dynamic = resultB[0];
+                passed = cmp == "==" ? rawA == rawB : rawA != rawB;
+            }
+        } else if (numericValid) {
+            if (cmp == ">") passed = a > b;
+            else if (cmp == ">=") passed = a >= b;
+            else if (cmp == "<") passed = a < b;
+            else if (cmp == "<=") passed = a <= b;
+        }
 
         return {passed: passed, valid: true, valueA: a};
     }
@@ -147,7 +174,7 @@ class Achievement {
         var currentA:Array<Dynamic> = frameCache.exists(cacheKeyA) ? frameCache.get(cacheKeyA) : null;
         if (currentA == null) {
             var cA:Array<Dynamic> = untyped requirement.compiledA;
-            currentA = Evaluate.evaluate(cA, 1, cA.length, [gameRoot], cast ["stage"], gameRoot);
+            currentA = Evaluate.evaluate(cA, 1, cA.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
             if (currentA != null) frameCache.set(cacheKeyA, currentA);
         }
 
@@ -161,12 +188,12 @@ class Achievement {
                 storeDeltaValue(reqId, "A", currentA[0]);
                 return Math.NaN;
             }
-            var prev:Float = (deltaData.prevA : Float);
+            var prev:Float = toFloat(deltaData.prevA);
             storeDeltaValue(reqId, "A", currentA[0]);
             return prev;
         }
 
-        return (currentA[0] : Float);
+        return toFloat(currentA[0]);
     }
 
     // === Chain Evaluation ===
@@ -223,6 +250,10 @@ class Achievement {
         if (untyped AppData.data == null || untyped AppData.data.assets == null) return;
         if (!processingActive) return;
 
+        // Use ROOT_SENTINEL as evaluation context so achievements see the same
+        // properties as the Memory Explorer (display list + static class fields).
+        Evaluate.ROOT_SENTINEL.__raflash_gameRoot = gameRoot;
+
         var frameCache:Map<String, Array<Dynamic>> = new Map();
         var assets:Array<Dynamic> = untyped AppData.data.assets;
         var assetCount:Int = assets.length;
@@ -240,7 +271,7 @@ class Achievement {
                     lastRichPresenceTime = rpNow;
                     var compiledFormula:Array<Dynamic> = untyped achievement.compiledFormula;
                     if (compiledFormula != null && compiledFormula.length > 1) {
-                        var rpResult = Evaluate.evaluate(compiledFormula, 1, compiledFormula.length, [gameRoot], cast ["stage"], gameRoot);
+                        var rpResult = Evaluate.evaluate(compiledFormula, 1, compiledFormula.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
                         var rpString:String = (rpResult != null && rpResult.length > 0) ? Std.string(rpResult[0]) : "";
                         untyped achievement._richPresenceResult = rpString;
                         sendMessage("richPresenceUpdate", {result: rpString});
@@ -410,7 +441,7 @@ class Achievement {
                         var curA:Array<Dynamic> = frameCache.exists(ckA) ? frameCache.get(ckA) : null;
                         if (curA == null) {
                             var cA:Array<Dynamic> = untyped requirement.compiledA;
-                            curA = Evaluate.evaluate(cA, 1, cA.length, [gameRoot], cast ["stage"], gameRoot);
+                            curA = Evaluate.evaluate(cA, 1, cA.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
                             if (curA != null) frameCache.set(ckA, curA);
                         }
                         if (curA != null && curA.length == 1)
@@ -421,7 +452,7 @@ class Achievement {
                         var curB:Array<Dynamic> = frameCache.exists(ckB) ? frameCache.get(ckB) : null;
                         if (curB == null) {
                             var cB:Array<Dynamic> = untyped requirement.compiledB;
-                            curB = Evaluate.evaluate(cB, 1, cB.length, [gameRoot], cast ["stage"], gameRoot);
+                            curB = Evaluate.evaluate(cB, 1, cB.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
                             if (curB != null) frameCache.set(ckB, curB);
                         }
                         if (curB != null && curB.length == 1)
@@ -878,8 +909,8 @@ class Achievement {
                 // If group is paused, use frozen measured value
                 if (mGroupPaused) {
                     if (untyped __typeof__(untyped mGroup._pausedMeasuredCurrent) != "undefined") {
-                        var pmCurrent:Float = (untyped mGroup._pausedMeasuredCurrent : Float);
-                        var pmTarget:Float = (untyped mGroup._pausedMeasuredTarget : Float);
+                        var pmCurrent:Float = toFloat(untyped mGroup._pausedMeasuredCurrent);
+                        var pmTarget:Float = toFloat(untyped mGroup._pausedMeasuredTarget);
                         if (!hasAnyMeasured) {
                             measuredTarget = pmTarget;
                             measuredCurrent = pmCurrent;
@@ -937,10 +968,10 @@ class Achievement {
                             var mResultBZ:Array<Dynamic> = frameCache.exists(mCacheKeyBZ) ? frameCache.get(mCacheKeyBZ) : null;
                             if (mResultBZ == null) {
                                 var cBZ:Array<Dynamic> = untyped mReq.compiledB;
-                                mResultBZ = Evaluate.evaluate(cBZ, 1, cBZ.length, [gameRoot], cast ["stage"], gameRoot);
+                                mResultBZ = Evaluate.evaluate(cBZ, 1, cBZ.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
                                 if (mResultBZ != null) frameCache.set(mCacheKeyBZ, mResultBZ);
                             }
-                            mTargetVal = (mResultBZ != null && mResultBZ.length == 1) ? (mResultBZ[0] : Float) : 0;
+                            mTargetVal = (mResultBZ != null && mResultBZ.length == 1) ? toFloat(mResultBZ[0]) : 0;
                         } else {
                             mTargetVal = 0;
                         }
@@ -992,19 +1023,19 @@ class Achievement {
                             var mResultA:Array<Dynamic> = frameCache.exists(mCacheKeyA) ? frameCache.get(mCacheKeyA) : null;
                             if (mResultA == null) {
                                 var cA:Array<Dynamic> = untyped mReq.compiledA;
-                                mResultA = Evaluate.evaluate(cA, 1, cA.length, [gameRoot], cast ["stage"], gameRoot);
+                                mResultA = Evaluate.evaluate(cA, 1, cA.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
                                 if (mResultA != null) frameCache.set(mCacheKeyA, mResultA);
                             }
                             var mResultB:Array<Dynamic> = frameCache.exists(mCacheKeyB) ? frameCache.get(mCacheKeyB) : null;
                             if (mResultB == null) {
                                 var cB:Array<Dynamic> = untyped mReq.compiledB;
-                                mResultB = Evaluate.evaluate(cB, 1, cB.length, [gameRoot], cast ["stage"], gameRoot);
+                                mResultB = Evaluate.evaluate(cB, 1, cB.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
                                 if (mResultB != null) frameCache.set(mCacheKeyB, mResultB);
                             }
 
                             if (mResultA == null || mResultB == null || mResultA.length != 1 || mResultB.length != 1) { mr++; continue; }
-                            mCurrent = (mResultA[0] : Float);
-                            mTargetVal = (mResultB[0] : Float);
+                            mCurrent = toFloat(mResultA[0]);
+                            mTargetVal = toFloat(mResultB[0]);
                         }
                     }
 
@@ -1052,7 +1083,7 @@ class Achievement {
                 } else {
                     untyped achievement._measuredError = false;
                     var valueChanged:Bool = (prevMeasuredValue != null) &&
-                        (measuredCurrent != (prevMeasuredValue : Float) || measuredTarget != (untyped achievement._measuredTarget : Float));
+                        (measuredCurrent != toFloat(prevMeasuredValue) || measuredTarget != toFloat(untyped achievement._measuredTarget));
                     if (valueChanged && !assetTriggered) {
                         var measuredText:String = Std.string(Math.floor(measuredCurrent)) + "/" + Std.string(Math.floor(measuredTarget));
                         Measure.showOrReset(Std.string(untyped achievement.name), Std.string(untyped achievement.description), measuredText, measuredImageUrl, untyped achievement.id);
