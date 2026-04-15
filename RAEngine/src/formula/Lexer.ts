@@ -218,6 +218,26 @@ class Lexer {
             this.advancePosition();
         }
 
+        // Handle decimal point for base-10 numbers (e.g., 3.14)
+        // Only if current char is '.' AND next char is a digit
+        if (
+            base === 10 &&
+            this.position < this.input.length &&
+            this.input[this.position] === '.' &&
+            this.position + 1 < this.input.length &&
+            this.isDigit(this.input[this.position + 1])
+        ) {
+            value += '.';
+            this.advancePosition();
+            while (
+                this.position < this.input.length &&
+                this.isDigit(this.input[this.position])
+            ) {
+                value += this.input[this.position];
+                this.advancePosition();
+            }
+        }
+
         // Check if digits are followed by letters - if so, this is an identifier starting with digits
         if (this.position < this.input.length && this.isLetter(this.input[this.position])) {
             // Continue reading as identifier

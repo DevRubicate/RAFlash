@@ -259,7 +259,7 @@ class Evaluate {
             i++;
 
             if (token == "VALUE") {
-                stack.push([Std.parseInt(cast(formula[i], String))]);
+                stack.push([Std.parseFloat(cast(formula[i], String))]);
                 i++;
             } else if (token == "STRING") {
                 stack.push([formula[i]]);

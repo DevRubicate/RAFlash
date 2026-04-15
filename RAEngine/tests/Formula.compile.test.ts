@@ -76,6 +76,44 @@ Deno.test("compile - null literal", () => {
     assertEquals(bytecode, ["VERSION_1", "NULL"]);
 });
 
+Deno.test("compile - float literal", () => {
+    const bytecode = Formula.compile("3.14");
+    assertEquals(bytecode, ["VERSION_1", "VALUE", "3.14"]);
+});
+
+Deno.test("compile - float with leading zero", () => {
+    const bytecode = Formula.compile("0.5");
+    assertEquals(bytecode, ["VERSION_1", "VALUE", "0.5"]);
+});
+
+Deno.test("compile - float in arithmetic", () => {
+    const bytecode = Formula.compile("1 + 0.5");
+    assertEquals(bytecode, ["VERSION_1", "VALUE", "1", "VALUE", "0.5", "ADD"]);
+});
+
+Deno.test("compile - float in comparison", () => {
+    const bytecode = Formula.compile("stage.health > 2.5");
+    assertEquals(bytecode[0], "VERSION_1");
+    assertEquals(bytecode.includes("GREATER"), true);
+    assertEquals(bytecode.includes("VALUE"), true);
+    assertEquals(bytecode[bytecode.length - 3], "VALUE");
+    assertEquals(bytecode[bytecode.length - 2], "2.5");
+});
+
+Deno.test("compile - hex not affected by float support", () => {
+    const bytecode = Formula.compile("0xFF");
+    assertEquals(bytecode, ["VERSION_1", "VALUE", "0xFF"]);
+});
+
+Deno.test("compile - property access not affected by float support", () => {
+    const bytecode = Formula.compile("stage.player");
+    assertEquals(bytecode[0], "VERSION_1");
+    assertEquals(bytecode.includes("OBJECT_ACCESS"), true);
+    // Should NOT contain a float-like VALUE
+    const values = bytecode.filter((s: string, i: number) => bytecode[i - 1] === "VALUE");
+    assertEquals(values.every((v: string) => !v.includes(".")), true);
+});
+
 // =============================================================================
 // Realistic Game Formulas
 // =============================================================================

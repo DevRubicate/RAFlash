@@ -1683,7 +1683,7 @@ class Main {
             switch (formula[i]) {
                 case "VALUE":
                     i++;
-                    formula[i] = parseInt(formula[i], 10);
+                    formula[i] = parseFloat(formula[i]);
                     break;
                 case "OBJECT_ACCESS":
                 case "ARRAY_ACCESS":
