@@ -70,8 +70,9 @@ export interface NetworkRule {
     label: string;
     url: string;
     status: number;
-    action: string;     // "text"
+    action: string;     // "text" | "file"
     body: string;       // Text response body (for action "text")
+    fileBytes?: Uint8Array; // In-memory file bytes (for action "file", not persisted in JSON)
     [key: string]: unknown;
 }
 

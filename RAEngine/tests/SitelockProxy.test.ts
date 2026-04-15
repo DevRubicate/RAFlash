@@ -6,7 +6,7 @@
  */
 
 import { assertEquals } from "https://deno.land/std/assert/mod.ts";
-import { startSitelockProxy, stopSitelockProxy } from "../src/SitelockProxy.ts";
+import { startSitelockProxy, stopSitelockProxy, networkRuleZipPath } from "../src/SitelockProxy.ts";
 
 const TEST_PORT = 19876;
 
@@ -238,4 +238,90 @@ Deno.test("proxy - rules update live without restart", async () => {
     } finally {
         stopSitelockProxy();
     }
+});
+
+// =============================================================================
+// File response rules
+// =============================================================================
+
+Deno.test("proxy - file rule serves bytes with correct content-type", async () => {
+    const swfBytes = new Uint8Array([0x46, 0x57, 0x53, 0x09]); // "FWS\t" — fake SWF header
+    const rules = [
+        { active: true, url: "http://cdn.example.com/game.swf", status: 200, action: "file", body: "", fileBytes: swfBytes },
+    ];
+    startSitelockProxy({
+        port: TEST_PORT,
+        flashPort: 0,
+        gameDomain: null,
+        getNetworkRules: () => rules,
+    });
+
+    try {
+        const raw = await proxyRequest("GET", "http://cdn.example.com/game.swf");
+        const res = parseResponse(raw);
+        assertEquals(res.status, 200);
+        assertEquals(res.headers["content-type"], "application/x-shockwave-flash");
+        assertEquals(res.headers["content-length"], "4");
+    } finally {
+        stopSitelockProxy();
+    }
+});
+
+Deno.test("proxy - file rule without fileBytes falls back to empty text", async () => {
+    const rules = [
+        { active: true, url: "http://cdn.example.com/missing.swf", status: 200, action: "file", body: "" },
+    ];
+    startSitelockProxy({
+        port: TEST_PORT,
+        flashPort: 0,
+        gameDomain: null,
+        getNetworkRules: () => rules,
+    });
+
+    try {
+        const raw = await proxyRequest("GET", "http://cdn.example.com/missing.swf");
+        const res = parseResponse(raw);
+        assertEquals(res.status, 200);
+        assertEquals(res.headers["content-type"], "text/plain");
+        assertEquals(res.body, "");
+    } finally {
+        stopSitelockProxy();
+    }
+});
+
+Deno.test("proxy - file rule content-type detected from extension", async () => {
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47]); // PNG header
+    const rules = [
+        { active: true, url: "http://cdn.example.com/image.png", status: 200, action: "file", body: "", fileBytes: pngBytes },
+    ];
+    startSitelockProxy({
+        port: TEST_PORT,
+        flashPort: 0,
+        gameDomain: null,
+        getNetworkRules: () => rules,
+    });
+
+    try {
+        const raw = await proxyRequest("GET", "http://cdn.example.com/image.png");
+        const res = parseResponse(raw);
+        assertEquals(res.headers["content-type"], "image/png");
+    } finally {
+        stopSitelockProxy();
+    }
+});
+
+// =============================================================================
+// networkRuleZipPath
+// =============================================================================
+
+Deno.test("networkRuleZipPath - strips http and prepends network/", () => {
+    assertEquals(networkRuleZipPath("http://kongregate.com/category/games/tracker.swf"), "network/kongregate.com/category/games/tracker.swf");
+});
+
+Deno.test("networkRuleZipPath - strips https", () => {
+    assertEquals(networkRuleZipPath("https://example.com/api/data.json"), "network/example.com/api/data.json");
+});
+
+Deno.test("networkRuleZipPath - preserves query string", () => {
+    assertEquals(networkRuleZipPath("http://host.com/path?key=val"), "network/host.com/path?key=val");
 });

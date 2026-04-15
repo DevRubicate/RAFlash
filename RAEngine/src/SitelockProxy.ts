@@ -16,6 +16,38 @@ interface NetworkRule {
     status: number;
     action: string;
     body: string;
+    fileBytes?: Uint8Array;
+}
+
+const CONTENT_TYPES: Record<string, string> = {
+    '.swf': 'application/x-shockwave-flash',
+    '.xml': 'application/xml',
+    '.json': 'application/json',
+    '.txt': 'text/plain',
+    '.html': 'text/html',
+    '.htm': 'text/html',
+    '.css': 'text/css',
+    '.js': 'application/javascript',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
+    '.mp4': 'video/mp4',
+    '.flv': 'video/x-flv',
+    '.zip': 'application/zip',
+    '.csv': 'text/csv',
+};
+
+function contentTypeForUrl(url: string): string {
+    const path = url.replace(/\?.*$/, ''); // strip query string
+    const dot = path.lastIndexOf('.');
+    if (dot >= 0) {
+        const ext = path.slice(dot).toLowerCase();
+        if (CONTENT_TYPES[ext]) return CONTENT_TYPES[ext];
+    }
+    return 'application/octet-stream';
 }
 
 interface ProxyConfig {
@@ -213,13 +245,23 @@ async function handleConnection(conn: Deno.TcpConn) {
         const rules = config.getNetworkRules?.() || [];
         const fullUrl = match[2];
         const matchedRule = rules.find(r => r.active && r.url && r.url === fullUrl);
-        if (matchedRule && matchedRule.action === 'text') {
-            const bodyBytes = encoder.encode(matchedRule.body || '');
+        if (matchedRule) {
             const statusText = matchedRule.status === 200 ? 'OK' : String(matchedRule.status);
+            let bodyBytes: Uint8Array;
+            let contentType: string;
+
+            if (matchedRule.action === 'file' && matchedRule.fileBytes) {
+                bodyBytes = matchedRule.fileBytes;
+                contentType = contentTypeForUrl(fullUrl);
+            } else {
+                bodyBytes = encoder.encode(matchedRule.body || '');
+                contentType = 'text/plain';
+            }
+
             const writer = conn.writable.getWriter();
             await writer.write(httpResponse(matchedRule.status, statusText, {
                 'Connection': 'close',
-                'Content-Type': 'text/plain',
+                'Content-Type': contentType,
                 'Content-Length': String(bodyBytes.length),
             }, bodyBytes));
             writer.releaseLock();
@@ -233,12 +275,18 @@ async function handleConnection(conn: Deno.TcpConn) {
             const writer = conn.writable.getWriter();
             await writer.write(httpResponse(404, 'Not Found', { 'Connection': 'close', 'Content-Length': '0' }));
             writer.releaseLock();
-            log?.(method, fullUrl, 404);
+            log?.(method, `[UNHANDLED] ${fullUrl}`, 404);
         }
         conn.close();
     } catch {
         try { conn.close(); } catch { /* already closed */ }
     }
+}
+
+/** Convert a full URL to its zip path inside network/. e.g. http://host.com/a/b.swf → network/host.com/a/b.swf */
+export function networkRuleZipPath(url: string): string {
+    const stripped = url.replace(/^https?:\/\//, '');
+    return 'network/' + stripped;
 }
 
 export function startSitelockProxy(proxyConfig: ProxyConfig) {

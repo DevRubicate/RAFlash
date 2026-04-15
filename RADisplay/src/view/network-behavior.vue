@@ -15,6 +15,30 @@
                               placeholder="Enter the text response body..."></textarea>
                 </div>
             </div>
+            <div class="settings-body" v-else-if="editingRule.action === 'file'">
+                <div class="form-group">
+                    <label>Response File</label>
+                    <div class="file-upload-area"
+                         :class="{ 'file-upload-dragover': isDragging }"
+                         @dragover.prevent="isDragging = true"
+                         @dragenter.prevent="isDragging = true"
+                         @dragleave.prevent="isDragging = false"
+                         @drop.prevent="onFileDrop">
+                        <div class="file-info" v-if="editingRule.fileName">
+                            <span class="file-name">{{ editingRule.fileName }}</span>
+                            <span class="file-size" v-if="editingRule.fileSize">{{ formatFileSize(editingRule.fileSize) }}</span>
+                        </div>
+                        <div class="file-info file-info-empty" v-else-if="editingRule.hasFile">
+                            <span class="file-name">File stored in .raflash</span>
+                        </div>
+                        <div class="file-info file-info-empty" v-else>
+                            <span class="file-name">Drop a file here or click Choose File</span>
+                        </div>
+                        <button class="btn btn-compact btn-secondary" @click="triggerFileInput">Choose File</button>
+                        <input type="file" ref="fileInput" style="display: none;" @change="onFileSelected">
+                    </div>
+                </div>
+            </div>
             <div class="settings-body" v-else>
                 <div class="empty-state">
                     <p>Select an action type to configure its settings.</p>
@@ -67,6 +91,7 @@
                             <td class="col-action">
                                 <select class="cell-input" v-model="rule.action" :disabled="!isRaflash">
                                     <option value="text">Text Response</option>
+                                    <option value="file">File Response</option>
                                 </select>
                             </td>
                             <td class="col-actions">
@@ -74,7 +99,12 @@
                                         :disabled="!isRaflash" title="Settings">
                                     <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
                                 </button>
-                                <button class="row-btn row-btn-delete" @click="removeRule(index)"
+                                <button v-if="confirmingDelete === index"
+                                        class="row-btn-confirm" @click="removeRule(index)"
+                                        @blur="confirmingDelete = null">
+                                    Sure?
+                                </button>
+                                <button v-else class="row-btn row-btn-delete" @click="confirmingDelete = index"
                                         :disabled="!isRaflash" title="Delete">
                                     <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
                                 </button>
@@ -227,6 +257,23 @@
         cursor: not-allowed;
     }
 
+    .row-btn-confirm {
+        border: none;
+        border-radius: var(--radius-sm);
+        background-color: var(--c-danger);
+        color: #ffffff;
+        font-family: var(--font-sans);
+        font-size: 0.6875rem;
+        font-weight: 600;
+        padding: 0.2rem 0.5rem;
+        cursor: pointer;
+        transition: background-color var(--duration) var(--ease);
+    }
+
+    .row-btn-confirm:hover {
+        background-color: var(--c-danger-hover);
+    }
+
     .editor-footer {
         flex-shrink: 0;
         display: flex;
@@ -257,6 +304,44 @@
         resize: none;
         min-height: 200px;
     }
+
+    .file-upload-area {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem;
+        background-color: var(--c-surface);
+        border: 1px dashed var(--c-border);
+        border-radius: var(--radius-md);
+    }
+
+    .file-info {
+        flex: 1;
+        display: flex;
+        align-items: baseline;
+        gap: 0.5rem;
+    }
+
+    .file-name {
+        font-size: 0.8125rem;
+        font-weight: 550;
+        color: var(--c-text);
+    }
+
+    .file-size {
+        font-size: 0.75rem;
+        color: var(--c-text-muted);
+    }
+
+    .file-info-empty .file-name {
+        color: var(--c-text-muted);
+        font-weight: 400;
+    }
+
+    .file-upload-dragover {
+        border-color: var(--c-primary);
+        background-color: var(--c-primary-soft);
+    }
 </style>
 
 <script setup>
@@ -268,11 +353,18 @@
     const dirty = ref(false);
     const isRaflash = ref(false);
     const editingRule = ref(null);
+    const fileInput = ref(null);
+    const confirmingDelete = ref(null);
+    const isDragging = ref(false);
 
     let savedSnapshot = '[]';
 
     function takeSnapshot() {
-        return JSON.stringify(rules.map(r => ({ active: r.active, label: r.label, url: r.url, status: r.status, action: r.action, body: r.body })));
+        return JSON.stringify(rules.map(r => ({
+            active: r.active, label: r.label, url: r.url, status: r.status,
+            action: r.action, body: r.body, hasFile: r.hasFile, fileName: r.fileName,
+            fileSize: r.fileSize, fileData: r.fileData,
+        })));
     }
 
     watch(rules, () => {
@@ -280,33 +372,89 @@
     }, { deep: true });
 
     function addRule() {
-        rules.push({ active: true, label: '', url: '', status: 200, action: 'text', body: '' });
+        rules.push({ active: true, label: '', url: '', status: 200, action: 'text', body: '',
+                      hasFile: false, fileName: '', fileSize: 0, fileData: null });
     }
 
     function removeRule(index) {
         if (editingRule.value === rules[index]) editingRule.value = null;
+        confirmingDelete.value = null;
         rules.splice(index, 1);
     }
 
-    async function save() {
-        const stripped = rules.map(r => ({ active: r.active, label: r.label, url: r.url, status: r.status, action: r.action, body: r.body }));
+    function triggerFileInput() {
+        fileInput.value?.click();
+    }
 
-        // Save to .raflash data.json
+    function applyFile(file) {
+        if (!file || !editingRule.value) return;
+
+        const reader = new FileReader();
+        reader.onload = () => {
+            const base64 = reader.result.split(',')[1]; // strip data:...;base64, prefix
+            editingRule.value.fileData = base64;
+            editingRule.value.fileName = file.name;
+            editingRule.value.fileSize = file.size;
+            editingRule.value.hasFile = true;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function onFileSelected(event) {
+        applyFile(event.target.files?.[0]);
+        event.target.value = ''; // reset so the same file can be re-selected
+    }
+
+    function onFileDrop(event) {
+        isDragging.value = false;
+        applyFile(event.dataTransfer?.files?.[0]);
+    }
+
+    function formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    async function save() {
+        const stripped = rules.map(r => {
+            const out = { active: r.active, label: r.label, url: r.url, status: r.status, action: r.action, body: r.body };
+            // Include fileData only for file rules with new uploads
+            if (r.action === 'file' && r.fileData) {
+                out.fileData = r.fileData;
+            }
+            return out;
+        });
+
+        // Save to .raflash data.json (and write files into zip)
         await Network.send({
             command: 'saveRaflashData',
             params: { networkRules: stripped }
         });
 
         // Update in-memory gameConfig so proxy picks up changes immediately
+        // (strip fileData — engine already handled it)
+        const cleanRules = stripped.map(r => {
+            const { fileData, ...rest } = r;
+            return rest;
+        });
         const config = App.data.gameConfig || {};
         await Network.send({
             command: 'editData',
             params: {
                 edited: [
-                    ['gameConfig', { ...config, networkRules: stripped }]
+                    ['gameConfig', { ...config, networkRules: cleanRules }]
                 ]
             }
         });
+
+        // Clear transient fileData now that it's been written to the zip
+        for (const rule of rules) {
+            if (rule.fileData) {
+                rule.hasFile = true;
+                rule.fileData = null;
+            }
+        }
 
         savedSnapshot = takeSnapshot();
         dirty.value = false;
@@ -316,6 +464,7 @@
         const config = App.data.gameConfig || {};
         const loaded = config.networkRules || [];
         for (const rule of loaded) {
+            const isFile = rule.action === 'file';
             rules.push({
                 active: rule.active !== false,
                 label: rule.label || '',
@@ -323,6 +472,10 @@
                 status: rule.status ?? 200,
                 action: rule.action || 'text',
                 body: rule.body || '',
+                hasFile: isFile,   // if saved as file rule, assume file exists in zip
+                fileName: '',
+                fileSize: 0,
+                fileData: null,
             });
         }
         savedSnapshot = takeSnapshot();

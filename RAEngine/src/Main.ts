@@ -29,7 +29,7 @@ import jpeg from "npm:jpeg-js";
 // @deno-types="npm:@types/pako"
 import * as pako from "npm:pako";
 import { unzipSync, zipSync } from "npm:fflate";
-import { startSitelockProxy, stopSitelockProxy } from "./SitelockProxy.ts";
+import { startSitelockProxy, stopSitelockProxy, networkRuleZipPath } from "./SitelockProxy.ts";
 import { compileAchievementsSWF, type NativeAchResult } from "./swf/NativeEvalCompiler.ts";
 import { buildInjectorTags, findMaxCharacterId } from "./swf/AVM2Injector.ts";
 
@@ -1903,7 +1903,29 @@ async function handleApiRequest(
                 if ("hashOverride" in params) dataJson.hashOverride = params.hashOverride as string;
                 if ("scaleMode" in params) dataJson.scaleMode = params.scaleMode as string;
                 if ("align" in params) dataJson.align = params.align as string;
-                if ("networkRules" in params) (dataJson as Record<string, unknown>).networkRules = params.networkRules;
+                if ("networkRules" in params) {
+                    const rules = params.networkRules as Array<Record<string, unknown>>;
+                    // Write uploaded file data into zip and strip transient fileData from JSON
+                    for (const rule of rules) {
+                        if (rule.action === 'file' && rule.url && rule.fileData) {
+                            const zipPath = networkRuleZipPath(rule.url as string);
+                            files[zipPath] = Uint8Array.from(atob(rule.fileData as string), c => c.charCodeAt(0));
+                        }
+                        delete rule.fileData;
+                    }
+                    (dataJson as Record<string, unknown>).networkRules = rules;
+
+                    // Hydrate in-memory fileBytes on the live rules for immediate proxy serving
+                    const liveRules = AppData.data.gameConfig.networkRules || [];
+                    for (const rule of liveRules) {
+                        if (rule.action === 'file' && rule.url) {
+                            const zipPath = networkRuleZipPath(rule.url);
+                            if (files[zipPath]) {
+                                rule.fileBytes = files[zipPath];
+                            }
+                        }
+                    }
+                }
 
                 // Rewrite the zip with updated data.json
                 files["data.json"] = new TextEncoder().encode(JSON.stringify(dataJson, null, 2));
@@ -3253,10 +3275,12 @@ async function main(): Promise<void> {
         // --- .raflash handling: extract start.swf and data.json from zip ---
         let raflashData: { title?: string; originUrl?: string; badgeImage?: string; hashOverride?: string; scaleMode?: string; align?: string } | null = null;
         let extractedSwfBytes: Uint8Array | null = null;
+        let raflashFiles: Record<string, Uint8Array> | null = null;
 
         if (resolvedGamePath.toLowerCase().endsWith(".raflash")) {
             const zipData = await Deno.readFile(resolvedGamePath);
             const files = unzipSync(zipData);
+            raflashFiles = files;
 
             if (!files["start.swf"]) {
                 emitLog("engine", "error", "Invalid .raflash: missing start.swf");
@@ -3310,6 +3334,19 @@ async function main(): Promise<void> {
         // For .raflash: keep extracted SWF in memory for serving
         if (extractedSwfBytes) {
             cachedGameSwf = extractedSwfBytes;
+        }
+
+        // Hydrate file bytes for network behavior file rules from the zip
+        if (raflashFiles) {
+            const networkRules = AppData.data.gameConfig.networkRules || [];
+            for (const rule of networkRules) {
+                if (rule.action === 'file' && rule.url) {
+                    const zipPath = networkRuleZipPath(rule.url);
+                    if (raflashFiles[zipPath]) {
+                        rule.fileBytes = raflashFiles[zipPath];
+                    }
+                }
+            }
         }
 
         // Pre-populate empty gameConfig fields from .raflash metadata
