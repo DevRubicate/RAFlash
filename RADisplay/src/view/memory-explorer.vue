@@ -758,7 +758,6 @@
 
     const evaluate = async () => {
         memoryResultValid.value = false;
-        filterText.value = '';
         isCompareMode.value = false;
         isRemainsMode.value = false;
         isLeavesMode.value = false;
@@ -772,7 +771,6 @@
     };
 
     const compare = async () => {
-        filterText.value = '';
         const results = await runDSL();
         if (results) {
             compareResults.value = computeDiff(previousResults.value, results);
@@ -785,7 +783,6 @@
     };
 
     const remains = async () => {
-        filterText.value = '';
         const results = await runDSL();
         if (results) {
             // Build map of previous results: key → full value string
@@ -823,7 +820,6 @@
     };
 
     const leaves = async () => {
-        filterText.value = '';
         const results = await runDSL();
         if (results) {
             // Build set of keys found in new results
