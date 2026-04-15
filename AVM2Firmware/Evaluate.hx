@@ -21,6 +21,124 @@ class Evaluate {
     // Remembered values for {expr} syntax — persists across evaluation frames
     public static var rememberedValues:Map<String, Array<Dynamic>> = new Map();
 
+    // Sentinel objects for special DSL globals (root, class)
+    // These are recognized by enumerateProperties/readProperty for special handling.
+    public static var ROOT_SENTINEL:Dynamic = {__raflash_type: "root"};
+    public static var CLASS_SENTINEL:Dynamic = {__raflash_type: "class"};
+
+    // Cached game class registry: className → classRef. Built lazily on first use.
+    private static var gameClassRegistry:Map<String, Dynamic> = null;
+    // Cached merged statics: fieldName → value. Built alongside gameClassRegistry.
+    private static var mergedStaticFields:Map<String, Dynamic> = null;
+    private static var mergedStaticKeys:Array<String> = null;
+    // The gameRoot used to build the registry (to detect staleness)
+    private static var registryGameRoot:Dynamic = null;
+
+    private static function buildClassRegistry(gameRoot:Dynamic):Void {
+        if (gameClassRegistry != null && registryGameRoot == gameRoot) return;
+        gameClassRegistry = new Map();
+        mergedStaticFields = new Map();
+        mergedStaticKeys = [];
+        registryGameRoot = gameRoot;
+
+        #if flash
+        try {
+            var appDomain:Dynamic = untyped gameRoot.loaderInfo.applicationDomain;
+            var names:Dynamic = untyped appDomain.getQualifiedDefinitionNames();
+            var numNames:Int = untyped names.length;
+            var i:Int = 0;
+            while (i < numNames) {
+                var fullName:String = Std.string(untyped names[i]);
+                i++;
+                // Skip Flash/Haxe/framework internals
+                if (fullName.indexOf("flash.") == 0) continue;
+                if (fullName.indexOf("haxe.") == 0) continue;
+                if (fullName.indexOf("openfl.") == 0) continue;
+                if (fullName.indexOf("lime.") == 0) continue;
+                if (fullName.indexOf("libtf.") == 0) continue;
+                if (fullName.indexOf("__AS3__.") == 0) continue;
+                if (fullName.indexOf("§") == 0) continue;
+                // Get short name (after last dot or ::)
+                var shortName:String = fullName;
+                var colonIdx:Int = fullName.lastIndexOf("::");
+                if (colonIdx >= 0) {
+                    shortName = fullName.substr(colonIdx + 2);
+                } else {
+                    var dotIdx:Int = fullName.lastIndexOf(".");
+                    if (dotIdx >= 0) shortName = fullName.substr(dotIdx + 1);
+                }
+                // Try to get the class
+                try {
+                    var cls:Dynamic = untyped appDomain.getDefinition(fullName);
+                    if (cls == null) continue;
+                    gameClassRegistry.set(shortName, cls);
+                    // Enumerate statics and add to merged map
+                    try {
+                        var classXml:Dynamic = untyped __global__["flash.utils.describeType"](cls);
+                        var staticVars:Dynamic = untyped classXml.variable;
+                        var numVars:Int = untyped staticVars.length();
+                        var v:Int = 0;
+                        while (v < numVars) {
+                            var varName:String = Std.string(untyped staticVars[v].attribute("name"));
+                            if (!mergedStaticFields.exists(varName)) {
+                                mergedStaticFields.set(varName, cls);
+                                mergedStaticKeys.push(varName);
+                            }
+                            v++;
+                        }
+                    } catch (e2:Dynamic) {}
+                } catch (e2:Dynamic) {}
+            }
+        } catch (e:Dynamic) {}
+        #end
+    }
+
+    // Cached "main" resolution per gameRoot
+    private static var cachedMainGameRoot:Dynamic = null;
+    private static var cachedMainResult:Dynamic = null;
+
+    /**
+     * Resolve the "main" keyword: if gameRoot's class is already named "Main",
+     * return gameRoot itself (pure AS3). Otherwise (Haxe boot shim), look for
+     * a class named "Main" in the game's ApplicationDomain and return the class
+     * object (for static field access).
+     */
+    private static function resolveMain(gameRoot:Dynamic):Dynamic {
+        if (cachedMainGameRoot == gameRoot) return cachedMainResult;
+        cachedMainGameRoot = gameRoot;
+        cachedMainResult = gameRoot; // default fallback
+
+        #if flash
+        try {
+            var className:String = Std.string(untyped __global__["flash.utils.getQualifiedClassName"](gameRoot));
+            // Strip package prefix to get short name
+            var shortName:String = className;
+            var colonIdx:Int = className.lastIndexOf("::");
+            if (colonIdx >= 0) shortName = className.substr(colonIdx + 2);
+            else {
+                var dotIdx:Int = className.lastIndexOf(".");
+                if (dotIdx >= 0) shortName = className.substr(dotIdx + 1);
+            }
+
+            if (shortName == "Main") {
+                // Pure AS3: gameRoot IS Main, no indirection needed
+                cachedMainResult = gameRoot;
+            } else {
+                // Haxe/framework boot shim: look for a "Main" class in the game's domain
+                try {
+                    var appDomain:Dynamic = untyped gameRoot.loaderInfo.applicationDomain;
+                    if (untyped appDomain.hasDefinition("Main")) {
+                        var cls:Dynamic = untyped appDomain.getDefinition("Main");
+                        if (cls != null) cachedMainResult = cls;
+                    }
+                } catch (e:Dynamic) {}
+            }
+        } catch (e:Dynamic) {}
+        #end
+
+        return cachedMainResult;
+    }
+
     // Flash built-in property defaults (documented in Adobe AS3 reference).
     // Properties at their default value are hidden during enumeration to reduce noise.
     private static var flashPropDefaults:Map<String, Dynamic> = null;
@@ -288,8 +406,21 @@ class Evaluate {
                 var identifiers = safePop(stack);
                 if (identifiers.length == 1) {
                     var name:String = cast identifiers[0];
-                    if (name == "stage") {
+                    if (name == "root") {
+                        // Combined soup: display list + all game class statics
+                        ROOT_SENTINEL.__raflash_gameRoot = gameRoot;
+                        stack.push([ROOT_SENTINEL]);
+                    } else if (name == "stage") {
+                        // Display list only (document class instance)
                         stack.push([gameRoot]);
+                    } else if (name == "main") {
+                        // Smart alias: if gameRoot IS "Main", same as stage.
+                        // Otherwise (Haxe boot shim), resolve the real Main class.
+                        stack.push([resolveMain(gameRoot)]);
+                    } else if (name == "class") {
+                        // Class namespace: all game classes as children
+                        CLASS_SENTINEL.__raflash_gameRoot = gameRoot;
+                        stack.push([CLASS_SENTINEL]);
                     } else if (name == "this") {
                         stack.push(context);
                     } else if (name == "key") {
@@ -302,7 +433,6 @@ class Evaluate {
                         stack.push([0]);
                         #end
                     } else {
-                        trace("[Evaluate] Invalid global identifier: " + name);
                         return null;
                     }
                 } else {
@@ -840,6 +970,47 @@ class Evaluate {
         var propValues:Array<Dynamic> = [];
         var seen:Map<String, Bool> = new Map();
 
+        // Handle sentinel objects
+        #if flash
+        try {
+            if (untyped target.__raflash_type == "class") {
+                // CLASS_SENTINEL: list all game classes as children
+                var gr:Dynamic = untyped target.__raflash_gameRoot;
+                buildClassRegistry(gr);
+                for (className in gameClassRegistry.keys()) {
+                    propKeys.push(className);
+                    propValues.push(gameClassRegistry.get(className));
+                }
+                return {keys: propKeys, values: propValues};
+            } else if (untyped target.__raflash_type == "root") {
+                // ROOT_SENTINEL: merge display list properties + all game class statics
+                var gr:Dynamic = untyped target.__raflash_gameRoot;
+                // First get all display list properties (delegate to normal enumeration)
+                var stageProps = enumerateProperties(gr);
+                var j:Int = 0;
+                while (j < stageProps.keys.length) {
+                    propKeys.push(stageProps.keys[j]);
+                    propValues.push(stageProps.values[j]);
+                    seen.set(Std.string(stageProps.keys[j]), true);
+                    j++;
+                }
+                // Then merge all game class statics
+                buildClassRegistry(gr);
+                for (fieldName in mergedStaticKeys) {
+                    if (!seen.exists(fieldName)) {
+                        var cls:Dynamic = mergedStaticFields.get(fieldName);
+                        try {
+                            propKeys.push(fieldName);
+                            propValues.push(untyped cls[fieldName]);
+                            seen.set(fieldName, true);
+                        } catch (e:Dynamic) {}
+                    }
+                }
+                return {keys: propKeys, values: propValues};
+            }
+        } catch (e:Dynamic) {}
+        #end
+
         // 1. Dynamic properties via untyped iteration
         try {
             var dynKeys:Array<String> = untyped __keys__(target);
@@ -927,7 +1098,55 @@ class Evaluate {
         }
         #end
 
-        // 3. Display children (if DisplayObjectContainer)
+        // 3. Static class fields via describeType on the class
+        // Use target.constructor to get the exact class of the instance, avoiding
+        // name collisions in shared ApplicationDomain (e.g. game's Main vs firmware's Main)
+        #if flash
+        try {
+            var cl:Dynamic = untyped target.constructor;
+            if (cl != null) {
+                var classXml:Dynamic = untyped __global__["flash.utils.describeType"](cl);
+
+                // Static variables
+                var staticVars:Dynamic = untyped classXml.variable;
+                var numStaticVars:Int = untyped staticVars.length();
+                var sv:Int = 0;
+                while (sv < numStaticVars) {
+                    var svName:String = Std.string(untyped staticVars[sv].attribute("name"));
+                    if (!seen.exists(svName)) {
+                        try {
+                            propKeys.push(svName);
+                            propValues.push(untyped cl[svName]);
+                            seen.set(svName, true);
+                        } catch (e2:Dynamic) {}
+                    }
+                    sv++;
+                }
+
+                // Static accessors (skip Flash-declared, same logic as instance accessors)
+                var staticAcc:Dynamic = untyped classXml.accessor;
+                var numStaticAcc:Int = untyped staticAcc.length();
+                var sa:Int = 0;
+                while (sa < numStaticAcc) {
+                    var saAccess:String = Std.string(untyped staticAcc[sa].attribute("access"));
+                    if (saAccess == "readonly" || saAccess == "readwrite") {
+                        var saName:String = Std.string(untyped staticAcc[sa].attribute("name"));
+                        if (!seen.exists(saName)) {
+                            var saDeclaredBy:String = Std.string(untyped staticAcc[sa].attribute("declaredBy"));
+                            if (saDeclaredBy.length < 6 || saDeclaredBy.substr(0, 6) != "flash.") {
+                                propKeys.push(saName);
+                                propValues.push(null);
+                                seen.set(saName, true);
+                            }
+                        }
+                    }
+                    sa++;
+                }
+            }
+        } catch (e:Dynamic) {}
+        #end
+
+        // 4. Display children (if DisplayObjectContainer)
         #if flash
         try {
             if (Std.isOfType(target, DisplayObjectContainer)) {
@@ -959,6 +1178,29 @@ class Evaluate {
      * Handles both dynamic properties and display children.
      */
     private static function readProperty(target:Dynamic, name:String):Dynamic {
+        // Handle sentinel objects
+        #if flash
+        try {
+            if (untyped target.__raflash_type == "class") {
+                var gr:Dynamic = untyped target.__raflash_gameRoot;
+                buildClassRegistry(gr);
+                return gameClassRegistry.exists(name) ? gameClassRegistry.get(name) : null;
+            } else if (untyped target.__raflash_type == "root") {
+                // Try display list first (delegate to readProperty on gameRoot)
+                var gr:Dynamic = untyped target.__raflash_gameRoot;
+                var stageResult:Dynamic = readProperty(gr, name);
+                if (stageResult != null) return stageResult;
+                // Then try merged statics
+                buildClassRegistry(gr);
+                if (mergedStaticFields.exists(name)) {
+                    var cls:Dynamic = mergedStaticFields.get(name);
+                    try { return untyped cls[name]; } catch (e:Dynamic) {}
+                }
+                return null;
+            }
+        } catch (e:Dynamic) {}
+        #end
+
         // Try direct property access first (covers dynamic props and built-in fields)
         try {
             var value:Dynamic = untyped target[name];
@@ -966,6 +1208,19 @@ class Evaluate {
                 return value;
             }
         } catch (e:Dynamic) {}
+
+        // Fall back to static class field (use constructor to avoid name collisions)
+        #if flash
+        try {
+            var cl:Dynamic = untyped target.constructor;
+            if (cl != null) {
+                var sval:Dynamic = untyped cl[name];
+                if (untyped __typeof__(sval) != "undefined") {
+                    return sval;
+                }
+            }
+        } catch (e:Dynamic) {}
+        #end
 
         // Fall back to display child lookup
         #if flash
@@ -990,12 +1245,41 @@ class Evaluate {
      * Check if a target has a named property (including display children).
      */
     private static function hasProperty(target:Dynamic, name:String):Bool {
+        // Handle sentinel objects
+        #if flash
+        try {
+            if (untyped target.__raflash_type == "class") {
+                var gr:Dynamic = untyped target.__raflash_gameRoot;
+                buildClassRegistry(gr);
+                return gameClassRegistry.exists(name);
+            } else if (untyped target.__raflash_type == "root") {
+                var gr:Dynamic = untyped target.__raflash_gameRoot;
+                if (hasProperty(gr, name)) return true;
+                buildClassRegistry(gr);
+                return mergedStaticFields.exists(name);
+            }
+        } catch (e:Dynamic) {}
+        #end
+
         try {
             var value:Dynamic = untyped target[name];
             if (untyped __typeof__(value) != "undefined") {
                 return true;
             }
         } catch (e:Dynamic) {}
+
+        // Check static class fields (use constructor to avoid name collisions)
+        #if flash
+        try {
+            var cl:Dynamic = untyped target.constructor;
+            if (cl != null) {
+                var sval:Dynamic = untyped cl[name];
+                if (untyped __typeof__(sval) != "undefined") {
+                    return true;
+                }
+            }
+        } catch (e:Dynamic) {}
+        #end
 
         #if flash
         if (Std.isOfType(target, DisplayObjectContainer)) {

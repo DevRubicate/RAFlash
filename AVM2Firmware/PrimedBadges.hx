@@ -48,7 +48,8 @@ class PrimedBadges extends Sprite {
 
         var badge = activeBadges.get(assetId);
         activeBadges.remove(assetId);
-        badgeOrder.remove(assetId);
+        var _idx = badgeOrder.indexOf(assetId);
+        if (_idx >= 0) badgeOrder.splice(_idx, 1);
 
         badge.removeEventListener(Event.ENTER_FRAME, badge.onEnterFrame);
         if (badge.parent != null) {

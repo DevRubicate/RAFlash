@@ -283,7 +283,8 @@ class Measure extends Sprite {
         if (assetId != null) {
             measureByAsset.remove(assetId);
         }
-        activeMeasures.remove(this);
+        var _idx = activeMeasures.indexOf(this);
+        if (_idx >= 0) activeMeasures.splice(_idx, 1);
         removeEventListener(Event.ENTER_FRAME, onEnterFrame);
         if (this.parent != null) {
             this.parent.removeChild(this);

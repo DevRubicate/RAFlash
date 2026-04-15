@@ -315,9 +315,11 @@ class Toast extends Sprite {
             case STATE_SLIDE_DOWN:
                 this.y += SLIDE_SPEED;
                 if (this.y >= stageHeight) {
-                    // Remove from active toasts
+                    // Remove from active toasts (avoid Haxe's Array.remove which
+                    // doesn't exist on AS3's native Array in shared ApplicationDomain)
                     var activeToasts = (toastAlign == "left") ? activeToastsLeft : activeToastsRight;
-                    activeToasts.remove(this);
+                    var idx = activeToasts.indexOf(this);
+                    if (idx >= 0) activeToasts.splice(idx, 1);
                     removeEventListener(Event.ENTER_FRAME, onEnterFrame);
                     if (this.parent != null) {
                         this.parent.removeChild(this);

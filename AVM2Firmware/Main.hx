@@ -349,7 +349,8 @@ class Main extends MovieClip {
                 if (params.formula == null) { sendResponse(id, {success: false, error: "Missing formula"}); return; }
                 if (gameRoot == null) { sendResponse(id, {success: false, error: "Game not loaded"}); return; }
                 var formula:Array<Dynamic> = params.formula;
-                var result = Evaluate.evaluate(formula, 1, formula.length, [gameRoot], cast ["stage"], gameRoot);
+                Evaluate.ROOT_SENTINEL.__raflash_gameRoot = gameRoot;
+                var result = Evaluate.evaluate(formula, 1, formula.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
                 var formatted = Evaluate.formatOutput(result != null ? result : [], 0);
                 sendResponse(id, {success: true, result: formatted});
 
@@ -361,7 +362,7 @@ class Main extends MovieClip {
                 var fi:Int = 0;
                 while (fi < formulas.length) {
                     var formulaItem:Array<Dynamic> = formulas[fi];
-                    var resultItem = Evaluate.evaluate(formulaItem, 1, formulaItem.length, [gameRoot], cast ["stage"], gameRoot);
+                    var resultItem = Evaluate.evaluate(formulaItem, 1, formulaItem.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
                     var formattedItem = Evaluate.formatOutput(resultItem != null ? resultItem : [], 0);
                     results.push(formattedItem);
                     fi++;
@@ -395,7 +396,7 @@ class Main extends MovieClip {
                 if (params.pathFormula != null) {
                     var pf:Array<Dynamic> = params.pathFormula;
                     if (pf.length > 0) {
-                        var pathResult = Evaluate.evaluate(pf, 1, pf.length, [gameRoot], cast ["stage"], gameRoot);
+                        var pathResult = Evaluate.evaluate(pf, 1, pf.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
                         if (pathResult != null && pathResult.length > 0) {
                             startTarget = pathResult[0];
                             pathPrefix = Std.string(params.pathString);
@@ -546,7 +547,7 @@ class Main extends MovieClip {
             var value:Dynamic = null;
             try {
                 var bytecode:Array<Dynamic> = watcher.bytecode;
-                var result = Evaluate.evaluate(bytecode, 1, bytecode.length, [gameRoot], cast ["stage"], gameRoot);
+                var result = Evaluate.evaluate(bytecode, 1, bytecode.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
                 value = (result != null && result.length > 0) ? result[0] : null;
             } catch (e:Dynamic) {
                 value = "ERROR";
