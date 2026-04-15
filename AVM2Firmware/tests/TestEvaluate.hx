@@ -331,10 +331,10 @@ class TestEvaluate {
         TestRunner.assertEqual(r[0], gameRoot, "result is the gameRoot object");
         TestRunner.endTest();
 
-        TestRunner.test("Evaluate - READ_GLOBAL stage_frame returns 0 on neko");
+        TestRunner.test("Evaluate - READ_GLOBAL stage_frame returns 0 with no game");
         var r = eval(["IDENTIFIER", "stage_frame", "READ_GLOBAL"]);
         TestRunner.assertEqual(r.length, 1, "result length");
-        TestRunner.assertEqual(r[0], 0, "stage_frame is 0 on non-flash target");
+        TestRunner.assertEqual(r[0], 0, "stage_frame is 0 when gameRoot is null");
         TestRunner.endTest();
 
         // === Unknown token returns null ===

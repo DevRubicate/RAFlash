@@ -918,6 +918,9 @@ class Main {
                 // Without this, checkAchievements() would see the incoming changes as "new"
                 // and send them back to the server, causing an infinite loop.
                 AppData.originalData = JSON.parse(JSON.stringify(AppData.data));
+                // Disable native compiled path until recompilation arrives,
+                // otherwise the old compiled SWF evaluates stale conditions.
+                nativeAchReady = false;
                 sendResponse(id, { success: true });
                 break;
 

@@ -1,6 +1,5 @@
 package;
 
-#if flash
 import flash.display.DisplayObject;
 import flash.display.DisplayObjectContainer;
 import flash.display.Loader;
@@ -8,7 +7,6 @@ import flash.display.MovieClip;
 import flash.display.Sprite;
 import flash.text.TextField;
 import flash.utils.Dictionary;
-#end
 
 /**
  * Stack-based bytecode interpreter for the Formula DSL.
@@ -30,10 +28,8 @@ class Evaluate {
     // Function-call hook state. Maps wrapper Function → Int hook ID.
     // Uses Dictionary (identity keys) because AS3 Function objects are sealed
     // and cannot have custom properties stamped on them.
-    #if flash
     private static var hookIds:Dictionary = null;
     private static var hookSkipped:Dictionary = null;
-    #end
     private static var hookSeen:Map<Int, Bool> = new Map();
     private static var hookPending:Map<Int, Bool> = new Map();
     private static var hookNextId:Int = 0;
@@ -262,7 +258,6 @@ class Evaluate {
      * unchanged for non-functions or if the replacement didn't stick (sealed slot).
      */
     private static function wrapHook(parent:Dynamic, key:String, value:Dynamic):Dynamic {
-        #if flash
         if (untyped __typeof__(value) != "function") return value;
         if (hookIds == null) {
             hookIds = new Dictionary(false);
@@ -297,9 +292,6 @@ class Evaluate {
             return value;
         }
         return wrapper;
-        #else
-        return value;
-        #end
     }
 
     /**
@@ -307,13 +299,9 @@ class Evaluate {
      * or -1 if it is not hooked.
      */
     private static function getHookId(value:Dynamic):Int {
-        #if flash
         if (hookIds == null) return -1;
         var id:Dynamic = hookIds[value];
         return id != null ? cast(id, Int) : -1;
-        #else
-        return -1;
-        #end
     }
 
     /**
@@ -321,12 +309,8 @@ class Evaluate {
      * (e.g., sealed slot on a non-dynamic class).
      */
     private static function isHookSkipped(value:Dynamic):Bool {
-        #if flash
         if (hookSkipped == null) return false;
         return hookSkipped[value] != null;
-        #else
-        return false;
-        #end
     }
 
     // === Public API ===
@@ -524,12 +508,8 @@ class Evaluate {
                     } else if (name == "key") {
                         stack.push(keys);
                     } else if (name == "stage_frame") {
-                        #if flash
                         var mc = Std.downcast(gameRoot, flash.display.MovieClip);
                         stack.push([mc != null ? mc.currentFrame : 0]);
-                        #else
-                        stack.push([0]);
-                        #end
                     } else {
                         return null;
                     }
@@ -911,9 +891,9 @@ class Evaluate {
      * @param output  Array to collect matching path strings
      * @param visited Array for circular reference protection
      */
-    public static function searchTargetForValue(target:Dynamic, value:String, path:String, output:Array<Dynamic>, visited:#if flash flash.utils.Dictionary #else Dynamic #end):Void {
+    public static function searchTargetForValue(target:Dynamic, value:String, path:String, output:Array<Dynamic>, visited:flash.utils.Dictionary):Void {
         // Circular reference protection for objects (Dictionary uses identity keys for O(1) lookup)
-        if (#if flash Std.isOfType(target, DisplayObjectContainer) || #end (untyped __typeof__(target) == "object" && target != null)) {
+        if (Std.isOfType(target, DisplayObjectContainer) || (untyped __typeof__(target) == "object" && target != null)) {
             if (untyped visited[target] == true) return;
             untyped visited[target] = true;
         }
@@ -981,9 +961,9 @@ class Evaluate {
     /**
      * Recursively search for property names containing a substring.
      */
-    public static function searchTargetForName(target:Dynamic, nameLower:String, path:String, output:Array<Dynamic>, visited:#if flash flash.utils.Dictionary #else Dynamic #end):Void {
+    public static function searchTargetForName(target:Dynamic, nameLower:String, path:String, output:Array<Dynamic>, visited:flash.utils.Dictionary):Void {
         // Circular reference protection for objects (Dictionary uses identity keys for O(1) lookup)
-        if (#if flash Std.isOfType(target, DisplayObjectContainer) || #end (untyped __typeof__(target) == "object" && target != null)) {
+        if (Std.isOfType(target, DisplayObjectContainer) || (untyped __typeof__(target) == "object" && target != null)) {
             if (untyped visited[target] == true) return;
             untyped visited[target] = true;
         }
@@ -1154,25 +1134,6 @@ class Evaluate {
             // Not a dynamic object, skip
         }
 
-        // Reflect fallback for non-Flash targets (Neko) where __keys__ doesn't
-        // work on anonymous objects
-        #if !flash
-        if (propKeys.length == 0) {
-            try {
-                var fields:Array<String> = Reflect.fields(target);
-                var k:Int = 0;
-                while (k < fields.length) {
-                    var key:String = fields[k];
-                    if (!seen.exists(key)) {
-                        propKeys.push(key);
-                        propValues.push(Reflect.field(target, key));
-                        seen.set(key, true);
-                    }
-                    k++;
-                }
-            } catch (e:Dynamic) {}
-        }
-        #end
 
         // 2. Typed class fields via describeType
         #if flash
@@ -1201,10 +1162,7 @@ class Evaluate {
             // For Loaders with cross-domain content, skip security-sensitive properties.
             // Loaders may contain cross-domain content — skip security-sensitive
             // properties unconditionally (probing childAllowsParent itself can trigger errors)
-            var isLoader:Bool = false;
-            #if flash
-            isLoader = Std.isOfType(target, Loader);
-            #end
+            var isLoader:Bool = Std.isOfType(target, Loader);
             var accessors:Dynamic = untyped typeXml.accessor;
             var numAcc:Int = untyped accessors.length();
             var a:Int = 0;
@@ -1357,14 +1315,6 @@ class Evaluate {
             }
         } catch (e:Dynamic) {}
 
-        // Reflect fallback for non-Flash targets (Neko) where untyped [] doesn't
-        // work on anonymous objects
-        #if !flash
-        try {
-            var value:Dynamic = Reflect.field(target, name);
-            if (value != null) return value;
-        } catch (e:Dynamic) {}
-        #end
 
         // Fall back to static class field (use constructor to avoid name collisions)
         #if flash
@@ -1425,11 +1375,6 @@ class Evaluate {
             }
         } catch (e:Dynamic) {}
 
-        #if !flash
-        try {
-            if (Reflect.field(target, name) != null) return true;
-        } catch (e:Dynamic) {}
-        #end
 
         // Check static class fields (use constructor to avoid name collisions)
         #if flash
@@ -1470,24 +1415,13 @@ class Evaluate {
             }
         } catch (e:Dynamic) {}
 
-        // Reflect fallback for non-Flash targets (Neko)
-        #if !flash
-        try {
-            if (Std.isOfType(target, Array)) {
-                var arr:Array<Dynamic> = cast target;
-                var idx:Int = Std.isOfType(index, Int) ? cast(index, Int) : Std.parseInt(Std.string(index));
-                if (idx >= 0 && idx < arr.length) return arr[idx];
-            }
-        } catch (e:Dynamic) {}
-        #end
 
         return null;
     }
 
     /**
-     * Safely convert a Dynamic to Float across all targets.
-     * On Flash, (x : Float) generates Number(x) which works. On Neko, Int and
-     * Float are distinct types so a safety cast can fail.
+     * Safely convert a Dynamic to Float.
+     * Handles Int, Float, and string values (e.g. game state stored as strings).
      */
     private static function dynToFloat(v:Dynamic):Float {
         if (Std.isOfType(v, Float)) return (v : Float);
