@@ -614,7 +614,7 @@
         return idx !== -1 ? str.substring(0, idx) : null;
     };
 
-    const expandablePattern = /^\[(?:MovieClip|Object|Array) \.\.\.\d+\]$/;
+    const expandablePattern = /^\[\w+ \.\.\.\d+\]$/;
 
     const isExpandable = (rowValue) => {
         const str = String(rowValue);

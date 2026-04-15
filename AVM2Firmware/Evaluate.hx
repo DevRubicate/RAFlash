@@ -559,8 +559,22 @@ class Evaluate {
             var value:Dynamic = input[idx];
 
             #if flash
-            if (Std.isOfType(value, MovieClip) || Std.isOfType(value, Sprite)) {
-                if (level == 0 && singular) {
+            if (Std.isOfType(value, DisplayObject)) {
+                var typeName:String = Std.isOfType(value, MovieClip) ? "MovieClip"
+                    : Std.isOfType(value, Loader) ? "Loader"
+                    : Std.isOfType(value, Sprite) ? "Sprite"
+                    : Std.isOfType(value, TextField) ? "TextField"
+                    : {
+                        var cn:String = try Std.string(Type.getClassName(Type.getClass(value))) catch (_:Dynamic) null;
+                        if (cn != null && cn != "null" && cn.length > 0) {
+                            var dot:Int = cn.lastIndexOf(".");
+                            dot >= 0 ? cn.substr(dot + 1) : cn;
+                        } else "Object";
+                    };
+                if (Std.isOfType(value, TextField)) {
+                    var tf:TextField = cast value;
+                    output.push({value: "[TextField \"" + createLabelString(tf.text) + "\"]"});
+                } else if (level == 0 && singular) {
                     var props = enumerateProperties(value);
                     var k:Int = 0;
                     while (k < props.keys.length) {
@@ -570,11 +584,8 @@ class Evaluate {
                     }
                 } else {
                     var props = enumerateProperties(value);
-                    output.push({value: "[MovieClip ..." + props.keys.length + "]"});
+                    output.push({value: "[" + typeName + " ..." + props.keys.length + "]"});
                 }
-            } else if (Std.isOfType(value, TextField)) {
-                var tf:TextField = cast value;
-                output.push({value: "[TextField \"" + createLabelString(tf.text) + "\"]"});
             } else
             #end
             if (Std.isOfType(value, Float)) {
@@ -615,7 +626,15 @@ class Evaluate {
                     }
                 } else {
                     var fields = enumerateProperties(value);
-                    output.push({value: "[Object ..." + fields.keys.length + "]"});
+                    var objName:String = "Object";
+                    try {
+                        var cn:String = Std.string(Type.getClassName(Type.getClass(value)));
+                        if (cn != null && cn != "null" && cn.length > 0) {
+                            var dot:Int = cn.lastIndexOf(".");
+                            objName = dot >= 0 ? cn.substr(dot + 1) : cn;
+                        }
+                    } catch (_:Dynamic) {}
+                    output.push({value: "[" + objName + " ..." + fields.keys.length + "]"});
                 }
             }
             idx++;
