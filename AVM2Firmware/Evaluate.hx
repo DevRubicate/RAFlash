@@ -182,7 +182,8 @@ class Evaluate {
         flashPropDefaults.set("buttonMode", false);
         flashPropDefaults.set("useHandCursor", true);
         // MovieClip
-        flashPropDefaults.set("currentFrame", 1);
+        // Note: currentFrame intentionally excluded — it cycles during animations
+        // and would blink in/out of the Memory Explorer when it hits 1.
         flashPropDefaults.set("totalFrames", 1);
         flashPropDefaults.set("framesLoaded", 1);
         flashPropDefaults.set("enabled", true);
@@ -969,6 +970,8 @@ class Evaluate {
         var propKeys:Array<Dynamic> = [];
         var propValues:Array<Dynamic> = [];
         var seen:Map<String, Bool> = new Map();
+        // Always skip — noise properties that appear across all sources
+        seen.set("prototype", true);
 
         // Handle sentinel objects
         #if flash
