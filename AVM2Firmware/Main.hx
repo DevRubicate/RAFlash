@@ -52,6 +52,7 @@ class Main extends MovieClip {
 
     // Reconnection
     private var reconnectAttempts:Int = 0;
+    private var reconnectPending:Bool = false;
     private static inline var MAX_RECONNECT_ATTEMPTS:Int = 15;
     private var disconnectOverlay:flash.display.Sprite = null;
     private var initialSetupDone:Bool = false;
@@ -234,12 +235,15 @@ class Main extends MovieClip {
     }
 
     private function scheduleReconnect():Void {
+        if (reconnectPending) return;
         reconnectAttempts++;
         if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
             showDisconnectOverlay(true);
             return;
         }
+        reconnectPending = true;
         Timer.delay(function() {
+            reconnectPending = false;
             connectToServer();
         }, 1000);
     }

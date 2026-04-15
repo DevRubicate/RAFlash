@@ -115,8 +115,11 @@ class Achievement {
                 storeDeltaValue(reqId, "A", currentA[0]);
                 return {passed: false, valid: false};
             }
-            resultA = [untyped deltaData.prevA];
+            // Capture previous value BEFORE storing current to avoid corruption
+            // when this requirement is evaluated multiple times per frame (e.g. AddHits chains)
+            var capturedPrevA:Dynamic = untyped deltaData.prevA;
             storeDeltaValue(reqId, "A", currentA[0]);
+            resultA = [capturedPrevA];
         } else {
             resultA = currentA;
         }
@@ -129,8 +132,10 @@ class Achievement {
                 storeDeltaValue(reqId, "B", currentB[0]);
                 return {passed: false, valid: false};
             }
-            resultB = [untyped deltaBData.prevB];
+            // Capture previous value BEFORE storing current
+            var capturedPrevB:Dynamic = untyped deltaBData.prevB;
             storeDeltaValue(reqId, "B", currentB[0]);
+            resultB = [capturedPrevB];
         } else {
             resultB = currentB;
         }
@@ -189,9 +194,11 @@ class Achievement {
                 storeDeltaValue(reqId, "A", currentA[0]);
                 return Math.NaN;
             }
-            var prev:Float = toFloat(deltaData.prevA);
+            // Capture previous value BEFORE storing current to avoid corruption
+            // when this requirement is evaluated multiple times per frame
+            var capturedPrevA:Dynamic = untyped deltaData.prevA;
             storeDeltaValue(reqId, "A", currentA[0]);
-            return prev;
+            return toFloat(capturedPrevA);
         }
 
         return toFloat(currentA[0]);

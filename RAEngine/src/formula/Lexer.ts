@@ -218,6 +218,15 @@ class Lexer {
             this.advancePosition();
         }
 
+        // Reject bare prefixes like "0x" or "0b" with no digits
+        if (base !== 10 && value.length === 2) {
+            throw new LexerError(
+                `Invalid number literal: ${value} has no digits after prefix`,
+                tokenRow,
+                tokenColumn,
+            );
+        }
+
         // Handle decimal point for base-10 numbers (e.g., 3.14)
         // Only if current char is '.' AND next char is a digit
         if (
@@ -297,8 +306,10 @@ class Lexer {
         }
 
         if (this.input[this.position] !== this.stringDelimiter) {
-            throw new Error(
-                `Unclosed string at row ${this.row}, column ${this.column}`,
+            throw new LexerError(
+                `Unclosed string`,
+                this.row,
+                this.column,
             );
         }
 

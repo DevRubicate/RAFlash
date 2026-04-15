@@ -105,7 +105,9 @@ export class Builder {
             case NODE_TYPE.NOT: {
                 const element = new NotUnit(null);
                 for (const child of node.children) {
-                    element.children.push(Builder.convert(child));
+                    const converted = Builder.convert(child);
+                    converted.parent = element;
+                    element.children.push(converted);
                 }
                 return element;
             }

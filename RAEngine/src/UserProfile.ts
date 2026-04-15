@@ -42,7 +42,7 @@ export class UserProfile {
         const path = `${PROFILES_DIR}/${sanitized}.json`;
         const content = await Deno.readTextFile(path);
         this.data = JSON.parse(content) as UserProfileData;
-        this.currentName = name;
+        this.currentName = sanitized;
         this.dirty = false;
 
         // Guest profile resets each session — clear all game data on load

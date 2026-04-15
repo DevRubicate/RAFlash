@@ -90,17 +90,17 @@ const OperatorDetails: Partial<
     [NODE_TYPE.AND]: {
         type: 'BINARY',
         associativity: 'LEFT',
-        precedence: 0,
+        precedence: 0.3,
     },
     [NODE_TYPE.OR]: {
         type: 'BINARY',
         associativity: 'LEFT',
-        precedence: 0,
+        precedence: 0.1,
     },
     [NODE_TYPE.XOR]: {
         type: 'BINARY',
         associativity: 'LEFT',
-        precedence: 0,
+        precedence: 0.2,
     },
     [NODE_TYPE.NOT]: {
         type: 'UNARY',
@@ -756,14 +756,11 @@ class Parser {
                             break;
                         }
                         case TokenType.MINUS: {
+                            // Unary minus: insert implicit zero so -expr becomes (0 - expr)
                             this.currentNode.addQueue(
-                                new Node(
-                                    NODE_TYPE.VALUE,
-                                    this.peakToken().value,
-                                ),
+                                new Node(NODE_TYPE.VALUE, '0'),
                             );
-                            // Move past the token
-                            this.advanceToken();
+                            // Don't advance — let EXPRESSION_OPERATOR handle MINUS as subtraction
                             this.currentNode.addConsume(
                                 CONSUME.EXPRESSION_OPERATOR,
                             );

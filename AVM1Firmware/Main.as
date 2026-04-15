@@ -405,7 +405,7 @@ class Main {
         reconnectTimer = setInterval(function():Void {
             try {
                 Main.reconnectAttempts++;
-                if (Main.reconnectAttempts > Main.MAX_RECONNECT_ATTEMPTS) {
+                if (Main.reconnectAttempts >= Main.MAX_RECONNECT_ATTEMPTS) {
                     clearInterval(Main.reconnectTimer);
                     Main.reconnectTimer = -1;
                     Main.showDisconnectOverlay(true);
@@ -1396,12 +1396,28 @@ class Main {
             return {passed: false, valid: false, valueA: 0};
         }
 
-        // Handle Delta type: always store both sides first, then check readiness
+        // Handle Delta type: capture previous values BEFORE storing current ones
         var needDeltaA:Boolean = (requirement.typeA == "DELTA");
         var needDeltaB:Boolean = (requirement.typeB == "DELTA");
         var deltaData:Object = deltaValues[requirement.id];
 
-        // Store current values for both sides before checking readiness
+        // Capture previous values before storeDeltaValue overwrites them
+        var capturedPrevA = undefined;
+        var capturedHasA:Boolean = false;
+        var capturedPrevB = undefined;
+        var capturedHasB:Boolean = false;
+        if (deltaData != null) {
+            if (needDeltaA) {
+                capturedPrevA = deltaData.prevA;
+                capturedHasA = deltaData.hasA == true;
+            }
+            if (needDeltaB) {
+                capturedPrevB = deltaData.prevB;
+                capturedHasB = deltaData.hasB == true;
+            }
+        }
+
+        // Now store current values (this overwrites prevA/prevB in deltaData)
         if (needDeltaA) {
             storeDeltaValue(requirement.id, "A", currentA.length == 1 ? currentA[0] : undefined);
         }
@@ -1409,25 +1425,23 @@ class Main {
             storeDeltaValue(requirement.id, "B", currentB.length == 1 ? currentB[0] : undefined);
         }
 
-        // Now check readiness and compute results
+        // Use captured previous values for comparison
         var resultA:Array;
         if (needDeltaA) {
-            if (deltaData == null || !deltaData.hasA) {
+            if (deltaData == null || !capturedHasA) {
                 return {passed: false, valid: false, valueA: 0};
             }
-            resultA = (deltaData.prevA === undefined) ? [] : [deltaData.prevA];
+            resultA = (capturedPrevA === undefined) ? [] : [capturedPrevA];
         } else {
             resultA = currentA;
         }
 
         var resultB:Array;
         if (needDeltaB) {
-            // Re-read since storeDeltaValue for A may have created it
-            var deltaBData:Object = deltaValues[requirement.id];
-            if (deltaBData == null || !deltaBData.hasB) {
+            if (deltaData == null || !capturedHasB) {
                 return {passed: false, valid: false, valueA: 0};
             }
-            resultB = (deltaBData.prevB === undefined) ? [] : [deltaBData.prevB];
+            resultB = (capturedPrevB === undefined) ? [] : [capturedPrevB];
         } else {
             resultB = currentB;
         }
@@ -3159,6 +3173,11 @@ class Main {
                 var fnIdx:Number = nativeAchFnMap[i];
                 var achFn:Function = _global.__nativeAch[fnIdx];
 
+                if (achFn == null || achFn == undefined) {
+                    sendMessage("log", { message: "[native-ach] Asset " + i + " not in compiled index, falling back to interpreter" });
+                    // Fall through to interpreter path below
+                } else {
+
                 // Get or create per-achievement storage
                 if (nativeAchStorage[i] == null) nativeAchStorage[i] = {};
                 var naStore:Object = nativeAchStorage[i];
@@ -3248,6 +3267,7 @@ class Main {
                     profilingData[naAchId].evalCount += 1;
                 }
                 continue; // Skip interpreter pipeline
+                } // end achFn valid else block
             }
 
             // === SIMPLE ACHIEVEMENT FAST-PATH ===
