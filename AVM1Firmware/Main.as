@@ -896,9 +896,9 @@ class Main {
                         break;
                     }
                 } else {
-                    // Default: start from stage
+                    // Default: start from root
                     startTarget = gameRoot;
-                    pathPrefix = "stage";
+                    pathPrefix = "root";
                 }
 
                 _visitedStamp++;
@@ -2449,7 +2449,8 @@ class Main {
                     var identifiers = stack.pop();
                     if (identifiers.length == 1) {
                         switch (identifiers[0]) {
-                            case "stage": {
+                            case "stage":
+                            case "root": {
                                 stack.push([gameRoot]);
                                 break;
                             }

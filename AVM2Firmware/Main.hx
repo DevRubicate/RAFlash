@@ -391,8 +391,9 @@ class Main extends MovieClip {
 
             case "searchTargetForValue":
                 var find:String = Std.string(params.value);
-                var startTarget:Dynamic = gameRoot;
-                var pathPrefix:String = "stage";
+                Evaluate.ROOT_SENTINEL.__raflash_gameRoot = gameRoot;
+                var startTarget:Dynamic = Evaluate.ROOT_SENTINEL;
+                var pathPrefix:String = "root";
                 if (params.pathFormula != null) {
                     var pf:Array<Dynamic> = params.pathFormula;
                     if (pf.length > 0) {

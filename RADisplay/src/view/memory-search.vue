@@ -6,7 +6,7 @@
                 type="text"
                 class="mono-input path-input"
                 v-model="searchPath"
-                placeholder="Starting path (such as stage.enemies)"
+                placeholder="Starting path (such as root.enemies)"
                 spellcheck="false"
             />
         </div>
