@@ -549,9 +549,10 @@ class Parser {
                     break;
                 }
                 case CONSUME.IDENTIFIER_OR_START_BRACKET: {
-                    if (this.peakToken().type === TokenType.IDENTIFIER) {
-                        // When we are given a simple identifier, it means the shortcut syntax is being used.
+                    if (this.peakToken().type === TokenType.IDENTIFIER || this.peakToken().type === TokenType.NUMBER) {
+                        // When we are given a simple identifier (or number), it means the shortcut syntax is being used.
                         // In these cases, the user is trying to compare the value of "this" against the identifier.
+                        // Numbers after dot are treated as string property names (e.g., root.tooltips.60)
                         this.replaceCurrentNode(
                             new Node(NODE_TYPE.EQUAL, null).addChild(
                                 new Node(NODE_TYPE.READ_GLOBAL)
@@ -561,7 +562,7 @@ class Parser {
                                 new Node(NODE_TYPE.IDENTIFIER, this.peakToken().value),
                             )
                         );
-                        // Move past the identifier token
+                        // Move past the token
                         this.advanceToken();
                     } else if(this.peakToken().type === TokenType.LEFT_BRACKET) {
                         this.currentNode.addConsume(CONSUME.EXPRESSION);
