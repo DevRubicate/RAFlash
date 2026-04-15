@@ -134,7 +134,7 @@ $(TEST_AVM1_SWF): FORCE
 
 # RAEngine tests (Deno)
 test-engine:
-	@$(DENO) test --allow-net RAEngine/tests/
+	@$(DENO) test --allow-net --allow-read --allow-write --allow-env RAEngine/tests/
 
 # RADisplay tests (vitest)
 test-display:

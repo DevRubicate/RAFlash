@@ -325,6 +325,7 @@ class Main extends MovieClip {
                     Toast.clearAll();
                     Measure.clearAll();
                     PrimedBadges.clearAll();
+                    Evaluate.clearHooks();
                     if (params.data != null && params.data.gameConfig != null) {
                         untyped AppData.data.gameConfig = params.data.gameConfig;
                     }
@@ -332,6 +333,7 @@ class Main extends MovieClip {
                     sendMessage("syncState", {appData: AppData.data});
                 } else {
                     // First connect: accept Deno's data and load game
+                    Evaluate.clearHooks();
                     AppData.data = params.data;
                     AppData.originalData = haxe.Json.parse(haxe.Json.stringify(params.data));
                     if (params.settings != null) {

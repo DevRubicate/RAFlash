@@ -2703,6 +2703,12 @@ class Main {
 
                     var condition:Array = Array(stack.pop());
 
+                    // Empty condition array means nothing matched — push empty result
+                    if (condition.length == 0) {
+                        stack.push([]);
+                        break;
+                    }
+
                     // Check if condition is uniformly truthy or falsy
                     var allTruthy:Boolean = true;
                     var allFalsy:Boolean = true;

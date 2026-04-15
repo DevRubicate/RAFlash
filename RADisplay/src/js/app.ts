@@ -70,9 +70,16 @@ export const App: AppState = reactive({
     setData(key: string, value: unknown) {
         this[key] = value;
     },
+    _saving: false,
     async save() {
-        const diff = JSONDiff.getDataDiff(App.originalData, App.data);
-        await Network.send({command: 'editData', params: diff});
-        App.originalData = deepCloneRaw(App.data) as Record<string, any>;
+        if (this._saving) return;
+        this._saving = true;
+        try {
+            const diff = JSONDiff.getDataDiff(App.originalData, App.data);
+            await Network.send({command: 'editData', params: diff});
+            App.originalData = deepCloneRaw(App.data) as Record<string, any>;
+        } finally {
+            this._saving = false;
+        }
     },
 });

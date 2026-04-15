@@ -1476,6 +1476,10 @@ function emitLog(source: string, level: string, message: string): void {
  * Open the devtools menu window
  */
 async function openDevtoolsMenu(): Promise<void> {
+    // Reuse existing menu window if one is still open
+    const existing = HTMLWindow.instances.find(w => !w.isClosed);
+    if (existing) return;
+
     devtoolsOpened = true;
     const windowId = Math.floor(Math.random() * 0xFFFFFF);
     await HTMLWindow.create("menu.html", 300, 600, windowId, undefined, 0, 0);
@@ -2254,8 +2258,10 @@ async function handleApiRequest(
 
                 if (resetDiff.length > 0) {
                     const diff = { edited: resetDiff };
-                    await sendToFirmware("editData", { changes: diff });
-                    broadcastToDevtools("editData", diff);
+                    // Process through JSONDiff so watchers fire (e.g. formula recompilation)
+                    const { fullDiff } = JSONDiff.processIncomingDiff(AppData.data, diff);
+                    await sendToFirmware("editData", { changes: fullDiff });
+                    broadcastToDevtools("editData", fullDiff);
                 }
             }
 
@@ -2854,6 +2860,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
  * Handle incoming data from firmware
  */
 function handleFirmwareData(data: string): void {
+    if (!avmConfig) return;
     firmwareMessageBuffer += data;
     const messages = firmwareMessageBuffer.split(avmConfig.messageTerminator);
     firmwareMessageBuffer = messages.pop()!; // Keep incomplete trailing data for next read
@@ -3176,7 +3183,7 @@ async function main(): Promise<void> {
     await startHttpServer();
 
     // 2. Start Flash socket server in background (persists across game sessions)
-    startFlashServer();
+    startFlashServer().catch(err => { emitLog("engine", "error", `Flash socket server failed: ${err.message}`); });
 
     // 3. Handle Ctrl+C (registered once, references module-level state)
     Deno.addSignalListener("SIGINT", async () => {

@@ -247,6 +247,14 @@ class Evaluate {
      * before achievement evaluation, so all formulas within one frame see a
      * consistent snapshot of which hooked functions fired.
      */
+    public static function clearHooks():Void {
+        hookIds = null;
+        hookSkipped = null;
+        hookSeen = new Map();
+        hookPending = new Map();
+        hookNextId = 0;
+    }
+
     public static function snapshotHooks():Void {
         hookSeen = hookPending;
         hookPending = new Map();

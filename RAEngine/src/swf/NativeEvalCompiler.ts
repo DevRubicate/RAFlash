@@ -298,7 +298,6 @@ function compileDSLRange(
                 asm.push(aRegister(regs.temp));
                 const remEndPatch = asm.jumpForward();
                 asm.patchJumpHere(useCachedPatch);
-                asm.pop();
                 asm.push(aRegister(regs.storage), aInt(remKey));
                 asm.getMember();
                 asm.patchJumpHere(remEndPatch);

@@ -300,13 +300,12 @@ class Achievement {
             var assetTriggered:Bool = true;
             var hasRequirements:Bool = false;
             var hasTriggerCondition:Bool = false;
-            var groupNonTriggerMet:Array<Bool> = [];
-            var groupTriggerMet:Array<Bool> = [];
-            var groupHasTrigger:Array<Bool> = [];
-
             // === PHASE 0: Pause If detection ===
             var groups:Array<Dynamic> = untyped achievement.groups;
             var groupCount:Int = groups.length;
+            var groupNonTriggerMet:Array<Bool> = [for (_ in 0...groupCount) true];
+            var groupTriggerMet:Array<Bool> = [for (_ in 0...groupCount) true];
+            var groupHasTrigger:Array<Bool> = [for (_ in 0...groupCount) false];
             var groupPauseStates:Array<Bool> = [];
             var groupPauseIfResults:Array<Array<Dynamic>> = [];
             var groupChainInfos:Array<Map<Int, Dynamic>> = [];
@@ -497,9 +496,6 @@ class Achievement {
 
                 var groupReqs:Array<Dynamic> = [];
                 var groupAllPassed:Bool = true;
-                groupNonTriggerMet.push(true);
-                groupTriggerMet.push(true);
-                groupHasTrigger.push(false);
 
                 // Add Phase 0 Pause If results
                 var piResults:Array<Dynamic> = groupPauseIfResults[j];

@@ -27,8 +27,10 @@ function detectPattern(bytecode: unknown[]): unknown[] | null {
     const len = bytecode.length;
     const b = bytecode as string[];
 
+    if (len < 2 || b[0] !== 'VERSION_1') return null;
+
     if (len === 3 && b[1] === 'VALUE')
-        return [0, parseInt(b[2], 10)];
+        return [0, Number(b[2])];
     if (len === 3 && b[1] === 'STRING')
         return [1, b[2]];
     if (len === 2 && b[1] === 'NULL')
