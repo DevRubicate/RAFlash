@@ -10,6 +10,14 @@
 
 const encoder = new TextEncoder();
 
+interface NetworkRule {
+    active: boolean;
+    url: string;
+    status: number;
+    action: string;
+    body: string;
+}
+
 interface ProxyConfig {
     /** Port to listen on (must match port.txt / FlashpointProxy.dll config) */
     port: number;
@@ -19,6 +27,8 @@ interface ProxyConfig {
     gameDomain: string | null;
     /** Optional callback for logging proxy requests */
     onRequest?: (method: string, url: string, status: number) => void;
+    /** Live accessor for network behavior rules */
+    getNetworkRules?: () => NetworkRule[];
 }
 
 let listener: Deno.TcpListener | null = null;
@@ -199,12 +209,31 @@ async function handleConnection(conn: Deno.TcpConn) {
             return;
         }
 
+        // Check network behavior rules (exact URL match)
+        const rules = config.getNetworkRules?.() || [];
+        const fullUrl = match[2];
+        const matchedRule = rules.find(r => r.active && r.url && r.url === fullUrl);
+        if (matchedRule && matchedRule.action === 'text') {
+            const bodyBytes = encoder.encode(matchedRule.body || '');
+            const statusText = matchedRule.status === 200 ? 'OK' : String(matchedRule.status);
+            const writer = conn.writable.getWriter();
+            await writer.write(httpResponse(matchedRule.status, statusText, {
+                'Connection': 'close',
+                'Content-Type': 'text/plain',
+                'Content-Length': String(bodyBytes.length),
+            }, bodyBytes));
+            writer.releaseLock();
+            log?.(method, fullUrl, matchedRule.status);
+            conn.close();
+            return;
+        }
+
         // Unknown host — block and return 404 (never forward to real internet)
         {
             const writer = conn.writable.getWriter();
             await writer.write(httpResponse(404, 'Not Found', { 'Connection': 'close', 'Content-Length': '0' }));
             writer.releaseLock();
-            log?.(method, match[2], 404);
+            log?.(method, fullUrl, 404);
         }
         conn.close();
     } catch {

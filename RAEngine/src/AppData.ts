@@ -6,7 +6,7 @@ export class AppData {
     static data: AppDataStructure = {
         assets: [],
         codeNotes: [],
-        gameConfig: { title: '', originUrl: '', badgeImage: '', hashOverride: '', scaleMode: 'neutral', align: 'neutral' },
+        gameConfig: { title: '', originUrl: '', badgeImage: '', hashOverride: '', scaleMode: 'neutral', align: 'neutral', networkRules: [] },
     };
 
     // Game-specific state file path
@@ -69,10 +69,11 @@ export class AppData {
             if (gc.scaleMode == null) gc.scaleMode = 'neutral';
             if (gc.align == null) gc.align = 'neutral';
             if (gc.hashOverride == null) gc.hashOverride = '';
+            if (gc.networkRules == null) gc.networkRules = [];
         } catch (error) {
             if (error instanceof Deno.errors.NotFound) {
                 // New game, start fresh
-                this.data = { assets: [], codeNotes: [], gameConfig: { title: '', originUrl: '', badgeImage: '', hashOverride: '', scaleMode: 'neutral', align: 'neutral' } };
+                this.data = { assets: [], codeNotes: [], gameConfig: { title: '', originUrl: '', badgeImage: '', hashOverride: '', scaleMode: 'neutral', align: 'neutral', networkRules: [] } };
             } else {
                 throw error;
             }
@@ -337,6 +338,20 @@ export class AppData {
             scaleMode: { type: 'string' },
             align: { type: 'string' },
             hashOverride: { type: 'string' },
+            networkRules: {
+                type: 'array',
+                items: {
+                    type: 'object',
+                    properties: {
+                        active: { type: 'boolean' },
+                        label: { type: 'string' },
+                        url: { type: 'string' },
+                        status: { type: 'number' },
+                        action: { type: 'string' },
+                        body: { type: 'string' },
+                    }
+                }
+            },
         }
     };
 

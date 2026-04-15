@@ -65,6 +65,16 @@ export interface CodeNote {
     [key: string]: unknown;
 }
 
+export interface NetworkRule {
+    active: boolean;
+    label: string;
+    url: string;
+    status: number;
+    action: string;     // "text"
+    body: string;       // Text response body (for action "text")
+    [key: string]: unknown;
+}
+
 export interface GameConfig {
     title: string;
     originUrl: string;
@@ -72,6 +82,7 @@ export interface GameConfig {
     hashOverride: string; // If set, used as the game hash instead of the file's actual hash
     scaleMode: string;  // "neutral", "showAll", "noBorder", "exactFit", "noScale"
     align: string;      // "neutral", "", "T", "B", "L", "R", "TL", "TR", "BL", "BR"
+    networkRules: NetworkRule[];
     [key: string]: unknown;
 }
 

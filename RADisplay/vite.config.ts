@@ -23,6 +23,7 @@ export default defineConfig({
         'file-picker': resolve(__dirname, 'src/html/file-picker.html'),
         'game-appearance': resolve(__dirname, 'src/html/game-appearance.html'),
         'game-behavior': resolve(__dirname, 'src/html/game-behavior.html'),
+        'network-behavior': resolve(__dirname, 'src/html/network-behavior.html'),
         'documentation': resolve(__dirname, 'src/html/documentation.html'),
         'event-log': resolve(__dirname, 'src/html/event-log.html'),
         'benchmark': resolve(__dirname, 'src/html/benchmark.html'),

@@ -1903,6 +1903,7 @@ async function handleApiRequest(
                 if ("hashOverride" in params) dataJson.hashOverride = params.hashOverride as string;
                 if ("scaleMode" in params) dataJson.scaleMode = params.scaleMode as string;
                 if ("align" in params) dataJson.align = params.align as string;
+                if ("networkRules" in params) (dataJson as Record<string, unknown>).networkRules = params.networkRules;
 
                 // Rewrite the zip with updated data.json
                 files["data.json"] = new TextEncoder().encode(JSON.stringify(dataJson, null, 2));
@@ -3354,6 +3355,7 @@ async function main(): Promise<void> {
             onRequest: (method, url, status) => {
                 emitLog("network", "info", `${status} ${method} ${url}`);
             },
+            getNetworkRules: () => AppData.data.gameConfig.networkRules || [],
         });
 
         // Switch to game running state

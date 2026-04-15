@@ -56,6 +56,8 @@
         </div>
 
         <footer class="editor-footer" v-if="isRaflash">
+            <button class="btn btn-compact btn-secondary" @click="openNetworkBehavior">Network Behavior</button>
+            <span style="flex: 1;"></span>
             <span class="save-hint" v-if="dirty">Unsaved changes</span>
             <button class="btn btn-primary" :disabled="!dirty" @click="save">Save</button>
         </footer>
@@ -162,6 +164,10 @@
             || scaleMode.value !== savedScaleMode
             || align.value !== savedAlign;
     });
+
+    const openNetworkBehavior = async () => {
+        await Network.send({ command: 'showPopup', params: { url: 'internals/assets/network-behavior.html', width: 750, height: 500, params: {}, parentWindowId: App.windowId } });
+    };
 
     const save = async () => {
         // Save behavior settings into the .raflash data.json
