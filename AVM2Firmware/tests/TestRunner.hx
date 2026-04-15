@@ -1,19 +1,39 @@
 /**
  * AVM2Firmware Test Runner
  *
- * Basic test framework for Haxe, compiled to Neko VM.
- * Mirrors the test pattern from AVM1Firmware.
+ * Connects to a Deno test server via Socket, runs tests,
+ * and reports results over the wire. Mirrors the AVM1 test pattern.
  */
+import flash.net.Socket;
+import flash.events.Event;
+import flash.events.IOErrorEvent;
+import flash.events.SecurityErrorEvent;
+
 class TestRunner {
     static var passed:Int = 0;
     static var failed:Int = 0;
     static var currentTest:String = "";
     static var currentTestFailed:Bool = false;
     static var currentTestError:String = "";
+    static var socket:Socket;
+    static var connected:Bool = false;
+    static var results:Array<{name:String, passed:Bool, error:String}> = [];
 
     static function main() {
-        runAllTests();
-        reportResults();
+        socket = new Socket();
+        socket.addEventListener(Event.CONNECT, function(_:Event) {
+            connected = true;
+            log("Connected to test server");
+            runAllTests();
+            reportResults();
+        });
+        socket.addEventListener(IOErrorEvent.IO_ERROR, function(e:IOErrorEvent) {
+            trace("ERROR: Socket IO error: " + e.text);
+        });
+        socket.addEventListener(SecurityErrorEvent.SECURITY_ERROR, function(e:SecurityErrorEvent) {
+            trace("ERROR: Socket security error: " + e.text);
+        });
+        socket.connect("127.0.0.1", 9998);
     }
 
     static function runAllTests() {
@@ -32,8 +52,6 @@ class TestRunner {
 
         // Domain logic tests
         TestEvaluate.run();
-        // JSONDiff tests skipped: applyDataDiff uses untyped dynamic field
-        // access (obj[key] = val) which only works on Flash target, not Neko.
     }
 
     // === Test Framework ===
@@ -47,11 +65,12 @@ class TestRunner {
     public static function endTest() {
         if (currentTestFailed) {
             failed++;
-            trace("FAIL: " + currentTest + " - " + currentTestError);
+            log("FAIL: " + currentTest + " - " + currentTestError);
         } else {
             passed++;
-            trace("PASS: " + currentTest);
+            log("PASS: " + currentTest);
         }
+        results.push({name: currentTest, passed: !currentTestFailed, error: currentTestError});
     }
 
     public static function assert(condition:Bool, message:String) {
@@ -77,18 +96,41 @@ class TestRunner {
 
     // === Reporting ===
 
-    static function reportResults() {
-        trace("");
-        trace("──────────────────────────────────────────────────");
-        trace("");
-
-        var total = passed + failed;
-        if (failed == 0) {
-            trace("All " + total + " tests passed");
-            Sys.exit(0);
-        } else {
-            trace(failed + " of " + total + " tests failed");
-            Sys.exit(1);
+    static function log(message:String) {
+        if (connected) {
+            socket.writeUTFBytes('{"type":"log","message":"' + escapeString(message) + '"}\n');
         }
+        trace(message);
+    }
+
+    static function reportResults() {
+        var summary = '{"type":"summary","passed":' + passed + ',"failed":' + failed + ',"results":[';
+        for (i in 0...results.length) {
+            if (i > 0) summary += ",";
+            var r = results[i];
+            summary += '{"name":"' + escapeString(r.name) + '","passed":' + r.passed;
+            if (r.error.length > 0) {
+                summary += ',"error":"' + escapeString(r.error) + '"';
+            }
+            summary += "}";
+        }
+        summary += "]}\n";
+        socket.writeUTFBytes(summary);
+        socket.flush();
+        // Test server kills Flash Player after receiving the summary
+    }
+
+    static function escapeString(s:String):String {
+        var result = "";
+        for (i in 0...s.length) {
+            var c = s.charAt(i);
+            if (c == '"') result += '\\"';
+            else if (c == '\\') result += '\\\\';
+            else if (c == '\n') result += '\\n';
+            else if (c == '\r') result += '\\r';
+            else if (c == '\t') result += '\\t';
+            else result += c;
+        }
+        return result;
     }
 }

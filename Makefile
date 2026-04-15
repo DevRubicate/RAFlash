@@ -140,12 +140,12 @@ test-engine:
 test-display:
 	@cd RADisplay && npm test --silent
 
-# AVM2Firmware tests (Haxe/Neko)
-TEST_AVM2_NEKO=.tests/AVM2Tests.n
+# AVM2Firmware tests (Haxe → Flash Player)
+TEST_AVM2_SWF=.tests/AVM2Tests.swf
 
-test-avm2: $(TEST_AVM2_NEKO)
-	@neko $(TEST_AVM2_NEKO)
+test-avm2: $(TEST_AVM2_SWF)
+	@$(DENO) run --allow-net --allow-run --allow-read AVM2Firmware/tests/test-server.ts $(TEST_AVM2_SWF)
 
-$(TEST_AVM2_NEKO): FORCE
+$(TEST_AVM2_SWF): FORCE
 	@mkdir -p $(dir $@)
-	@$(HAXE) -cp AVM2Firmware -cp AVM2Firmware/tests -main TestRunner -neko $@
+	@$(HAXE) -cp AVM2Firmware -cp AVM2Firmware/tests -main TestRunner -swf $@ -swf-version 16 -D swf-header=800:575:60:0
