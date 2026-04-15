@@ -40,7 +40,7 @@ const CONTENT_TYPES: Record<string, string> = {
     '.csv': 'text/csv',
 };
 
-function contentTypeForUrl(url: string): string {
+export function contentTypeForUrl(url: string): string {
     const path = url.replace(/\?.*$/, ''); // strip query string
     const dot = path.lastIndexOf('.');
     if (dot >= 0) {
@@ -287,6 +287,53 @@ async function handleConnection(conn: Deno.TcpConn) {
 export function networkRuleZipPath(url: string): string {
     const stripped = url.replace(/^https?:\/\//, '');
     return 'network/' + stripped;
+}
+
+/**
+ * Reconcile network file entries in a zip after rules change.
+ * Handles uploads, moves (URL changed), and orphan cleanup.
+ *
+ * Mutates `files` in place. Strips `fileData` from each rule.
+ * Returns the set of new zip paths for the caller.
+ */
+export function reconcileNetworkFiles(
+    files: Record<string, Uint8Array>,
+    oldRules: Array<Record<string, unknown>>,
+    newRules: Array<Record<string, unknown>>,
+): void {
+    // Build set of old zip paths
+    const oldPaths = new Set<string>();
+    for (const r of oldRules) {
+        if (r.action === 'file' && r.url) oldPaths.add(networkRuleZipPath(r.url as string));
+    }
+
+    // Build set of new zip paths and handle uploads/moves
+    const newPaths = new Set<string>();
+    for (const rule of newRules) {
+        if (rule.action === 'file' && rule.url) {
+            const zipPath = networkRuleZipPath(rule.url as string);
+            newPaths.add(zipPath);
+
+            if (rule.fileData) {
+                // New upload — write file bytes
+                files[zipPath] = Uint8Array.from(atob(rule.fileData as string), c => c.charCodeAt(0));
+            } else if (!files[zipPath]) {
+                // No new upload and file not at new path — try to find it at an old path
+                for (const oldPath of oldPaths) {
+                    if (files[oldPath] && !newPaths.has(oldPath)) {
+                        files[zipPath] = files[oldPath];
+                        break;
+                    }
+                }
+            }
+        }
+        delete rule.fileData;
+    }
+
+    // Remove orphaned network files no longer referenced by any rule
+    for (const oldPath of oldPaths) {
+        if (!newPaths.has(oldPath)) delete files[oldPath];
+    }
 }
 
 export function startSitelockProxy(proxyConfig: ProxyConfig) {

@@ -29,7 +29,7 @@ import jpeg from "npm:jpeg-js";
 // @deno-types="npm:@types/pako"
 import * as pako from "npm:pako";
 import { unzipSync, zipSync } from "npm:fflate";
-import { startSitelockProxy, stopSitelockProxy, networkRuleZipPath } from "./SitelockProxy.ts";
+import { startSitelockProxy, stopSitelockProxy, networkRuleZipPath, reconcileNetworkFiles } from "./SitelockProxy.ts";
 import { compileAchievementsSWF, type NativeAchResult } from "./swf/NativeEvalCompiler.ts";
 import { buildInjectorTags, findMaxCharacterId } from "./swf/AVM2Injector.ts";
 
@@ -1907,40 +1907,7 @@ async function handleApiRequest(
                     const rules = params.networkRules as Array<Record<string, unknown>>;
                     const oldRules = ((dataJson as Record<string, unknown>).networkRules || []) as Array<Record<string, unknown>>;
 
-                    // Build set of old zip paths for cleanup
-                    const oldPaths = new Set<string>();
-                    for (const r of oldRules) {
-                        if (r.action === 'file' && r.url) oldPaths.add(networkRuleZipPath(r.url as string));
-                    }
-
-                    // Build set of new zip paths
-                    const newPaths = new Set<string>();
-                    for (const rule of rules) {
-                        if (rule.action === 'file' && rule.url) {
-                            const zipPath = networkRuleZipPath(rule.url as string);
-                            newPaths.add(zipPath);
-
-                            if (rule.fileData) {
-                                // New upload — write file bytes
-                                files[zipPath] = Uint8Array.from(atob(rule.fileData as string), c => c.charCodeAt(0));
-                            } else if (!files[zipPath]) {
-                                // No new upload and file not at new path — try to find it at an old path
-                                for (const oldPath of oldPaths) {
-                                    if (files[oldPath] && !newPaths.has(oldPath)) {
-                                        files[zipPath] = files[oldPath];
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        delete rule.fileData;
-                    }
-
-                    // Remove orphaned network files no longer referenced by any rule
-                    for (const oldPath of oldPaths) {
-                        if (!newPaths.has(oldPath)) delete files[oldPath];
-                    }
-
+                    reconcileNetworkFiles(files, oldRules, rules);
                     (dataJson as Record<string, unknown>).networkRules = rules;
 
                     // Hydrate in-memory fileBytes on the live rules for immediate proxy serving
