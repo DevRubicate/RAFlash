@@ -3,6 +3,7 @@ package;
 #if flash
 import flash.display.DisplayObject;
 import flash.display.DisplayObjectContainer;
+import flash.display.Loader;
 import flash.display.MovieClip;
 import flash.display.Sprite;
 import flash.text.TextField;
@@ -19,6 +20,98 @@ class Evaluate {
 
     // Remembered values for {expr} syntax — persists across evaluation frames
     public static var rememberedValues:Map<String, Array<Dynamic>> = new Map();
+
+    // Flash built-in property defaults (documented in Adobe AS3 reference).
+    // Properties at their default value are hidden during enumeration to reduce noise.
+    private static var flashPropDefaults:Map<String, Dynamic> = null;
+    // Properties that are always noise (dynamic mouse coords, always-present objects, structural refs)
+    private static var flashPropSkip:Map<String, Bool> = null;
+    // Loader/LoaderInfo properties that throw SecurityError on cross-domain content
+    private static var flashPropCrossDomain:Map<String, Bool> = null;
+
+    private static function initFlashDefaults():Void {
+        if (flashPropDefaults != null) return;
+
+        flashPropDefaults = new Map();
+        // DisplayObject
+        flashPropDefaults.set("alpha", 1);
+        flashPropDefaults.set("x", 0);
+        flashPropDefaults.set("y", 0);
+        flashPropDefaults.set("z", 0);
+        flashPropDefaults.set("rotation", 0);
+        flashPropDefaults.set("rotationX", 0);
+        flashPropDefaults.set("rotationY", 0);
+        flashPropDefaults.set("rotationZ", 0);
+        flashPropDefaults.set("scaleX", 1);
+        flashPropDefaults.set("scaleY", 1);
+        flashPropDefaults.set("scaleZ", 1);
+        flashPropDefaults.set("width", 0);
+        flashPropDefaults.set("height", 0);
+        flashPropDefaults.set("visible", true);
+        flashPropDefaults.set("blendMode", "normal");
+        flashPropDefaults.set("cacheAsBitmap", false);
+        flashPropDefaults.set("numChildren", 0);
+        // InteractiveObject
+        flashPropDefaults.set("mouseEnabled", true);
+        flashPropDefaults.set("tabEnabled", false);
+        flashPropDefaults.set("tabIndex", -1);
+        flashPropDefaults.set("doubleClickEnabled", false);
+        flashPropDefaults.set("needsSoftKeyboard", false);
+        // DisplayObjectContainer
+        flashPropDefaults.set("mouseChildren", true);
+        flashPropDefaults.set("tabChildren", true);
+        // Sprite
+        flashPropDefaults.set("buttonMode", false);
+        flashPropDefaults.set("useHandCursor", true);
+        // MovieClip
+        flashPropDefaults.set("currentFrame", 1);
+        flashPropDefaults.set("totalFrames", 1);
+        flashPropDefaults.set("framesLoaded", 1);
+        flashPropDefaults.set("enabled", true);
+        flashPropDefaults.set("isPlaying", false);
+        flashPropDefaults.set("trackAsMenu", false);
+
+        flashPropSkip = new Map();
+        // Dynamic values (change every frame based on cursor)
+        flashPropSkip.set("mouseX", true);
+        flashPropSkip.set("mouseY", true);
+        // Always-present objects (not useful for game state)
+        flashPropSkip.set("transform", true);
+        flashPropSkip.set("graphics", true);
+        flashPropSkip.set("textSnapshot", true);
+        flashPropSkip.set("currentScene", true);
+        flashPropSkip.set("scenes", true);
+        flashPropSkip.set("currentLabels", true);
+        flashPropSkip.set("loaderInfo", true);
+        // Structural references (always set for on-stage objects)
+        flashPropSkip.set("parent", true);
+        flashPropSkip.set("root", true);
+        flashPropSkip.set("stage", true);
+        // Loader/LoaderInfo properties that throw SecurityError on cross-domain content
+        flashPropCrossDomain = new Map();
+        flashPropCrossDomain.set("content", true);
+        flashPropCrossDomain.set("contentLoaderInfo", true);
+        flashPropCrossDomain.set("uncaughtErrorEvents", true);
+        flashPropCrossDomain.set("bytes", true);
+    }
+
+    /** Check if a Flash accessor value matches its documented default (for non-trivial types). */
+    private static function isFlashDefault(name:String, val:Dynamic):Bool {
+        if (flashPropDefaults.exists(name)) {
+            return val == flashPropDefaults.get(name);
+        }
+        if (name == "filters") {
+            return Std.isOfType(val, Array) && (cast(val, Array<Dynamic>)).length == 0;
+        }
+        if (name == "soundTransform") {
+            try {
+                return untyped val.volume == 1 && untyped val.pan == 0
+                    && untyped val.leftToLeft == 1 && untyped val.leftToRight == 0
+                    && untyped val.rightToRight == 1 && untyped val.rightToLeft == 0;
+            } catch (e:Dynamic) { return false; }
+        }
+        return false;
+    }
 
     // === Public API ===
 
@@ -743,7 +836,79 @@ class Evaluate {
             // Not a dynamic object, skip
         }
 
-        // 2. Display children (if DisplayObjectContainer)
+        // 2. Typed class fields via describeType
+        #if flash
+        try {
+            var typeXml:Dynamic = untyped __global__["flash.utils.describeType"](target);
+
+            // Variables: read values directly (safe, no code execution)
+            var variables:Dynamic = untyped typeXml.variable;
+            var numVars:Int = untyped variables.length();
+            var v:Int = 0;
+            while (v < numVars) {
+                var varName:String = Std.string(untyped variables[v].attribute("name"));
+                if (!seen.exists(varName)) {
+                    try {
+                        propKeys.push(varName);
+                        propValues.push(untyped target[varName]);
+                        seen.set(varName, true);
+                    } catch (e2:Dynamic) {}
+                }
+                v++;
+            }
+
+            // Accessors: game-declared ones are listed by name only (calling getters
+            // can trigger side effects like cross-domain loads). Flash-declared ones
+            // are safe to read, but only shown when their value is non-default.
+            // For Loaders with cross-domain content, skip security-sensitive properties.
+            // Loaders may contain cross-domain content — skip security-sensitive
+            // properties unconditionally (probing childAllowsParent itself can trigger errors)
+            var isLoader:Bool = false;
+            #if flash
+            isLoader = Std.isOfType(target, Loader);
+            #end
+            var accessors:Dynamic = untyped typeXml.accessor;
+            var numAcc:Int = untyped accessors.length();
+            var a:Int = 0;
+            while (a < numAcc) {
+                var accAccess:String = Std.string(untyped accessors[a].attribute("access"));
+                if (accAccess == "readonly" || accAccess == "readwrite") {
+                    var accName:String = Std.string(untyped accessors[a].attribute("name"));
+                    if (!seen.exists(accName)) {
+                        var declaredBy:String = Std.string(untyped accessors[a].attribute("declaredBy"));
+                        if (declaredBy.length >= 6 && declaredBy.substr(0, 6) == "flash.") {
+                            // Flash built-in: safe to read, only include if non-default
+                            initFlashDefaults();
+                            if (!flashPropSkip.exists(accName) && !(isLoader && flashPropCrossDomain.exists(accName))) {
+                                try {
+                                    var val:Dynamic = untyped target[accName];
+                                    var dominated:Bool = (val == null);
+                                    if (!dominated) {
+                                        dominated = isFlashDefault(accName, val);
+                                    }
+                                    if (!dominated) {
+                                        propKeys.push(accName);
+                                        propValues.push(val);
+                                        seen.set(accName, true);
+                                    }
+                                } catch (e2:Dynamic) {}
+                            }
+                        } else {
+                            // Game-declared: include name only, don't call getter
+                            propKeys.push(accName);
+                            propValues.push(null);
+                            seen.set(accName, true);
+                        }
+                    }
+                }
+                a++;
+            }
+        } catch (e:Dynamic) {
+            // describeType not available or failed
+        }
+        #end
+
+        // 3. Display children (if DisplayObjectContainer)
         #if flash
         try {
             if (Std.isOfType(target, DisplayObjectContainer)) {
@@ -753,8 +918,8 @@ class Evaluate {
                 while (c < numChildren) {
                     var child:DisplayObject = container.getChildAt(c);
                     var childName:String = child.name;
-                    // Skip duplicates (already found as dynamic property)
-                    if (!seen.exists(childName)) {
+                    // Skip firmware child and duplicates (already found as dynamic property)
+                    if (childName != "__raflash" && !seen.exists(childName)) {
                         propKeys.push(childName);
                         propValues.push(child);
                         seen.set(childName, true);
