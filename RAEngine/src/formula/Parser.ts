@@ -227,7 +227,8 @@ class Parser {
                                 qnode.type === NODE_TYPE.NULL ||
                                 qnode.type === NODE_TYPE.READ_GLOBAL ||
                                 qnode.type === NODE_TYPE.REMEMBERED ||
-                                qnode.type === NODE_TYPE.TERNARY) {
+                                qnode.type === NODE_TYPE.TERNARY ||
+                                qnode.type === NODE_TYPE.FUNCTION_CALL) {
                                 elseStack.push(qnode);
                             } else if (opDetails && opDetails.type === 'BINARY') {
                                 const b = elseStack.pop()!;
@@ -291,6 +292,8 @@ class Parser {
                             } else if (node.type === NODE_TYPE.TERNARY) {
                                 evaluationStack.push(node);
                             } else if (node.type === NODE_TYPE.REMEMBERED) {
+                                evaluationStack.push(node);
+                            } else if (node.type === NODE_TYPE.FUNCTION_CALL) {
                                 evaluationStack.push(node);
                             } else if (
                                 operatorDetails && operatorDetails.type === 'BINARY'
@@ -683,6 +686,19 @@ class Parser {
                 case CONSUME.EXPRESSION: {
                     switch (this.peakToken().type) {
                         case TokenType.IDENTIFIER: {
+                            // Check if this is a function call: identifier followed by (
+                            if (this.peakToken(1).type === TokenType.LPAREN) {
+                                const funcName = this.peakToken().value;
+                                const funcMarker = new Node(NODE_TYPE.FUNCTION_CALL);
+                                funcMarker.value = this.currentNode.queue.length;
+                                funcMarker.children.push(new Node(NODE_TYPE.IDENTIFIER, funcName));
+                                this.currentNode.addStack(funcMarker);
+                                // Move past identifier and (
+                                this.advanceToken();
+                                this.advanceToken();
+                                this.currentNode.addConsume(CONSUME.EXPRESSION);
+                                break;
+                            }
                             this.currentNode.addQueue(
                                 new Node(NODE_TYPE.READ_GLOBAL)
                                     .addChild(
@@ -1066,16 +1082,76 @@ class Parser {
                             break;
                         }
                         case TokenType.RPAREN: {
-                            // Look for matching LEFT_PARENTHESIS on stack
+                            // Look for matching LEFT_PARENTHESIS or FUNCTION_CALL on stack
                             let parenIdx = this.currentNode.stack.length - 1;
                             while (
                                 parenIdx >= 0 &&
-                                this.currentNode.stack[parenIdx].type !== NODE_TYPE.LEFT_PARENTHESIS
+                                this.currentNode.stack[parenIdx].type !== NODE_TYPE.LEFT_PARENTHESIS &&
+                                this.currentNode.stack[parenIdx].type !== NODE_TYPE.FUNCTION_CALL
                             ) {
                                 --parenIdx;
                             }
 
-                            if (parenIdx >= 0) {
+                            if (parenIdx >= 0 && this.currentNode.stack[parenIdx].type === NODE_TYPE.FUNCTION_CALL) {
+                                // End of function call — same pattern as REMEMBERED/RBRACE
+                                // Pop operators above FUNCTION_CALL marker to queue
+                                while (this.currentNode.stack.length > parenIdx + 1) {
+                                    this.currentNode.queue.push(
+                                        this.currentNode.stack.pop()!,
+                                    );
+                                }
+
+                                // Pop the FUNCTION_CALL marker
+                                const marker = this.currentNode.stack.pop()!;
+                                const queueStart = marker.value as number;
+                                const funcName = marker.children[0].value;
+
+                                // Extract inner RPN queue items
+                                const innerRPN = this.currentNode.queue.splice(queueStart);
+
+                                // Evaluate RPN into a single expression tree
+                                const evalStack: Array<Node> = [];
+                                for (const qnode of innerRPN) {
+                                    const opDetails = OperatorDetails[qnode.type];
+                                    if (qnode.type === NODE_TYPE.VALUE ||
+                                        qnode.type === NODE_TYPE.STRING ||
+                                        qnode.type === NODE_TYPE.NULL ||
+                                        qnode.type === NODE_TYPE.READ_GLOBAL ||
+                                        qnode.type === NODE_TYPE.REMEMBERED ||
+                                        qnode.type === NODE_TYPE.TERNARY ||
+                                        qnode.type === NODE_TYPE.FUNCTION_CALL) {
+                                        evalStack.push(qnode);
+                                    } else if (opDetails && opDetails.type === 'BINARY') {
+                                        if (evalStack.length < 2) break;
+                                        const b = evalStack.pop()!;
+                                        const a = evalStack.pop()!;
+                                        a.parent = qnode;
+                                        b.parent = qnode;
+                                        qnode.children.push(a);
+                                        qnode.children.push(b);
+                                        evalStack.push(qnode);
+                                    } else if (opDetails && opDetails.type === 'UNARY') {
+                                        if (evalStack.length < 1) break;
+                                        const a = evalStack.pop()!;
+                                        a.parent = qnode;
+                                        qnode.children.unshift(a);
+                                        evalStack.push(qnode);
+                                    }
+                                }
+
+                                // Build FUNCTION_CALL node
+                                const funcNode = new Node(NODE_TYPE.FUNCTION_CALL);
+                                funcNode.value = funcName;
+                                if (evalStack.length === 1) {
+                                    funcNode.addChild(evalStack[0]);
+                                }
+                                this.currentNode.addQueue(funcNode);
+
+                                // Advance past )
+                                this.advanceToken();
+                                // Continue looking for operators
+                                this.currentNode.addConsume(CONSUME.EXPRESSION_OPERATOR);
+                            } else if (parenIdx >= 0) {
                                 // Pop operators above LEFT_PARENTHESIS to queue
                                 while (this.currentNode.stack.length > parenIdx + 1) {
                                     this.currentNode.queue.push(
@@ -1126,7 +1202,8 @@ class Parser {
                                         qnode.type === NODE_TYPE.NULL ||
                                         qnode.type === NODE_TYPE.READ_GLOBAL ||
                                         qnode.type === NODE_TYPE.REMEMBERED ||
-                                        qnode.type === NODE_TYPE.TERNARY) {
+                                        qnode.type === NODE_TYPE.TERNARY ||
+                                        qnode.type === NODE_TYPE.FUNCTION_CALL) {
                                         evalStack.push(qnode);
                                     } else if (opDetails && opDetails.type === 'BINARY') {
                                         if (evalStack.length < 2) break;
@@ -1181,7 +1258,8 @@ class Parser {
                                         qnode.type === NODE_TYPE.NULL ||
                                         qnode.type === NODE_TYPE.READ_GLOBAL ||
                                         qnode.type === NODE_TYPE.REMEMBERED ||
-                                        qnode.type === NODE_TYPE.TERNARY) {
+                                        qnode.type === NODE_TYPE.TERNARY ||
+                                        qnode.type === NODE_TYPE.FUNCTION_CALL) {
                                         thenStack.push(qnode);
                                     } else if (opDetails && opDetails.type === 'BINARY') {
                                         const b = thenStack.pop()!;
@@ -1241,7 +1319,8 @@ class Parser {
                                     qnode.type === NODE_TYPE.NULL ||
                                     qnode.type === NODE_TYPE.READ_GLOBAL ||
                                     qnode.type === NODE_TYPE.REMEMBERED ||
-                                    qnode.type === NODE_TYPE.TERNARY) {
+                                    qnode.type === NODE_TYPE.TERNARY ||
+                                    qnode.type === NODE_TYPE.FUNCTION_CALL) {
                                     conditionStack.push(qnode);
                                 } else if (opDetails && opDetails.type === 'BINARY') {
                                     const b = conditionStack.pop()!;

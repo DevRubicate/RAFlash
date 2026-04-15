@@ -175,6 +175,22 @@ class Evaluate {
                     }
                     stack.push(notResult);
                 }
+            } else if (token == "LEN") {
+                var a = safePop(stack);
+                // Flatten array elements (same as OBJECT_ACCESS preamble)
+                // so len(.arr) where arr=[] returns 0, not 1
+                var flat:Array<Dynamic> = [];
+                for (el in a) {
+                    if (Std.isOfType(el, Array)) {
+                        var inner:Array<Dynamic> = cast el;
+                        for (innerEl in inner) {
+                            flat.push(innerEl);
+                        }
+                    } else {
+                        flat.push(el);
+                    }
+                }
+                stack.push([flat.length]);
             } else if (token == "READ_GLOBAL") {
                 var identifiers = safePop(stack);
                 if (identifiers.length == 1) {

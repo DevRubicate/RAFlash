@@ -47,6 +47,9 @@ enum NODE_TYPE {
 
     // Remembered value
     REMEMBERED = 'REMEMBERED',
+
+    // Function call
+    FUNCTION_CALL = 'FUNCTION_CALL',
 }
 
 export { NODE_TYPE };

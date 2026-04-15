@@ -32,6 +32,7 @@ import { OrUnit }                       from './unit/OrUnit.ts';
 import { XorUnit }                      from './unit/XorUnit.ts';
 import { TernaryUnit }                  from './unit/TernaryUnit.ts';
 import { RememberedUnit }               from './unit/RememberedUnit.ts';
+import { LenUnit }                      from './unit/LenUnit.ts';
 
 export class Builder {
     input: Node;
@@ -476,6 +477,23 @@ export class Builder {
                 );
                 element.children[0].parent = element;
                 return element;
+            }
+            case NODE_TYPE.FUNCTION_CALL: {
+                const funcName = node.value;
+                if (funcName === 'len') {
+                    if (node.children.length !== 1) {
+                        throw new Error(
+                            `len() expects 1 argument, got ${node.children.length}`,
+                        );
+                    }
+                    const element = new LenUnit(null);
+                    element.children.push(
+                        Builder.convert(node.children[0]),
+                    );
+                    element.children[0].parent = element;
+                    return element;
+                }
+                throw new Error(`Unknown function: ${funcName}`);
             }
             default:
                 throw new Error(`Invalid node type: ${node.type}`);

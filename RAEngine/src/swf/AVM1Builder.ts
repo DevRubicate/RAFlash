@@ -101,6 +101,7 @@ export class AVM1Builder {
     toNumber(): this { this.buf.push(0x4A); return this; }
     toInteger(): this { this.buf.push(0x18); return this; }
     bitXor(): this { this.buf.push(0x62); return this; }
+    instanceOf(): this { this.buf.push(0x54); return this; }
 
     // --- Branching ---
 

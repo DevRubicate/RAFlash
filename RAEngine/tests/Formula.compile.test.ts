@@ -178,3 +178,66 @@ Deno.test("compile - ternary with null check", () => {
     assertEquals(bytecode.includes("TERNARY"), true);
     assertEquals(bytecode.includes("NOT_EQUAL"), true);
 });
+
+// =============================================================================
+// Function Calls
+// =============================================================================
+
+Deno.test("compile - len() produces LEN opcode", () => {
+    const bytecode = Formula.compile("len(stage.enemies)");
+    assertEquals(bytecode[0], "VERSION_1");
+    assertEquals(bytecode.includes("LEN"), true);
+    assertEquals(bytecode.includes("OBJECT_ACCESS"), true);
+    // LEN should be the last instruction
+    assertEquals(bytecode[bytecode.length - 1], "LEN");
+});
+
+Deno.test("compile - len() in comparison", () => {
+    const bytecode = Formula.compile("len(stage.enemies) >= 5");
+    assertEquals(bytecode[0], "VERSION_1");
+    assertEquals(bytecode.includes("LEN"), true);
+    assertEquals(bytecode.includes("GREATER_EQUAL"), true);
+});
+
+Deno.test("compile - len() with simple identifier", () => {
+    const bytecode = Formula.compile("len(stage)");
+    assertEquals(bytecode[0], "VERSION_1");
+    assertEquals(bytecode.includes("LEN"), true);
+    assertEquals(bytecode.includes("READ_GLOBAL"), true);
+});
+
+Deno.test("compile - nested len()", () => {
+    const bytecode = Formula.compile("len(len(stage))");
+    assertEquals(bytecode[0], "VERSION_1");
+    const lenCount = bytecode.filter((s: string) => s === "LEN").length;
+    assertEquals(lenCount, 2);
+});
+
+Deno.test("compile - len() in arithmetic", () => {
+    const bytecode = Formula.compile("len(stage.enemies) + len(stage.allies)");
+    assertEquals(bytecode[0], "VERSION_1");
+    assertEquals(bytecode.includes("ADD"), true);
+    const lenCount = bytecode.filter((s: string) => s === "LEN").length;
+    assertEquals(lenCount, 2);
+});
+
+Deno.test("compile - len() of literal", () => {
+    const bytecode = Formula.compile("len(42)");
+    assertEquals(bytecode[0], "VERSION_1");
+    assertEquals(bytecode.includes("LEN"), true);
+    assertEquals(bytecode.includes("VALUE"), true);
+});
+
+Deno.test("compile - len() in ternary", () => {
+    const bytecode = Formula.compile("len(stage.items) > 0 ? 1 : 0");
+    assertEquals(bytecode[0], "VERSION_1");
+    assertEquals(bytecode.includes("LEN"), true);
+    assertEquals(bytecode.includes("TERNARY"), true);
+});
+
+Deno.test("compile - len() in remembered value", () => {
+    const bytecode = Formula.compile("{len(stage.items)}");
+    assertEquals(bytecode[0], "VERSION_1");
+    assertEquals(bytecode.includes("LEN"), true);
+    assertEquals(bytecode.includes("REMEMBER"), true);
+});

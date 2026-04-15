@@ -1805,7 +1805,7 @@ class Main {
                     log("Stack underflow for " + token + " (need 2, have " + stack.length + ")");
                     return null;
                 }
-            } else if (token == "NOT" || token == "READ_GLOBAL") {
+            } else if (token == "NOT" || token == "READ_GLOBAL" || token == "LEN") {
                 if (stack.length < 1) {
                     log("Stack underflow for " + token + " (need 1, have 0)");
                     return null;
@@ -2426,6 +2426,23 @@ class Main {
                         result.push(a[j] ? 0 : 1);
                     }
                     stack.push(result);
+                    break;
+                }
+                case "LEN": {
+                    var a = stack.pop();
+                    // Flatten array elements (same as OBJECT_ACCESS preamble)
+                    // so len(.arr) where arr=[] returns 0, not 1
+                    var flat = [];
+                    for (var j = 0; j < a.length; ++j) {
+                        if (a[j] instanceof Array) {
+                            for (var k = 0; k < a[j].length; ++k) {
+                                flat.push(a[j][k]);
+                            }
+                        } else {
+                            flat.push(a[j]);
+                        }
+                    }
+                    stack.push([flat.length]);
                     break;
                 }
                 case "READ_GLOBAL": {

@@ -497,5 +497,73 @@ class TestEvaluate {
         TestRunner.assertEqual(r[0], 200, "first filtered element");
         TestRunner.assertEqual(r[1], 300, "second filtered element");
         TestRunner.endTest();
+
+        // === LEN ===
+
+        TestRunner.test("Evaluate - LEN of empty context");
+        var r = eval(["IDENTIFIER", "this", "READ_GLOBAL", "LEN"], [], []);
+        TestRunner.assertEqual(r.length, 1, "result length");
+        TestRunner.assertEqual(r[0], 0, "length of empty context");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - LEN of multi-element context");
+        var r = eval(["IDENTIFIER", "this", "READ_GLOBAL", "LEN"], [10, 20, 30], []);
+        TestRunner.assertEqual(r.length, 1, "result length");
+        TestRunner.assertEqual(r[0], 3, "length of 3-element context");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - LEN of single-element");
+        var r = eval(["VALUE", "42", "LEN"]);
+        TestRunner.assertEqual(r.length, 1, "result length");
+        TestRunner.assertEqual(r[0], 1, "scalar wraps to [42], length 1");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - LEN in comparison");
+        var r = eval(["IDENTIFIER", "this", "READ_GLOBAL", "LEN", "VALUE", "3", "EQUAL"], [10, 20, 30], []);
+        TestRunner.assertEqual(r.length, 1, "result length");
+        TestRunner.assertEqual(r[0], 1, "len([10,20,30]) == 3 is true");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - LEN flattens inner arrays");
+        // Simulates len(.arr) where arr is [1,2,3]: context = [[1,2,3]] → flatten → [1,2,3] → 3
+        var inner:Array<Dynamic> = [1, 2, 3];
+        var r = eval(["IDENTIFIER", "this", "READ_GLOBAL", "LEN"], [inner], []);
+        TestRunner.assertEqual(r.length, 1, "result length");
+        TestRunner.assertEqual(r[0], 3, "flattened inner array length");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - LEN flattens empty inner array");
+        // Simulates len(.arr) where arr is []: context = [[]] → flatten → [] → 0
+        var empty:Array<Dynamic> = [];
+        var r = eval(["IDENTIFIER", "this", "READ_GLOBAL", "LEN"], [empty], []);
+        TestRunner.assertEqual(r.length, 1, "result length");
+        TestRunner.assertEqual(r[0], 0, "flattened empty array length");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - LEN of number is 1");
+        var r = eval(["IDENTIFIER", "this", "READ_GLOBAL", "LEN"], [42], []);
+        TestRunner.assertEqual(r.length, 1, "result length");
+        TestRunner.assertEqual(r[0], 1, "non-array scalar stays as-is");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - LEN of string is 1");
+        var r = eval(["IDENTIFIER", "this", "READ_GLOBAL", "LEN"], ["hello"], []);
+        TestRunner.assertEqual(r.length, 1, "result length");
+        TestRunner.assertEqual(r[0], 1, "string is not flattened");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - LEN of null is 1");
+        var r = eval(["IDENTIFIER", "this", "READ_GLOBAL", "LEN"], [null], []);
+        TestRunner.assertEqual(r.length, 1, "result length");
+        TestRunner.assertEqual(r[0], 1, "null is not flattened");
+        TestRunner.endTest();
+
+        TestRunner.test("Evaluate - LEN of mixed arrays and scalars");
+        // context = [[10, 20], 30] → flatten → [10, 20, 30] → 3
+        var inner:Array<Dynamic> = [10, 20];
+        var r = eval(["IDENTIFIER", "this", "READ_GLOBAL", "LEN"], [inner, 30], []);
+        TestRunner.assertEqual(r.length, 1, "result length");
+        TestRunner.assertEqual(r[0], 3, "array flattened, scalar kept");
+        TestRunner.endTest();
     }
 }

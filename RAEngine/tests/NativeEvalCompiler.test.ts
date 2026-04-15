@@ -80,6 +80,7 @@ class MiniAVM1 {
                 case 0x1C: this.opGetVariable(); break;
                 case 0x52: this.opCallMethod(); break;
                 case 0x42: this.opInitArray(); break;
+                case 0x54: this.opInstanceOf(); break;
                 case 0x55: this.opEnumerate2(); break;
                 case 0x8E: this.opDefineFunction2(); break;
                 default:
@@ -323,9 +324,17 @@ class MiniAVM1 {
             this.push({ __nativeAch: [] });
         } else if (name === "Math") {
             this.push(Math);
+        } else if (name === "Array") {
+            this.push(Array);
         } else {
             this.push(undefined);
         }
+    }
+
+    private opInstanceOf(): void {
+        const constructor = this.pop() as Function;
+        const obj = this.pop();
+        this.push(obj instanceof constructor);
     }
 
     private opCallMethod(): void {
@@ -2456,4 +2465,55 @@ Deno.test("RP - comparison produces boolean result", () => {
     // AVM1 greater returns true/false
     assertEquals(fn({ hp: 50 }, {}), true);
     assertEquals(fn({ hp: 0 }, {}), false);
+});
+
+// =============================================================================
+// len() function
+// =============================================================================
+
+Deno.test("RP - len() returns array length", () => {
+    const fn = compileRP("len(stage.items)");
+    assertEquals(fn({ items: [1, 2, 3] }, {}), 3);
+    assertEquals(fn({ items: [] }, {}), 0);
+});
+
+Deno.test("RP - len() in string context", () => {
+    const fn = compileRP('"Count: " + len(stage.items)');
+    assertEquals(fn({ items: [10, 20, 30, 40] }, {}), "Count: 4");
+});
+
+Deno.test("NativeEval - len() in achievement condition", () => {
+    const fn = compileSingle(simpleAsset([
+        { addressA: "len(stage.enemies)", addressB: "3", cmp: ">=" },
+    ]));
+    assertEquals(fn({ enemies: [1, 2, 3] }, {}), 1);
+    assertEquals(fn({ enemies: [1, 2] }, {}), 0);
+    assertEquals(fn({ enemies: [] }, {}), 0);
+});
+
+Deno.test("NativeEval - len() on non-array returns 1", () => {
+    const fn = compileRP("len(stage.player)");
+    assertEquals(fn({ player: { hp: 100, mp: 50 } }, {}), 1);
+});
+
+Deno.test("RP - len() on non-array in comparison", () => {
+    const fn = compileSingle(simpleAsset([
+        { addressA: "len(stage.player)", addressB: "1", cmp: "==" },
+    ]));
+    assertEquals(fn({ player: { hp: 100 } }, {}), 1);
+});
+
+Deno.test("NativeEval - len() on number returns 1", () => {
+    const fn = compileRP("len(stage.score)");
+    assertEquals(fn({ score: 42 }, {}), 1);
+});
+
+Deno.test("NativeEval - len() on string returns 1", () => {
+    const fn = compileRP("len(stage.name)");
+    assertEquals(fn({ name: "hello" }, {}), 1);
+});
+
+Deno.test("NativeEval - len() on null/undefined returns 1", () => {
+    const fn = compileRP("len(stage.missing)");
+    assertEquals(fn({}, {}), 1);
 });

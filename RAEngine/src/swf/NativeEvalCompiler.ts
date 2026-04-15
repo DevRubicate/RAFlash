@@ -205,6 +205,24 @@ function compileDSLRange(
 
             case "NOT": asm.not(); break;
 
+            case "LEN":
+                // Match interpreter: arrays → .length, non-arrays → 1
+                asm.storeRegister(regs.temp);
+                asm.push(aString("Array"));
+                asm.getVariable();
+                asm.instanceOf();
+                const lenElsePatch = asm.jumpIfForward();
+                // Not an array: pop value, push 1
+                asm.pop();
+                asm.push(aInt(1));
+                const lenEndPatch = asm.jumpForward();
+                // Is an array: read .length
+                asm.patchJumpHere(lenElsePatch);
+                asm.push(aRegister(regs.temp), aString("length"));
+                asm.getMember();
+                asm.patchJumpHere(lenEndPatch);
+                break;
+
             case "AND":
                 asm.storeRegister(regs.temp);
                 asm.pop();
