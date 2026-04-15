@@ -21,13 +21,6 @@
             </div>
 
             <div class="form-group">
-                <label for="origin-url">Origin URL (to defeat sitelocks)</label>
-                <input type="text" id="origin-url" class="mono-input" v-model="originUrl"
-                       :disabled="!isRaflash"
-                       placeholder="http://www.coolmathgames.com  or  http://host/path/to/game.swf">
-            </div>
-
-            <div class="form-group">
                 <label for="scale-mode">Scale Mode</label>
                 <select id="scale-mode" v-model="scaleMode" :disabled="!isRaflash">
                     <option value="noScale">No Scale</option>
@@ -147,20 +140,17 @@
     import { App } from '../js/app.ts';
 
     const hashOverride = ref('');
-    const originUrl = ref('');
     const scaleMode = ref('noScale');
     const align = ref('TL');
     const dirty = ref(false);
     const isRaflash = ref(false);
 
     let savedHashOverride = '';
-    let savedOriginUrl = '';
     let savedScaleMode = 'noScale';
     let savedAlign = 'TL';
 
-    watch([hashOverride, originUrl, scaleMode, align], () => {
+    watch([hashOverride, scaleMode, align], () => {
         dirty.value = hashOverride.value !== savedHashOverride
-            || originUrl.value !== savedOriginUrl
             || scaleMode.value !== savedScaleMode
             || align.value !== savedAlign;
     });
@@ -175,7 +165,6 @@
             command: 'saveRaflashData',
             params: {
                 hashOverride: hashOverride.value,
-                originUrl: originUrl.value,
                 scaleMode: scaleMode.value,
                 align: align.value,
             }
@@ -189,7 +178,6 @@
                     ['gameConfig', {
                         ...config,
                         hashOverride: hashOverride.value,
-                        originUrl: originUrl.value,
                         scaleMode: scaleMode.value,
                         align: align.value,
                     }]
@@ -197,7 +185,6 @@
             }
         });
         savedHashOverride = hashOverride.value;
-        savedOriginUrl = originUrl.value;
         savedScaleMode = scaleMode.value;
         savedAlign = align.value;
         dirty.value = false;
@@ -206,11 +193,9 @@
     App.initialize().then(async () => {
         const config = App.data.gameConfig || {};
         savedHashOverride = config.hashOverride || '';
-        savedOriginUrl = config.originUrl || '';
         savedScaleMode = config.scaleMode || 'noScale';
         savedAlign = (config.align != null) ? config.align : 'TL';
         hashOverride.value = savedHashOverride;
-        originUrl.value = savedOriginUrl;
         scaleMode.value = savedScaleMode;
         align.value = savedAlign;
 

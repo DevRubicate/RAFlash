@@ -58,6 +58,15 @@
                 Only available for .raflash files. Use "Convert to .raflash" from the devtools menu.
             </div>
 
+            <div class="origin-url-bar">
+                <div class="form-group">
+                    <label for="origin-url">Origin URL (to defeat sitelocks)</label>
+                    <input type="text" id="origin-url" class="mono-input" v-model="originUrl"
+                           :disabled="!isRaflash"
+                           placeholder="http://www.coolmathgames.com  or  http://host/path/to/game.swf">
+                </div>
+            </div>
+
             <div class="table-wrap">
                 <table class="data-table" v-if="rules.length > 0">
                     <thead>
@@ -155,6 +164,20 @@
         color: var(--c-text-muted);
         font-family: var(--font-sans);
         font-size: 0.75rem;
+    }
+
+    .origin-url-bar {
+        flex-shrink: 0;
+        padding: 0.75rem 0.875rem;
+        border-bottom: 1px solid var(--c-border);
+    }
+
+    .origin-url-bar .form-group {
+        flex: none;
+    }
+
+    .origin-url-bar .mono-input {
+        font-family: var(--font-mono);
     }
 
     .table-wrap {
@@ -350,6 +373,7 @@
     import { App } from '../js/app.ts';
 
     const rules = reactive([]);
+    const originUrl = ref('');
     const dirty = ref(false);
     const isRaflash = ref(false);
     const editingRule = ref(null);
@@ -358,6 +382,7 @@
     const isDragging = ref(false);
 
     let savedSnapshot = '[]';
+    let savedOriginUrl = '';
 
     function takeSnapshot() {
         return JSON.stringify(rules.map(r => ({
@@ -367,8 +392,8 @@
         })));
     }
 
-    watch(rules, () => {
-        dirty.value = takeSnapshot() !== savedSnapshot;
+    watch([rules, originUrl], () => {
+        dirty.value = takeSnapshot() !== savedSnapshot || originUrl.value !== savedOriginUrl;
     }, { deep: true });
 
     function addRule() {
@@ -429,7 +454,7 @@
         // Save to .raflash data.json (and write files into zip)
         await Network.send({
             command: 'saveRaflashData',
-            params: { networkRules: stripped }
+            params: { originUrl: originUrl.value, networkRules: stripped }
         });
 
         // Update in-memory gameConfig so proxy picks up changes immediately
@@ -443,7 +468,7 @@
             command: 'editData',
             params: {
                 edited: [
-                    ['gameConfig', { ...config, networkRules: cleanRules }]
+                    ['gameConfig', { ...config, originUrl: originUrl.value, networkRules: cleanRules }]
                 ]
             }
         });
@@ -457,11 +482,14 @@
         }
 
         savedSnapshot = takeSnapshot();
+        savedOriginUrl = originUrl.value;
         dirty.value = false;
     }
 
     App.initialize().then(async () => {
         const config = App.data.gameConfig || {};
+        savedOriginUrl = config.originUrl || '';
+        originUrl.value = savedOriginUrl;
         const loaded = config.networkRules || [];
         for (const rule of loaded) {
             const isFile = rule.action === 'file';

@@ -1905,14 +1905,42 @@ async function handleApiRequest(
                 if ("align" in params) dataJson.align = params.align as string;
                 if ("networkRules" in params) {
                     const rules = params.networkRules as Array<Record<string, unknown>>;
-                    // Write uploaded file data into zip and strip transient fileData from JSON
+                    const oldRules = ((dataJson as Record<string, unknown>).networkRules || []) as Array<Record<string, unknown>>;
+
+                    // Build set of old zip paths for cleanup
+                    const oldPaths = new Set<string>();
+                    for (const r of oldRules) {
+                        if (r.action === 'file' && r.url) oldPaths.add(networkRuleZipPath(r.url as string));
+                    }
+
+                    // Build set of new zip paths
+                    const newPaths = new Set<string>();
                     for (const rule of rules) {
-                        if (rule.action === 'file' && rule.url && rule.fileData) {
+                        if (rule.action === 'file' && rule.url) {
                             const zipPath = networkRuleZipPath(rule.url as string);
-                            files[zipPath] = Uint8Array.from(atob(rule.fileData as string), c => c.charCodeAt(0));
+                            newPaths.add(zipPath);
+
+                            if (rule.fileData) {
+                                // New upload — write file bytes
+                                files[zipPath] = Uint8Array.from(atob(rule.fileData as string), c => c.charCodeAt(0));
+                            } else if (!files[zipPath]) {
+                                // No new upload and file not at new path — try to find it at an old path
+                                for (const oldPath of oldPaths) {
+                                    if (files[oldPath] && !newPaths.has(oldPath)) {
+                                        files[zipPath] = files[oldPath];
+                                        break;
+                                    }
+                                }
+                            }
                         }
                         delete rule.fileData;
                     }
+
+                    // Remove orphaned network files no longer referenced by any rule
+                    for (const oldPath of oldPaths) {
+                        if (!newPaths.has(oldPath)) delete files[oldPath];
+                    }
+
                     (dataJson as Record<string, unknown>).networkRules = rules;
 
                     // Hydrate in-memory fileBytes on the live rules for immediate proxy serving
