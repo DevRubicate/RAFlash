@@ -487,11 +487,11 @@ class TestEvaluate {
         // Bytecode: stage.scores[this > 150]
         // IDENTIFIER stage, READ_GLOBAL,
         // OBJECT_ACCESS 6 (key=="scores"),
-        // ARRAY_ACCESS 5 (IDENTIFIER this, READ_GLOBAL, VALUE 150, GREATER)
+        // ARRAY_ACCESS 6 (IDENTIFIER this, READ_GLOBAL, VALUE 150, GREATER)
         var r = eval(["IDENTIFIER", "stage", "READ_GLOBAL",
                        "OBJECT_ACCESS", "6",
                        "IDENTIFIER", "key", "READ_GLOBAL", "IDENTIFIER", "scores", "EQUAL",
-                       "ARRAY_ACCESS", "5",
+                       "ARRAY_ACCESS", "6",
                        "IDENTIFIER", "this", "READ_GLOBAL", "VALUE", "150", "GREATER"], [], [], filtRoot);
         TestRunner.assertEqual(r.length, 2, "two elements > 150");
         TestRunner.assertEqual(r[0], 200, "first filtered element");

@@ -330,6 +330,9 @@ class Main extends MovieClip {
                     // First connect: accept Deno's data and load game
                     AppData.data = params.data;
                     AppData.originalData = haxe.Json.parse(haxe.Json.stringify(params.data));
+                    if (params.settings != null) {
+                        Achievement.benchmarkingActive = untyped params.settings.benchmarkingEnabled == true;
+                    }
                     initialSetupDone = true;
                     sendResponse(id, {success: true});
                     if (childMode) {
@@ -433,6 +436,8 @@ class Main extends MovieClip {
             case "setRuntimeSetting":
                 if (Std.string(params.key) == "processingActive") {
                     Achievement.processingActive = params.value == true;
+                } else if (Std.string(params.key) == "benchmarkingEnabled") {
+                    Achievement.benchmarkingActive = params.value == true;
                 }
                 sendResponse(id, {success: true});
 
@@ -550,9 +555,17 @@ class Main extends MovieClip {
     // === Frame Loop ===
 
     private function onEnterFrame(e:Event):Void {
+        var frameStart:Float = Achievement.benchmarkingActive ? haxe.Timer.stamp() * 1000 : 0;
         Evaluate.snapshotHooks();
         Achievement.checkAchievements(gameRoot, sendMessage, sendEditData);
-        processWatchers();
+        if (Achievement.benchmarkingActive) {
+            var wStart:Float = haxe.Timer.stamp() * 1000;
+            processWatchers();
+            sendMessage("benchmark", {kind: "Watchers", ms: haxe.Timer.stamp() * 1000 - wStart});
+            sendMessage("benchmark", {kind: "Frame Total", ms: haxe.Timer.stamp() * 1000 - frameStart});
+        } else {
+            processWatchers();
+        }
     }
 
     private function sendEditData(diff:Dynamic):Void {

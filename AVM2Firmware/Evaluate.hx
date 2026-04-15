@@ -262,9 +262,8 @@ class Evaluate {
      * unchanged for non-functions or if the replacement didn't stick (sealed slot).
      */
     private static function wrapHook(parent:Dynamic, key:String, value:Dynamic):Dynamic {
-        if (untyped __typeof__(value) != "function") return value;
-
         #if flash
+        if (untyped __typeof__(value) != "function") return value;
         if (hookIds == null) {
             hookIds = new Dictionary(false);
             hookSkipped = new Dictionary(false);
@@ -445,19 +444,19 @@ class Evaluate {
             } else if (token == "GREATER") {
                 var b = safePop(stack);
                 var a = safePop(stack);
-                stack.push(binaryCompare(a, b, function(av:Dynamic, bv:Dynamic):Int { return (av : Float) > (bv : Float) ? 1 : 0; }));
+                stack.push(binaryCompare(a, b, function(av:Dynamic, bv:Dynamic):Int { return dynToFloat(av) > dynToFloat(bv) ? 1 : 0; }));
             } else if (token == "GREATER_EQUAL") {
                 var b = safePop(stack);
                 var a = safePop(stack);
-                stack.push(binaryCompare(a, b, function(av:Dynamic, bv:Dynamic):Int { return (av : Float) >= (bv : Float) ? 1 : 0; }));
+                stack.push(binaryCompare(a, b, function(av:Dynamic, bv:Dynamic):Int { return dynToFloat(av) >= dynToFloat(bv) ? 1 : 0; }));
             } else if (token == "LESSER") {
                 var b = safePop(stack);
                 var a = safePop(stack);
-                stack.push(binaryCompare(a, b, function(av:Dynamic, bv:Dynamic):Int { return (av : Float) < (bv : Float) ? 1 : 0; }));
+                stack.push(binaryCompare(a, b, function(av:Dynamic, bv:Dynamic):Int { return dynToFloat(av) < dynToFloat(bv) ? 1 : 0; }));
             } else if (token == "LESSER_EQUAL") {
                 var b = safePop(stack);
                 var a = safePop(stack);
-                stack.push(binaryCompare(a, b, function(av:Dynamic, bv:Dynamic):Int { return (av : Float) <= (bv : Float) ? 1 : 0; }));
+                stack.push(binaryCompare(a, b, function(av:Dynamic, bv:Dynamic):Int { return dynToFloat(av) <= dynToFloat(bv) ? 1 : 0; }));
             } else if (token == "AND") {
                 var b = safePop(stack);
                 var a = safePop(stack);
@@ -1155,6 +1154,26 @@ class Evaluate {
             // Not a dynamic object, skip
         }
 
+        // Reflect fallback for non-Flash targets (Neko) where __keys__ doesn't
+        // work on anonymous objects
+        #if !flash
+        if (propKeys.length == 0) {
+            try {
+                var fields:Array<String> = Reflect.fields(target);
+                var k:Int = 0;
+                while (k < fields.length) {
+                    var key:String = fields[k];
+                    if (!seen.exists(key)) {
+                        propKeys.push(key);
+                        propValues.push(Reflect.field(target, key));
+                        seen.set(key, true);
+                    }
+                    k++;
+                }
+            } catch (e:Dynamic) {}
+        }
+        #end
+
         // 2. Typed class fields via describeType
         #if flash
         try {
@@ -1338,6 +1357,15 @@ class Evaluate {
             }
         } catch (e:Dynamic) {}
 
+        // Reflect fallback for non-Flash targets (Neko) where untyped [] doesn't
+        // work on anonymous objects
+        #if !flash
+        try {
+            var value:Dynamic = Reflect.field(target, name);
+            if (value != null) return value;
+        } catch (e:Dynamic) {}
+        #end
+
         // Fall back to static class field (use constructor to avoid name collisions)
         #if flash
         try {
@@ -1397,6 +1425,12 @@ class Evaluate {
             }
         } catch (e:Dynamic) {}
 
+        #if !flash
+        try {
+            if (Reflect.field(target, name) != null) return true;
+        } catch (e:Dynamic) {}
+        #end
+
         // Check static class fields (use constructor to avoid name collisions)
         #if flash
         try {
@@ -1435,7 +1469,30 @@ class Evaluate {
                 return value;
             }
         } catch (e:Dynamic) {}
+
+        // Reflect fallback for non-Flash targets (Neko)
+        #if !flash
+        try {
+            if (Std.isOfType(target, Array)) {
+                var arr:Array<Dynamic> = cast target;
+                var idx:Int = Std.isOfType(index, Int) ? cast(index, Int) : Std.parseInt(Std.string(index));
+                if (idx >= 0 && idx < arr.length) return arr[idx];
+            }
+        } catch (e:Dynamic) {}
+        #end
+
         return null;
+    }
+
+    /**
+     * Safely convert a Dynamic to Float across all targets.
+     * On Flash, (x : Float) generates Number(x) which works. On Neko, Int and
+     * Float are distinct types so a safety cast can fail.
+     */
+    private static function dynToFloat(v:Dynamic):Float {
+        if (Std.isOfType(v, Float)) return (v : Float);
+        if (Std.isOfType(v, Int)) return (v : Int) * 1.0;
+        return Std.parseFloat(Std.string(v));
     }
 
     /**

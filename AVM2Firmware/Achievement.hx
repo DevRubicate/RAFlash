@@ -13,6 +13,7 @@ class Achievement {
 
     // State
     public static var processingActive:Bool = true;
+    public static var benchmarkingActive:Bool = false;
     public static var deltaValues:Map<String, Dynamic> = new Map();
     private static var diffEdits:Array<Dynamic> = [];
     private static var lastRichPresenceTime:Float = 0;
@@ -258,6 +259,8 @@ class Achievement {
         var assets:Array<Dynamic> = untyped AppData.data.assets;
         var assetCount:Int = assets.length;
         var ai:Int = 0;
+        var frameStartTime:Float = benchmarkingActive ? Timer.stamp() * 1000 : 0;
+        var rpTimeMs:Float = 0;
 
         while (ai < assetCount) {
             var achievement:Dynamic = assets[ai];
@@ -269,12 +272,18 @@ class Achievement {
                 var rpNow:Float = Timer.stamp() * 1000;
                 if (rpNow - lastRichPresenceTime >= RICH_PRESENCE_INTERVAL) {
                     lastRichPresenceTime = rpNow;
+                    var rpStartTime:Float = benchmarkingActive ? Timer.stamp() * 1000 : 0;
                     var compiledFormula:Array<Dynamic> = untyped achievement.compiledFormula;
                     if (compiledFormula != null && compiledFormula.length > 1) {
                         var rpResult = Evaluate.evaluate(compiledFormula, 1, compiledFormula.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
                         var rpString:String = (rpResult != null && rpResult.length > 0) ? Std.string(rpResult[0]) : "";
                         untyped achievement._richPresenceResult = rpString;
                         sendMessage("richPresenceUpdate", {result: rpString});
+                    }
+                    if (benchmarkingActive) {
+                        var rpElapsed:Float = Timer.stamp() * 1000 - rpStartTime;
+                        rpTimeMs += rpElapsed;
+                        sendMessage("benchmark", {kind: "Rich Presence", ms: rpElapsed});
                     }
                 }
                 ai++;
@@ -1119,8 +1128,16 @@ class Achievement {
         }
 
         // Send pending changes
+        var diffStartTime:Float = benchmarkingActive ? Timer.stamp() * 1000 : 0;
         if (diffHasPending()) {
             sendEditData(diffFlush());
+        }
+
+        if (benchmarkingActive) {
+            var diffMs:Float = Timer.stamp() * 1000 - diffStartTime;
+            var frameTotalMs:Float = Timer.stamp() * 1000 - frameStartTime;
+            sendMessage("benchmark", {kind: "Achievements", ms: frameTotalMs - diffMs - rpTimeMs});
+            sendMessage("benchmark", {kind: "Diff Ops", ms: diffMs});
         }
     }
 }
