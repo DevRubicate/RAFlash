@@ -384,6 +384,8 @@ class Main extends MovieClip {
                 JSONDiff.applyDataDiff(AppData.data, changes);
                 // Sync originalData to prevent ping-pong feedback loops
                 AppData.originalData = haxe.Json.parse(haxe.Json.stringify(AppData.data));
+                // Disable native compiled path until recompilation arrives
+                Achievement.nativeAchReady = false;
                 sendResponse(id, {success: true});
 
             case "getData":
@@ -473,6 +475,72 @@ class Main extends MovieClip {
                     Measure.show(mTitle, mDesc, mProgress, mImageUrl);
                 }
                 sendResponse(id, {success: true});
+
+            case "loadCompiledAvm2":
+                // Load native-compiled achievement SWF (AVM2 bytecode)
+                var naUrl:String = params.url;
+                var naIndices:Array<Dynamic> = params.compiledIndices;
+                var naRpIndices:Array<Dynamic> = params.rpCompiledIndices;
+                var naId:Dynamic = id;
+
+                // Reset native state
+                Achievement.nativeAchReady = false;
+                Achievement.nativeAchFnMap = new Map();
+                Achievement.nativeAchStorage = [];
+                Achievement.nativeRpFnMap = new Map();
+
+                // Build index → function-array-index maps
+                var ci:Int = 0;
+                while (ci < naIndices.length) {
+                    Achievement.nativeAchFnMap.set(Std.int(naIndices[ci]), ci);
+                    ci++;
+                }
+                var ri:Int = 0;
+                while (ri < naRpIndices.length) {
+                    Achievement.nativeRpFnMap.set(Std.int(naRpIndices[ri]), ri);
+                    ri++;
+                }
+
+                // Load the compiled SWF into an isolated application domain.
+                // The Loader MUST be on the display list to prevent Flash Player
+                // from GC-ing the loaded ApplicationDomain (and invalidating all
+                // function closures). This mirrors AVM1's approach of hosting the
+                // compiled SWF in a persistent MovieClip child.
+                // Remove previous loader if present
+                if (Achievement.nativeAchLoader != null) {
+                    try { instance.removeChild(cast Achievement.nativeAchLoader); } catch (e:Dynamic) {}
+                }
+                var naLoader:Loader = new Loader();
+                naLoader.visible = false;
+                instance.addChild(naLoader);
+                Achievement.nativeAchLoader = naLoader;
+                var naContext:LoaderContext = new LoaderContext(false, new ApplicationDomain(null));
+                naLoader.contentLoaderInfo.addEventListener(Event.COMPLETE, function(e:Event):Void {
+                    try {
+                        var domain:ApplicationDomain = naLoader.contentLoaderInfo.applicationDomain;
+                        var cls:Dynamic = domain.getDefinition("__NativeEval");
+                        if (cls != null) {
+                            var achArr:Dynamic = untyped cls.ach;
+                            var rpArr:Dynamic = untyped cls.rp;
+                            if (achArr != null) {
+                                Achievement.nativeAchFns = achArr;
+                                Achievement.nativeRpFns = rpArr;
+                                Achievement.nativeAchReady = true;
+                                sendResponse(naId, {success: true});
+                            } else {
+                                sendResponse(naId, {success: false, error: "__NativeEval.ach not defined"});
+                            }
+                        } else {
+                            sendResponse(naId, {success: false, error: "__NativeEval class not found"});
+                        }
+                    } catch (err:Dynamic) {
+                        sendResponse(naId, {success: false, error: "Error accessing __NativeEval: " + Std.string(err)});
+                    }
+                });
+                naLoader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, function(e:IOErrorEvent):Void {
+                    sendResponse(naId, {success: false, error: "IO error loading compiled SWF: " + e.text});
+                });
+                naLoader.load(new URLRequest(naUrl), naContext);
 
             default:
                 sendResponse(id, {success: false, error: "Unknown command: " + command});

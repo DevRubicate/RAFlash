@@ -20,6 +20,16 @@ class Achievement {
 
     private static inline var RICH_PRESENCE_INTERVAL:Float = 1000;
 
+    // Native compiled achievement state
+    public static var nativeAchReady:Bool = false;
+    public static var nativeAchFnMap:Map<Int, Int> = new Map();   // asset index → function array index
+    public static var nativeAchStorage:Array<Dynamic> = [];       // per-asset storage objects
+    public static var nativeAchFns:Dynamic = null;                // Array of native achievement functions
+    public static var nativeRpFnMap:Map<Int, Int> = new Map();    // asset index → rp function array index
+    public static var nativeRpFns:Dynamic = null;                 // Array of native RP functions
+    private static var nativeRpStorage:Array<Dynamic> = [];       // per-RP-asset storage objects
+    public static var nativeAchLoader:Dynamic = null;             // Keep Loader alive to prevent GC of compiled ABC
+
     /**
      * Safely convert a Dynamic value to Float.
      * Haxe's (x : Float) type annotation generates AS3's `x as Number` which
@@ -280,18 +290,108 @@ class Achievement {
                 if (rpNow - lastRichPresenceTime >= RICH_PRESENCE_INTERVAL) {
                     lastRichPresenceTime = rpNow;
                     var rpStartTime:Float = benchmarkingActive ? Timer.stamp() * 1000 : 0;
-                    var compiledFormula:Array<Dynamic> = untyped achievement.compiledFormula;
-                    if (compiledFormula != null && compiledFormula.length > 1) {
-                        var rpResult = Evaluate.evaluate(compiledFormula, 1, compiledFormula.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
-                        var rpString:String = (rpResult != null && rpResult.length > 0) ? Std.string(rpResult[0]) : "";
-                        untyped achievement._richPresenceResult = rpString;
-                        sendMessage("richPresenceUpdate", {result: rpString});
+
+                    // Native compiled RP path
+                    if (nativeAchReady && nativeRpFns != null && nativeRpFnMap.exists(ai)) {
+                        var rpFnIdx:Int = nativeRpFnMap.get(ai);
+                        var rpFn:Dynamic = untyped nativeRpFns[rpFnIdx];
+                        if (rpFn != null) {
+                            // Ensure per-asset storage exists
+                            while (nativeRpStorage.length <= ai) nativeRpStorage.push(null);
+                            if (nativeRpStorage[ai] == null) nativeRpStorage[ai] = {};
+                            try {
+                                var rpNative:Dynamic = untyped rpFn(gameRoot, nativeRpStorage[ai]);
+                                var rpStr:String = (rpNative != null) ? Std.string(rpNative) : "";
+                                untyped achievement._richPresenceResult = rpStr;
+                                sendMessage("richPresenceUpdate", {result: rpStr});
+                            } catch (e:Dynamic) {}
+                        }
+                    } else {
+                        // Interpreter path
+                        var compiledFormula:Array<Dynamic> = untyped achievement.compiledFormula;
+                        if (compiledFormula != null && compiledFormula.length > 1) {
+                            var rpResult = Evaluate.evaluate(compiledFormula, 1, compiledFormula.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
+                            var rpString:String = (rpResult != null && rpResult.length > 0) ? Std.string(rpResult[0]) : "";
+                            untyped achievement._richPresenceResult = rpString;
+                            sendMessage("richPresenceUpdate", {result: rpString});
+                        }
                     }
                     if (benchmarkingActive) {
                         var rpElapsed:Float = Timer.stamp() * 1000 - rpStartTime;
                         rpTimeMs += rpElapsed;
                         sendMessage("benchmark", {kind: "Rich Presence", ms: rpElapsed});
                     }
+                }
+                ai++;
+                continue;
+            }
+
+            // === Native compiled achievement path ===
+            if (nativeAchReady && nativeAchFns != null && nativeAchFnMap.exists(ai)) {
+                var achStartTime:Float = benchmarkingActive ? Timer.stamp() * 1000 : 0;
+                var fnIdx:Int = nativeAchFnMap.get(ai);
+                var achFn:Dynamic = untyped nativeAchFns[fnIdx];
+
+                if (achFn != null) {
+                    // Ensure per-asset storage exists
+                    while (nativeAchStorage.length <= ai) nativeAchStorage.push(null);
+                    if (nativeAchStorage[ai] == null) nativeAchStorage[ai] = {};
+                    var naStore:Dynamic = nativeAchStorage[ai];
+
+                    try {
+                        var achResult:Int = untyped achFn(gameRoot, naStore);
+
+                        // Primed badge state (set by native function in storage._primed)
+                        var naPrimed:Dynamic = untyped naStore._primed;
+                        if (naPrimed == true || naPrimed == 1) {
+                            if (untyped achievement._primed != true) {
+                                var primedImg:String = "http://raflash.local/asset-image/" + Std.string(untyped achievement.id);
+                                PrimedBadges.show(untyped achievement.id, primedImg);
+                            }
+                            untyped achievement._primed = true;
+                        } else {
+                            if (untyped achievement._primed == true) {
+                                PrimedBadges.hide(untyped achievement.id);
+                            }
+                            untyped achievement._primed = false;
+                        }
+
+                        // Measured progress (set by native function in storage._mCur/_mTgt)
+                        var naMCur:Dynamic = untyped naStore._mCur;
+                        var naMTgt:Dynamic = untyped naStore._mTgt;
+                        if (naMCur != null && naMTgt != null) {
+                            var prevMV:Dynamic = untyped achievement._measuredValue;
+                            var mCurF:Float = toFloat(naMCur);
+                            var mTgtF:Float = toFloat(naMTgt);
+                            var mvChanged:Bool = (prevMV != null) &&
+                                (mCurF != toFloat(prevMV) || mTgtF != toFloat(untyped achievement._measuredTarget));
+                            if (mvChanged && achResult != 1) {
+                                var mText:String = Std.string(Math.floor(mCurF)) + "/" + Std.string(Math.floor(mTgtF));
+                                var mImg:String = "http://raflash.local/asset-image/" + Std.string(untyped achievement.id);
+                                Measure.showOrReset(Std.string(untyped achievement.name), Std.string(untyped achievement.description), mText, mImg, untyped achievement.id);
+                            }
+                            untyped achievement._measuredValue = mCurF;
+                            untyped achievement._measuredTarget = mTgtF;
+                        }
+
+                        // Achievement triggered
+                        if (achResult == 1) {
+                            var trigImg:String = "http://raflash.local/asset-image/" + Std.string(untyped achievement.id);
+                            Toast.show("Achievement Unlocked", Std.string(untyped achievement.name), Std.string(untyped achievement.description), "left", trigImg);
+                            clearAssetDeltaValues(achievement);
+                            diffSet(achievement, "state", "TRIGGERED", "assets/" + ai + "/state");
+                            // Reset native storage for this asset
+                            nativeAchStorage[ai] = {};
+                        }
+                    } catch (e:Dynamic) {
+                        // Native eval failed — will fall back to interpreter next frame
+                        // if recompilation fixes the issue
+                    }
+                }
+
+                if (benchmarkingActive) {
+                    var achElapsed:Float = Timer.stamp() * 1000 - achStartTime;
+                    sendMessage("benchmark", {kind: Std.string(untyped achievement.name), ms: achElapsed});
                 }
                 ai++;
                 continue;

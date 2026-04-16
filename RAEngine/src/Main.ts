@@ -31,6 +31,7 @@ import * as pako from "npm:pako";
 import { unzipSync, zipSync } from "npm:fflate";
 import { startSitelockProxy, stopSitelockProxy, networkRuleZipPath, reconcileNetworkFiles } from "./SitelockProxy.ts";
 import { compileAchievementsSWF, type NativeAchResult } from "./swf/NativeEvalCompiler.ts";
+import { compileAchievementsSWF as compileAchievementsSWF_AVM2, type NativeAchResult as NativeAchResultAVM2 } from "./swf/NativeEvalCompilerAVM2.ts";
 import { buildInjectorTags, findMaxCharacterId } from "./swf/AVM2Injector.ts";
 
 const VERSION = "0.1.0";
@@ -283,6 +284,8 @@ interface Settings {
     //   "interpreter" — uses the built-in bytecode interpreter (default)
     //   "compiled"    — compiles formulas to native Flash bytecode
     avm1ExecutionMode: "interpreter" | "compiled";
+    // AVM2 formula evaluation mode (same options as AVM1):
+    avm2ExecutionMode: "interpreter" | "compiled";
     // When true, simple achievements with known formula patterns use inlined
     // evaluation instead of the full bytecode interpreter. Only applies in
     // interpreter mode.
@@ -299,6 +302,7 @@ const defaultSettings: Settings = {
     benchmarkingEnabled: false,
     autoOpenDevtools: false,
     avm1ExecutionMode: "compiled",
+    avm2ExecutionMode: "compiled",
     interpreterFastPath: true,
     lastUser: "Guest",
 };
@@ -1249,9 +1253,27 @@ let selectedUserName: string | null = null;
 let pendingRelaunch: string | null = null;  // Path to relaunch after current game closes
 let httpServer: Deno.HttpServer | null = null;
 
-// Native achievement compilation: per-achievement SWF
+// Native achievement compilation: per-achievement SWF (AVM1)
 let nativeAchResult: NativeAchResult | null = null;
 let nativeAchRecompileTimer: number | null = null;
+
+// Native achievement compilation: per-achievement SWF (AVM2)
+let nativeAchResultAVM2: NativeAchResultAVM2 | null = null;
+let nativeAchRecompileTimerAVM2: number | null = null;
+
+/**
+ * Return the domain compiled SWFs should be served from so they end up in the
+ * same security sandbox as the firmware (and the game). For sitelocked games
+ * with an originUrl, this is the origin's host; otherwise RAFLASH_DOMAIN.
+ */
+function getCompiledSwfDomain(): string {
+    const origin = AppData.data?.gameConfig?.originUrl;
+    if (origin) {
+        try { return new URL(origin).host; }
+        catch { /* fall through */ }
+    }
+    return RAFLASH_DOMAIN;
+}
 
 /** Recompile and reload the native achievement SWF. Debounced to avoid rapid recompiles during editing. */
 function scheduleNativeAchRecompile(): void {
@@ -1263,7 +1285,7 @@ function scheduleNativeAchRecompile(): void {
             nativeAchResult = compileAchievementsSWF(AppData.data.assets);
             emitLog("engine", "info", `[compiled-avm1] Recompiled ${nativeAchResult.compiledIndices.length} achievements, ${nativeAchResult.rpCompiledIndices.length} rich presence`);
             sendToFirmware("loadCompiledAvm1", {
-                url: `http://${RAFLASH_DOMAIN}/compiled-avm1.swf?t=${Date.now()}`,
+                url: `http://${getCompiledSwfDomain()}/compiled-avm1.swf?t=${Date.now()}`,
                 compiledIndices: nativeAchResult.compiledIndices,
                 rpCompiledIndices: nativeAchResult.rpCompiledIndices,
             }, 0).then((response) => {
@@ -1275,6 +1297,32 @@ function scheduleNativeAchRecompile(): void {
             }).catch(() => {});
         } catch (e) {
             emitLog("engine", "warn", `[compiled-avm1] Recompilation failed: ${e}`);
+        }
+    }, 300) as unknown as number;
+}
+
+/** Recompile and reload the native AVM2 achievement SWF. */
+function scheduleNativeAchRecompileAVM2(): void {
+    if (settings.avm2ExecutionMode !== "compiled" || !firmwareConnected || avmConfig?.mode !== "AVM2") return;
+    if (nativeAchRecompileTimerAVM2 !== null) clearTimeout(nativeAchRecompileTimerAVM2);
+    nativeAchRecompileTimerAVM2 = setTimeout(() => {
+        nativeAchRecompileTimerAVM2 = null;
+        try {
+            nativeAchResultAVM2 = compileAchievementsSWF_AVM2(AppData.data.assets);
+            emitLog("engine", "info", `[compiled-avm2] Recompiled ${nativeAchResultAVM2.compiledIndices.length} achievements, ${nativeAchResultAVM2.rpCompiledIndices.length} rich presence`);
+            sendToFirmware("loadCompiledAvm2", {
+                url: `http://${getCompiledSwfDomain()}/compiled-avm2.swf?t=${Date.now()}`,
+                compiledIndices: nativeAchResultAVM2.compiledIndices,
+                rpCompiledIndices: nativeAchResultAVM2.rpCompiledIndices,
+            }, 0).then((response) => {
+                if (response.success) {
+                    emitLog("engine", "info", `[compiled-avm2] Reloaded (${nativeAchResultAVM2!.swf.length} bytes)`);
+                } else {
+                    emitLog("engine", "warn", `[compiled-avm2] Reload failed: ${response.error}`);
+                }
+            }).catch(() => {});
+        } catch (e) {
+            emitLog("engine", "warn", `[compiled-avm2] Recompilation failed: ${e}`);
         }
     }, 300) as unknown as number;
 }
@@ -1343,6 +1391,11 @@ function resetGameState(): void {
         nativeAchRecompileTimer = null;
     }
     nativeAchResult = null;
+    if (nativeAchRecompileTimerAVM2 !== null) {
+        clearTimeout(nativeAchRecompileTimerAVM2);
+        nativeAchRecompileTimerAVM2 = null;
+    }
+    nativeAchResultAVM2 = null;
     firmwareWriter = null;
     firmwareConnected = false;
     resetFirmwareConnectPromise();
@@ -2116,12 +2169,17 @@ async function handleApiRequest(
 
                 // NOTE: Asset changes are NOT auto-saved. Use saveAssets command for explicit saves.
 
-                // Recompile native achievement SWF if any asset-related paths changed
-                const hasAssetChanges = incomingDiff.edited?.some(
-                    ([path]) => path.startsWith('assets/')
+                // Recompile native achievement SWF if any asset logic changed.
+                // Skip recompilation for runtime-only state changes (state,
+                // hits, _primed, _measuredValue, etc.) since the compiled
+                // bytecode doesn't encode those fields.
+                const RUNTIME_STATE_SUFFIXES = ['/state', '/hits', '/_primed', '/_measuredValue', '/_measuredTarget', '/_measuredError', '/_richPresenceResult'];
+                const hasLogicChanges = incomingDiff.edited?.some(
+                    ([path]) => path.startsWith('assets/') && !RUNTIME_STATE_SUFFIXES.some(s => path.endsWith(s))
                 );
-                if (hasAssetChanges) {
+                if (hasLogicChanges) {
                     scheduleNativeAchRecompile();
+                    scheduleNativeAchRecompileAVM2();
                 }
 
                 return { success: true };
@@ -2282,6 +2340,7 @@ async function handleApiRequest(
                 await sendToFirmware("editData", { changes: diff });
                 broadcastToDevtools("editData", diff);
                 scheduleNativeAchRecompile();
+                scheduleNativeAchRecompileAVM2();
             }
 
             return { success: true, params: { deletedIds } };
@@ -2654,6 +2713,25 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
             return;
         }
 
+        // HTTP request for native achievement SWF (runtime-generated AVM2 bytecode)
+        if (httpBuffer.startsWith("GET /compiled-avm2.swf") && nativeAchResultAVM2) {
+            const swfData = nativeAchResultAVM2.swf;
+            const response = [
+                "HTTP/1.1 200 OK",
+                "Content-Type: application/x-shockwave-flash",
+                `Content-Length: ${swfData.length}`,
+                "Connection: close",
+                "",
+                "",
+            ].join("\r\n");
+            await writer.write(encoder.encode(response));
+            await writer.write(swfData);
+            writer.releaseLock();
+            reader.releaseLock();
+            conn.close();
+            return;
+        }
+
         // HTTP request for asset badge image
         if (httpBuffer.startsWith("GET /asset-image/")) {
             const match = httpBuffer.match(/GET \/asset-image\/(-?\d+)/);
@@ -2913,7 +2991,7 @@ function handleFirmwareData(data: string): void {
                         emitLog("engine", "info", `[compiled-avm1] Compiled ${thisResult.compiledIndices.length} achievements, ${thisResult.rpCompiledIndices.length} rich presence`);
 
                         sendToFirmware("loadCompiledAvm1", {
-                            url: `http://${RAFLASH_DOMAIN}/compiled-avm1.swf`,
+                            url: `http://${getCompiledSwfDomain()}/compiled-avm1.swf`,
                             compiledIndices: thisResult.compiledIndices,
                             rpCompiledIndices: thisResult.rpCompiledIndices,
                         }, 0).then((response) => {
@@ -2925,6 +3003,27 @@ function handleFirmwareData(data: string): void {
                         }).catch(() => {});
                     } catch (e) {
                         emitLog("engine", "warn", `[compiled-avm1] Compilation failed: ${e}`);
+                    }
+                }
+                if (settings.avm2ExecutionMode === "compiled" && avmConfig?.mode === "AVM2") {
+                    try {
+                        const thisResult = compileAchievementsSWF_AVM2(AppData.data.assets);
+                        nativeAchResultAVM2 = thisResult;
+                        emitLog("engine", "info", `[compiled-avm2] Compiled ${thisResult.compiledIndices.length} achievements, ${thisResult.rpCompiledIndices.length} rich presence`);
+
+                        sendToFirmware("loadCompiledAvm2", {
+                            url: `http://${getCompiledSwfDomain()}/compiled-avm2.swf`,
+                            compiledIndices: thisResult.compiledIndices,
+                            rpCompiledIndices: thisResult.rpCompiledIndices,
+                        }, 0).then((response) => {
+                            if (response.success) {
+                                emitLog("engine", "info", `[compiled-avm2] Loaded (${thisResult.swf.length} bytes)`);
+                            } else {
+                                emitLog("engine", "warn", `[compiled-avm2] Load failed: ${response.error}`);
+                            }
+                        }).catch(() => {});
+                    } catch (e) {
+                        emitLog("engine", "warn", `[compiled-avm2] Compilation failed: ${e}`);
                     }
                 }
             } else if (parsed.type === "keypress") {

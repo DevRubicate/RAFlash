@@ -143,6 +143,32 @@
                 </div>
             </div>
 
+
+            <!-- AVM2 tab: evaluation mode picker (top level) -->
+            <div v-if="activeTab === 'avm2' && currentSubview === null">
+                <div class="setting-group">
+                    <div class="firmware-mode-row" :class="{ active: settings.avm2ExecutionMode === 'interpreter' }">
+                        <label class="firmware-mode-main">
+                            <input type="radio" value="interpreter" v-model="settings.avm2ExecutionMode" @change="save">
+                            <div class="setting-info">
+                                <span class="setting-name">Interpreter</span>
+                                <span class="setting-desc">Evaluates achievements using the built-in bytecode interpreter in the Haxe firmware.</span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <div class="firmware-mode-row" :class="{ active: settings.avm2ExecutionMode === 'compiled' }">
+                        <label class="firmware-mode-main">
+                            <input type="radio" value="compiled" v-model="settings.avm2ExecutionMode" @change="save">
+                            <div class="setting-info">
+                                <span class="setting-name">Compiled</span>
+                                <span class="setting-desc">Compiles each achievement and rich presence into a native AVM2 bytecode function at game load. One-off evaluations from devtools are still interpreted.</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
             <!-- Developer tab -->
             <div v-if="activeTab === 'developer'">
                 <div class="setting-group">
@@ -371,6 +397,7 @@ const currentSubview = ref(null); // null | 'parent' | 'child' | 'interpreter' |
 const tabs = [
     { id: 'firmware', label: 'Firmware' },
     { id: 'avm1', label: 'AVM1' },
+    { id: 'avm2', label: 'AVM2' },
     { id: 'developer', label: 'Developer' },
 ];
 
@@ -381,6 +408,7 @@ const settings = ref({
     benchmarkingEnabled: false,
     autoOpenDevtools: false,
     avm1ExecutionMode: 'compiled',
+    avm2ExecutionMode: 'compiled',
     interpreterFastPath: true,
 });
 
