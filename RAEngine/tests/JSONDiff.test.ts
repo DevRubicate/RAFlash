@@ -498,3 +498,576 @@ test("mergeDiffs - deep nested path merging", () => {
 
     assertEqual(merged.edited.length, 2);
 });
+
+// =============================================================================
+// applyDataDiff - Null/Undefined Guards
+// =============================================================================
+
+test("applyDataDiff - null diff is no-op", () => {
+    const target = { name: "Alice" };
+    JSONDiff.applyDataDiff(target, null as any);
+    assertEqual(target.name, "Alice");
+});
+
+test("applyDataDiff - undefined diff is no-op", () => {
+    const target = { name: "Alice" };
+    JSONDiff.applyDataDiff(target, undefined as any);
+    assertEqual(target.name, "Alice");
+});
+
+test("applyDataDiff - diff without edited property is no-op", () => {
+    const target = { name: "Alice" };
+    JSONDiff.applyDataDiff(target, {} as any);
+    assertEqual(target.name, "Alice");
+});
+
+// =============================================================================
+// applyDataDiff - Deletion Sort Order
+// =============================================================================
+
+test("applyDataDiff - array deletions processed in reverse index order", () => {
+    const target = { items: ["a", "b", "c", "d", "e"] };
+    // Delete indices 1 and 3 — must splice from highest index first
+    const diff = { edited: [
+        ["items/1[]", JSONDiff.DELETE_SENTINEL] as [string, any],
+        ["items/3[]", JSONDiff.DELETE_SENTINEL] as [string, any],
+    ]};
+    JSONDiff.applyDataDiff(target, diff);
+    // index 3 ("d") deleted first, then index 1 ("b")
+    assertEqual(target.items, ["a", "c", "e"]);
+});
+
+test("applyDataDiff - three consecutive array deletions", () => {
+    const target = { items: [0, 1, 2, 3, 4] };
+    const diff = { edited: [
+        ["items/0[]", JSONDiff.DELETE_SENTINEL] as [string, any],
+        ["items/2[]", JSONDiff.DELETE_SENTINEL] as [string, any],
+        ["items/4[]", JSONDiff.DELETE_SENTINEL] as [string, any],
+    ]};
+    JSONDiff.applyDataDiff(target, diff);
+    // Delete 4, then 2, then 0 → left with [1, 3]
+    assertEqual(target.items, [1, 3]);
+});
+
+test("applyDataDiff - deletions from different parent arrays", () => {
+    const target = { a: [10, 20, 30], b: [40, 50, 60] };
+    const diff = { edited: [
+        ["a/1[]", JSONDiff.DELETE_SENTINEL] as [string, any],
+        ["b/2[]", JSONDiff.DELETE_SENTINEL] as [string, any],
+    ]};
+    JSONDiff.applyDataDiff(target, diff);
+    assertEqual(target.a, [10, 30]);
+    assertEqual(target.b, [40, 50]);
+});
+
+test("applyDataDiff - object property deletions", () => {
+    const target: Record<string, any> = { a: 1, b: 2, c: 3 };
+    const diff = { edited: [
+        ["a", JSONDiff.DELETE_SENTINEL] as [string, any],
+        ["c", JSONDiff.DELETE_SENTINEL] as [string, any],
+    ]};
+    JSONDiff.applyDataDiff(target, diff);
+    assertEqual("a" in target, false);
+    assertEqual(target.b, 2);
+    assertEqual("c" in target, false);
+});
+
+test("applyDataDiff - additions applied before deletions", () => {
+    // Edit an element and delete another in same array
+    const target = { items: ["a", "b", "c"] };
+    const diff = { edited: [
+        ["items/1[]", JSONDiff.DELETE_SENTINEL] as [string, any],
+        ["items/0[]", "A"] as [string, any],
+    ]};
+    JSONDiff.applyDataDiff(target, diff);
+    // "A" replaces index 0 first, then index 1 ("b") is deleted
+    assertEqual(target.items, ["A", "c"]);
+});
+
+// =============================================================================
+// applyDataDiff - Nested Path Creation
+// =============================================================================
+
+test("applyDataDiff - creates nested array from [] suffix", () => {
+    const target: Record<string, any> = {};
+    const diff = { edited: [["list/0[]", "first"] as [string, any]] };
+    JSONDiff.applyDataDiff(target, diff);
+    assertEqual(Array.isArray(target.list), true);
+    assertEqual(target.list[0], "first");
+});
+
+test("applyDataDiff - creates mixed nested structure", () => {
+    const target: Record<string, any> = {};
+    const diff = { edited: [["data/items/0[]/name", "Alice"] as [string, any]] };
+    JSONDiff.applyDataDiff(target, diff);
+    assertEqual(typeof target.data, "object");
+    assertEqual(Array.isArray(target.data.items), true);
+    assertEqual(target.data.items[0].name, "Alice");
+});
+
+// =============================================================================
+// _removeValue - Edge Cases
+// =============================================================================
+
+test("applyDataDiff - delete from nonexistent nested path is no-op", () => {
+    const target: Record<string, any> = { a: 1 };
+    const diff = { edited: [["x/y/z", JSONDiff.DELETE_SENTINEL] as [string, any]] };
+    JSONDiff.applyDataDiff(target, diff);
+    assertEqual(target.a, 1);
+    assertEqual("x" in target, false);
+});
+
+test("applyDataDiff - top-level key deletion", () => {
+    const target: Record<string, any> = { keep: 1, remove: 2 };
+    const diff = { edited: [["remove", JSONDiff.DELETE_SENTINEL] as [string, any]] };
+    JSONDiff.applyDataDiff(target, diff);
+    assertEqual("remove" in target, false);
+    assertEqual(target.keep, 1);
+});
+
+// =============================================================================
+// getDataDiff - Top-level Arrays
+// =============================================================================
+
+test("getDataDiff - top-level arrays", () => {
+    const before = ["a", "b", "c"];
+    const after = ["a", "X", "c"];
+    const diff = JSONDiff.getDataDiff(before, after);
+    assertEqual(diff.edited.length, 1);
+    assertEqual(diff.edited[0][0], "1[]");
+    assertEqual(diff.edited[0][1], "X");
+});
+
+test("getDataDiff - top-level array addition", () => {
+    const before = ["a"];
+    const after = ["a", "b"];
+    const diff = JSONDiff.getDataDiff(before, after);
+    assertEqual(diff.edited.length, 1);
+    assertEqual(diff.edited[0][0], "1[]");
+    assertEqual(diff.edited[0][1], "b");
+});
+
+test("getDataDiff - top-level array deletion", () => {
+    const before = ["a", "b"];
+    const after = ["a"];
+    const diff = JSONDiff.getDataDiff(before, after);
+    assertEqual(diff.edited.length, 1);
+    assertEqual(diff.edited[0][0], "1[]");
+    assertEqual(diff.edited[0][1], JSONDiff.DELETE_SENTINEL);
+});
+
+// =============================================================================
+// Salvage Threshold - Boundary
+// =============================================================================
+
+test("salvage threshold - exactly 50% triggers deep diff", () => {
+    // 2 of 4 keys match (50%) — at threshold, NOT below it, so deep diff
+    const before = { data: { a: 1, b: 2, c: 3, d: 4 } };
+    const after = { data: { a: 1, b: 2, c: 99, d: 98 } };
+    const diff = JSONDiff.getDataDiff(before, after);
+    // 50% match (a,b same; c,d changed) → ratio = 0.5, NOT < 0.5, so deep diff
+    assertEqual(diff.edited.length, 2);
+    assertEqual(diff.edited[0][0], "data/c");
+    assertEqual(diff.edited[1][0], "data/d");
+});
+
+test("salvage threshold - just below 50% replaces whole object", () => {
+    // 1 of 3 keys matches (~33%) — below threshold, replace whole object
+    const before = { data: { a: 1, b: 2, c: 3 } };
+    const after = { data: { a: 1, b: 99, c: 98 } };
+    const diff = JSONDiff.getDataDiff(before, after);
+    // 33% match → below 0.5, whole replacement
+    assertEqual(diff.edited.length, 1);
+    assertEqual(diff.edited[0][0], "data");
+});
+
+test("salvage threshold - array vs object mismatch replaces", () => {
+    const before = { data: [1, 2, 3] };
+    const after = { data: { a: 1 } };
+    const diff = JSONDiff.getDataDiff(before, after);
+    assertEqual(diff.edited.length, 1);
+    assertEqual(diff.edited[0][0], "data");
+});
+
+test("salvage threshold - null to object replaces", () => {
+    const before = { data: null as any };
+    const after = { data: { a: 1 } };
+    const diff = JSONDiff.getDataDiff(before, after);
+    assertEqual(diff.edited.length, 1);
+    assertEqual(diff.edited[0][0], "data");
+    assertEqual(diff.edited[0][1], { a: 1 });
+});
+
+test("salvage threshold - object to null replaces", () => {
+    const before = { data: { a: 1 } };
+    const after = { data: null as any };
+    const diff = JSONDiff.getDataDiff(before, after);
+    assertEqual(diff.edited.length, 1);
+    assertEqual(diff.edited[0][0], "data");
+    assertEqual(diff.edited[0][1], null);
+});
+
+test("salvage threshold - empty nested objects are identical", () => {
+    const before = { data: {} };
+    const after = { data: {} };
+    const diff = JSONDiff.getDataDiff(before, after);
+    assertEqual(diff.edited.length, 0);
+});
+
+test("salvage threshold - empty nested arrays are identical", () => {
+    const before = { data: [] as any[] };
+    const after = { data: [] as any[] };
+    const diff = JSONDiff.getDataDiff(before, after);
+    assertEqual(diff.edited.length, 0);
+});
+
+// =============================================================================
+// mergeDiffs - Additional Conflict Cases
+// =============================================================================
+
+test("mergeDiffs - null parent is conflict", () => {
+    const diffA = { edited: [["config", null] as [string, any]] };
+    const diffB = { edited: [["config/timeout", 5000] as [string, any]] };
+    assertThrows(
+        () => JSONDiff.mergeDiffs(diffA, diffB),
+        Error,
+        "non-object"
+    );
+});
+
+test("mergeDiffs - string parent is conflict", () => {
+    const diffA = { edited: [["config", "flat"] as [string, any]] };
+    const diffB = { edited: [["config/timeout", 5000] as [string, any]] };
+    assertThrows(
+        () => JSONDiff.mergeDiffs(diffA, diffB),
+        Error,
+        "non-object"
+    );
+});
+
+test("mergeDiffs - boolean parent is conflict", () => {
+    const diffA = { edited: [["config", true] as [string, any]] };
+    const diffB = { edited: [["config/timeout", 5000] as [string, any]] };
+    assertThrows(
+        () => JSONDiff.mergeDiffs(diffA, diffB),
+        Error,
+        "non-object"
+    );
+});
+
+test("mergeDiffs - object parent is NOT a conflict", () => {
+    const diffA = { edited: [["config", { theme: "dark" }] as [string, any]] };
+    const diffB = { edited: [["config/timeout", 5000] as [string, any]] };
+    // Object parent is valid — no conflict
+    const merged = JSONDiff.mergeDiffs(diffA, diffB);
+    assertEqual(merged.edited.length, 2);
+});
+
+test("mergeDiffs - array parent is NOT a conflict", () => {
+    const diffA = { edited: [["items", [1, 2]] as [string, any]] };
+    const diffB = { edited: [["items/0[]", 99] as [string, any]] };
+    const merged = JSONDiff.mergeDiffs(diffA, diffB);
+    assertEqual(merged.edited.length, 2);
+});
+
+test("mergeDiffs - diffB deletes what diffA added", () => {
+    const diffA = { edited: [["name", "Alice"] as [string, any]] };
+    const diffB = { edited: [["name", JSONDiff.DELETE_SENTINEL] as [string, any]] };
+    const merged = JSONDiff.mergeDiffs(diffA, diffB);
+    assertEqual(merged.edited.length, 1);
+    assertEqual(merged.edited[0][1], JSONDiff.DELETE_SENTINEL);
+});
+
+test("mergeDiffs - diffB adds to path diffA deleted (conflict)", () => {
+    const diffA = { edited: [["users", JSONDiff.DELETE_SENTINEL] as [string, any]] };
+    const diffB = { edited: [["users/new-user/name", "Bob"] as [string, any]] };
+    assertThrows(
+        () => JSONDiff.mergeDiffs(diffA, diffB),
+        Error,
+        "deleted"
+    );
+});
+
+test("mergeDiffs - parent override removes multiple children", () => {
+    const diffA = { edited: [
+        ["user/name", "Alice"] as [string, any],
+        ["user/age", 30] as [string, any],
+        ["user/email", "a@b.com"] as [string, any],
+    ]};
+    const diffB = { edited: [["user", { name: "Bob" }] as [string, any]] };
+    const merged = JSONDiff.mergeDiffs(diffA, diffB);
+    assertEqual(merged.edited.length, 1);
+    assertEqual(merged.edited[0][0], "user");
+});
+
+test("mergeDiffs - both diffs null-ish", () => {
+    const merged = JSONDiff.mergeDiffs({ edited: [] }, { edited: [] });
+    assertEqual(merged.edited.length, 0);
+});
+
+test("mergeDiffs - deep conflict through multiple ancestors", () => {
+    const diffA = { edited: [["a", JSONDiff.DELETE_SENTINEL] as [string, any]] };
+    const diffB = { edited: [["a/b/c/d", 1] as [string, any]] };
+    assertThrows(
+        () => JSONDiff.mergeDiffs(diffA, diffB),
+        Error,
+        "deleted"
+    );
+});
+
+// =============================================================================
+// unwatch
+// =============================================================================
+
+test("unwatch - removes matching watcher", () => {
+    JSONDiff.watchers = [];
+
+    let callCount = 0;
+    const cb = () => { callCount++; };
+
+    JSONDiff.watch("value", cb);
+    JSONDiff.unwatch("value", cb);
+
+    const target: Record<string, any> = { value: 1 };
+    JSONDiff.processIncomingDiff(target, { edited: [["value", 2]] });
+
+    assertEqual(callCount, 0);
+    JSONDiff.watchers = [];
+});
+
+test("unwatch - only removes exact pattern+callback match", () => {
+    JSONDiff.watchers = [];
+
+    let callA = 0;
+    let callB = 0;
+    const cbA = () => { callA++; };
+    const cbB = () => { callB++; };
+
+    JSONDiff.watch("value", cbA);
+    JSONDiff.watch("value", cbB);
+    JSONDiff.unwatch("value", cbA); // Only remove cbA
+
+    const target: Record<string, any> = { value: 1 };
+    JSONDiff.processIncomingDiff(target, { edited: [["value", 2]] });
+
+    assertEqual(callA, 0);
+    assertEqual(callB, 1);
+    JSONDiff.watchers = [];
+});
+
+test("unwatch - different pattern does not remove", () => {
+    JSONDiff.watchers = [];
+
+    let callCount = 0;
+    const cb = () => { callCount++; };
+
+    JSONDiff.watch("value", cb);
+    JSONDiff.unwatch("other", cb); // Wrong pattern
+
+    const target: Record<string, any> = { value: 1 };
+    JSONDiff.processIncomingDiff(target, { edited: [["value", 2]] });
+
+    assertEqual(callCount, 1);
+    JSONDiff.watchers = [];
+});
+
+// =============================================================================
+// Watcher - Derived Diff
+// =============================================================================
+
+test("watcher - modifies target and creates derivedDiff", () => {
+    JSONDiff.watchers = [];
+
+    JSONDiff.watch("source", (segments) => {
+        // segments[0] is the value at target.source
+        // We need to modify target — access parent via closure
+    });
+
+    // Use a closure-based watcher that mutates the target
+    JSONDiff.watchers = [];
+
+    const target: Record<string, any> = { source: "hello", computed: "" };
+
+    JSONDiff.watch("source", (_segments) => {
+        // Watcher directly mutates target (it has closure access)
+        target.computed = target.source.toUpperCase();
+    });
+
+    const diff = { edited: [["source", "world"] as [string, any]] };
+    const result = JSONDiff.processIncomingDiff(target, diff);
+
+    assertEqual(target.source, "world");
+    assertEqual(target.computed, "WORLD");
+    // derivedDiff should capture the watcher's mutation
+    assertEqual(result.derivedDiff.edited.length, 1);
+    assertEqual(result.derivedDiff.edited[0][0], "computed");
+    assertEqual(result.derivedDiff.edited[0][1], "WORLD");
+
+    JSONDiff.watchers = [];
+});
+
+test("watcher - cascading watchers", () => {
+    JSONDiff.watchers = [];
+
+    const target: Record<string, any> = { a: 0, b: 0, c: 0 };
+
+    // Watcher 1: when "a" changes, set b = a * 2
+    JSONDiff.watch("a", () => {
+        target.b = target.a * 2;
+    });
+
+    // Watcher 2: when "b" changes, set c = b + 1
+    JSONDiff.watch("b", () => {
+        target.c = target.b + 1;
+    });
+
+    const diff = { edited: [["a", 5] as [string, any]] };
+    JSONDiff.processIncomingDiff(target, diff);
+
+    assertEqual(target.a, 5);
+    assertEqual(target.b, 10);
+    assertEqual(target.c, 11);
+
+    JSONDiff.watchers = [];
+});
+
+test("watcher - no match does not trigger", () => {
+    JSONDiff.watchers = [];
+
+    let triggered = false;
+    JSONDiff.watch("other/path", () => { triggered = true; });
+
+    const target: Record<string, any> = { name: "Alice" };
+    JSONDiff.processIncomingDiff(target, { edited: [["name", "Bob"]] });
+
+    assertEqual(triggered, false);
+    JSONDiff.watchers = [];
+});
+
+test("watcher - wildcard matches multiple changes", () => {
+    JSONDiff.watchers = [];
+
+    const matched: string[] = [];
+    const target: Record<string, any> = {
+        users: {
+            u1: { name: "Alice" },
+            u2: { name: "Bob" },
+        }
+    };
+
+    JSONDiff.watch("users/*/name", (segments) => {
+        matched.push((segments[1] as any)?.name);
+    });
+
+    const diff = { edited: [
+        ["users/u1/name", "Alicia"] as [string, any],
+        ["users/u2/name", "Bobby"] as [string, any],
+    ]};
+    JSONDiff.processIncomingDiff(target, diff);
+
+    assertEqual(matched.length, 2);
+    JSONDiff.watchers = [];
+});
+
+// =============================================================================
+// processIncomingDiff - fullDiff Accuracy
+// =============================================================================
+
+test("processIncomingDiff - fullDiff reflects watcher mutations too", () => {
+    JSONDiff.watchers = [];
+
+    const target: Record<string, any> = { input: 0, doubled: 0 };
+
+    JSONDiff.watch("input", () => {
+        target.doubled = target.input * 2;
+    });
+
+    const diff = { edited: [["input", 7] as [string, any]] };
+    const result = JSONDiff.processIncomingDiff(target, diff);
+
+    // fullDiff should include both the client change AND the watcher mutation
+    assertEqual(result.fullDiff.edited.length, 2);
+    JSONDiff.watchers = [];
+});
+
+// =============================================================================
+// Round-trip - Complex Scenarios
+// =============================================================================
+
+test("round-trip - additions and deletions combined", () => {
+    const before: Record<string, any> = { a: 1, b: 2, c: 3 };
+    const after: Record<string, any> = { b: 2, c: 99, d: 4 };
+
+    const diff = JSONDiff.getDataDiff(before, after);
+    const target = JSON.parse(JSON.stringify(before));
+    JSONDiff.applyDataDiff(target, diff);
+
+    assertEqual("a" in target, false);
+    assertEqual(target.b, 2);
+    assertEqual(target.c, 99);
+    assertEqual(target.d, 4);
+});
+
+test("round-trip - nested array modifications", () => {
+    const before = { data: { items: [{ id: 1, v: "a" }, { id: 2, v: "b" }], meta: "ok" } };
+    const after = { data: { items: [{ id: 1, v: "A" }, { id: 2, v: "b" }], meta: "ok" } };
+
+    const diff = JSONDiff.getDataDiff(before, after);
+    const target = JSON.parse(JSON.stringify(before));
+    JSONDiff.applyDataDiff(target, diff);
+
+    assertEqual(target.data.items[0].v, "A");
+    assertEqual(target.data.items[1].v, "b");
+});
+
+test("round-trip - complete object replacement below salvage threshold", () => {
+    const before = { config: { x: 1, y: 2 } };
+    const after = { config: { a: 10, b: 20 } };
+
+    const diff = JSONDiff.getDataDiff(before, after);
+    const target = JSON.parse(JSON.stringify(before));
+    JSONDiff.applyDataDiff(target, diff);
+
+    assertEqual("x" in target.config, false);
+    assertEqual("y" in target.config, false);
+    assertEqual(target.config.a, 10);
+    assertEqual(target.config.b, 20);
+});
+
+// =============================================================================
+// getDataDiff - Value Type Edge Cases
+// =============================================================================
+
+test("getDataDiff - undefined to value", () => {
+    const before: Record<string, any> = {};
+    const after: Record<string, any> = { x: undefined };
+    const diff = JSONDiff.getDataDiff(before, after);
+    // "x" is in after (even though undefined), so it's an addition
+    assertEqual(diff.edited.length, 1);
+    assertEqual(diff.edited[0][0], "x");
+});
+
+test("getDataDiff - identical nested arrays", () => {
+    const before = { data: [1, [2, 3], 4] };
+    const after = { data: [1, [2, 3], 4] };
+    const diff = JSONDiff.getDataDiff(before, after);
+    assertEqual(diff.edited.length, 0);
+});
+
+test("getDataDiff - multiple properties changed", () => {
+    const before = { a: 1, b: 2, c: 3, d: 4, e: 5 };
+    const after = { a: 1, b: 2, c: 3, d: 4, e: 99 };
+    const diff = JSONDiff.getDataDiff(before, after);
+    assertEqual(diff.edited.length, 1);
+    assertEqual(diff.edited[0][0], "e");
+    assertEqual(diff.edited[0][1], 99);
+});
+
+// =============================================================================
+// isPointlessDiff - Additional Cases
+// =============================================================================
+
+test("isPointlessDiff - diff with DELETE_SENTINEL is not pointless", () => {
+    const diff = { edited: [["key", JSONDiff.DELETE_SENTINEL] as [string, any]] };
+    assertEqual(JSONDiff.isPointlessDiff(diff), false);
+});
