@@ -3102,6 +3102,17 @@ async function main(): Promise<void> {
         }
     }
 
+    // Chrome check. RAFlash uses Chrome in app mode for all UI windows.
+    // Detect early so the user gets a clear message instead of a cryptic crash.
+    if (!(await HTMLWindow.findChrome())) {
+        const msg = "Google Chrome is required but was not found.\n\nPlease install it from:\nhttps://www.google.com/chrome/";
+        if (Deno.build.os === "windows") {
+            WindowManager.showMessageBox(msg, "RAFlash");
+        }
+        console.error(msg);
+        Deno.exit(1);
+    }
+
     // Single-instance check. RAFlash binds three localhost ports and assumes
     // exclusive ownership; running a second instance collides on those ports
     // and crashes opaquely. Probe :HTTP_PORT/instance-check — if a RAFlash

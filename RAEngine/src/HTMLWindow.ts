@@ -89,21 +89,10 @@ export class HTMLWindow {
             `--window-position=${x},${y}`,
         ];
 
-        let commandPath: string | null = null;
-
-        if (platform === 'darwin') {
-            commandPath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-        } else if (platform === 'linux') {
-            commandPath = 'google-chrome';
-        } else if (platform === 'windows') {
-            commandPath = await HTMLWindow.findChromeOnWindows();
-        } else {
-            throw new Error(`Unsupported platform: ${platform}`);
-        }
-
+        const commandPath = await HTMLWindow.findChrome();
         if (!commandPath) {
             throw new Error(
-                "Google Chrome could not be found. Please ensure it is installed in a standard location or that its executable is in your system's PATH."
+                "Google Chrome could not be found. Please install it from https://www.google.com/chrome/"
             );
         }
         
@@ -209,9 +198,34 @@ export class HTMLWindow {
     }
 
     /**
-     * Finds the path to the Google Chrome executable on Windows by checking common locations.
-     * @returns {Promise<string | null>} The full path to chrome.exe or null if not found.
+     * Finds the path to Google Chrome on the current platform.
+     * Returns null if Chrome is not installed.
      */
+    static async findChrome(): Promise<string | null> {
+        const platform = Deno.build.os;
+
+        if (platform === 'darwin') {
+            const path = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+            if (await exists(path)) return path;
+            return null;
+        }
+
+        if (platform === 'linux') {
+            try {
+                const cmd = new Deno.Command('google-chrome', { args: ['--version'], stdout: 'null', stderr: 'null' });
+                const { code } = await cmd.output();
+                if (code === 0) return 'google-chrome';
+            } catch { /* not found */ }
+            return null;
+        }
+
+        if (platform === 'windows') {
+            return HTMLWindow.findChromeOnWindows();
+        }
+
+        return null;
+    }
+
     private static async findChromeOnWindows(): Promise<string | null> {
         // List of environment variables pointing to common installation parent folders.
         const prefixes = [
