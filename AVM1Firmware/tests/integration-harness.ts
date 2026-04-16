@@ -89,6 +89,16 @@ function makeMultiGroupAchievement(
     };
 }
 
+function makeRichPresence(id: number, formula: string) {
+    return {
+        id, type: "RICH_PRESENCE", name: "Rich Presence", description: "Integration test: Rich Presence",
+        points: 0, progressionType: "STANDARD", category: "", badgeImage: "",
+        state: "ACTIVE", published: false, modified: false,
+        formula, compiledFormula: Formula.compile(formula),
+        groups: [],
+    };
+}
+
 function buildAppData() {
     return {
         assets: [
@@ -211,6 +221,93 @@ function buildAppData() {
             makeMultiReqAchievement(28, "MEASURED Hit Progress", [
                 makeRequirementWithFlag("stage.gold", ">=", "50", "MEASURED", 5),
             ]),
+
+            // --- TRIGGER achievement (ID 29) ---
+            // CORE: gold >= 200 (frame 20). TRIGGER: zone2.boss.defeated (frame 35).
+            // At frame 20 non-trigger reqs are met → primed. At frame 35 trigger fires.
+            makeMultiReqAchievement(29, "TRIGGER Boss Gate", [
+                makeRequirement("stage.gold", ">=", "200"),
+                makeRequirementWithFlag("stage.world.zone2.boss.defeated", "==", "1", "TRIGGER"),
+            ]),
+
+            // --- RESET_NEXT_IF achievement (ID 30) ---
+            // RESET_NEXT_IF: combo == 0 (fires at frames 10,20,30...) resets next req's hits.
+            // Normal: gold >= 100 with maxHits=8.
+            // Gold >= 100 starts at frame 10. combo==0 at frame 10 resets hits.
+            // Accumulates 9 hits from frame 11-19 (combo != 0), triggers at frame 18.
+            makeMultiReqAchievement(30, "RESET_NEXT_IF Combo", [
+                makeRequirementWithFlag("stage.combo", "==", "0", "RESET_NEXT_IF"),
+                makeRequirementWithFlag("stage.gold", ">=", "100", "", 8),
+            ]),
+
+            // --- SUB_HITS achievement (ID 31) ---
+            // ADD_HITS: gold >= 50 (accumulates from frame 5).
+            // SUB_HITS: combo == 0 (fires at frames 10,20,30... subtracts hits).
+            // Terminal: gold >= 50 with maxHits=10.
+            // Hits accumulate from frame 5. At frame 10, combo resets subtract 1.
+            // Net hits grow faster than subtractions, so should trigger before frame 25.
+            makeMultiReqAchievement(31, "SUB_HITS Net Accumulation", [
+                makeRequirementWithFlag("stage.gold", ">=", "50", "ADD_HITS"),
+                makeRequirementWithFlag("stage.combo", "==", "0", "SUB_HITS"),
+                makeRequirementWithFlag("stage.gold", ">=", "50", "", 10),
+            ]),
+
+            // --- ADD_SOURCE achievement (ID 32) ---
+            // ADD_SOURCE: stage.multiplier (value 3 initially, 5 at frame 45).
+            // Terminal: stage.gold >= 53 (gold + multiplier >= 53).
+            // At frame 5 gold=50, accumulator=3, effective=53 → triggers frame 5.
+            makeMultiReqAchievement(32, "ADD_SOURCE Bonus", [
+                makeRequirementWithFlag("stage.multiplier", "==", "0", "ADD_SOURCE"),
+                makeRequirement("stage.gold", ">=", "53"),
+            ]),
+
+            // --- SUB_SOURCE achievement (ID 33) ---
+            // ADD_SOURCE: stage.multiplier (3). SUB_SOURCE: stage.level (1).
+            // Accumulator = 3 - 1 = 2. Terminal: stage.gold >= 52 (gold + 2 >= 52).
+            // At frame 5 gold=50, accumulator=2, effective=52 → triggers frame 5.
+            makeMultiReqAchievement(33, "SUB_SOURCE Penalty", [
+                makeRequirementWithFlag("stage.multiplier", "==", "0", "ADD_SOURCE"),
+                makeRequirementWithFlag("stage.level", "==", "0", "SUB_SOURCE"),
+                makeRequirement("stage.gold", ">=", "52"),
+            ]),
+
+            // --- MEASURED_IF achievement (ID 34) ---
+            // MEASURED: gold >= 50 with maxHits=3. MEASURED_IF: player.alive == 1.
+            // Measures progress only while player is alive.
+            // Gold >= 50 from frame 5, alive=true until frame 50 → triggers at frame 7.
+            makeMultiReqAchievement(34, "MEASURED_IF Gated", [
+                makeRequirementWithFlag("stage.gold", ">=", "50", "MEASURED", 3),
+                makeRequirementWithFlag("stage.player.alive", "==", "1", "MEASURED_IF"),
+            ]),
+
+            // --- Ternary achievement (ID 35) ---
+            // Formula uses ternary: alive ? health : -1.
+            // When player dies (frame 50), alive=false → returns -1.
+            makeAchievement(35, "Ternary Dead Check", "stage.player.alive ? stage.player.health : -1", "==", "-1"),
+
+            // --- XOR achievement (ID 36) ---
+            // zone1.boss.defeated XOR zone2.boss.defeated == 0: both false initially (XOR=0) but
+            // that's trivially true, so add gold >= 350 gate. Zone1 defeated frame 15, zone2 frame 35.
+            // At frame 35: both defeated → XOR=0, and gold=350 → triggers frame 35.
+            makeMultiReqAchievement(36, "XOR Both Bosses Defeated", [
+                makeRequirement("stage.world.zone1.boss.defeated ^ stage.world.zone2.boss.defeated", "==", "0"),
+                makeRequirement("stage.gold", ">=", "350"),
+            ]),
+
+            // --- Multiple ALT groups achievement (ID 37) ---
+            // CORE: gold >= 150 (frame 15).
+            // ALT1: bat dead (frame 5) — satisfied before CORE.
+            // ALT2: phase == "combat" (frame 20) — not yet satisfied when CORE passes.
+            // Should trigger at frame 15 because CORE + ALT1 both pass.
+            makeMultiGroupAchievement(37, "Multiple ALT Groups", [
+                { type: "CORE", requirements: [makeRequirement("stage.gold", ">=", "150")] },
+                { type: "ALT", requirements: [makeRequirement("stage.enemies[1].health", "==", "0")] },
+                { type: "ALT", requirements: [makeRequirement("stage.phase", "==", '"combat"')] },
+            ]),
+
+            // --- Rich Presence (ID 38) ---
+            // Rich Presence asset: evaluates formula and sends richPresenceUpdate messages.
+            makeRichPresence(38, '"Gold: " + stage.gold'),
         ],
         codeNotes: [],
         gameConfig: {
@@ -431,6 +528,7 @@ async function runTestProtocol(
     assert: (name: string, condition: boolean, error: string) => void,
 ): Promise<void> {
     const triggeredAchievements: number[] = [];
+    const richPresenceMessages: string[] = [];
     let gameLoaded = false;
     let readyReceived = false;
     let readerDone = false;
@@ -453,6 +551,10 @@ async function runTestProtocol(
 
         if (msg.type === "ready") readyReceived = true;
         else if (msg.type === "gameLoaded") gameLoaded = true;
+        else if (msg.type === "richPresenceUpdate") {
+            const result = (msg.data as Record<string, unknown>)?.result as string | undefined;
+            if (result) richPresenceMessages.push(result);
+        }
         else if (msg.type === "editData") {
             const edited = (msg.data as Record<string, unknown>)?.edited as [string, unknown][] | undefined;
             if (edited) {
@@ -536,7 +638,7 @@ async function runTestProtocol(
     pass("Game loads successfully");
 
     // Phase 2: Achievement triggers
-    const TOTAL_ACHIEVEMENTS = 28;
+    const TOTAL_ACHIEVEMENTS = 37;
     const allTriggered = await waitFor(
         () => triggeredAchievements.length >= TOTAL_ACHIEVEMENTS,
         `All ${TOTAL_ACHIEVEMENTS} achievements trigger`, 15000,
@@ -562,6 +664,15 @@ async function runTestProtocol(
         { id: 26, name: "AND_NEXT Chain" },
         { id: 27, name: "OR_NEXT Chain" },
         { id: 28, name: "MEASURED Hit Progress" },
+        { id: 29, name: "TRIGGER Boss Gate" },
+        { id: 30, name: "RESET_NEXT_IF Combo" },
+        { id: 31, name: "SUB_HITS Net Accumulation" },
+        { id: 32, name: "ADD_SOURCE Bonus" },
+        { id: 33, name: "SUB_SOURCE Penalty" },
+        { id: 34, name: "MEASURED_IF Gated" },
+        { id: 35, name: "Ternary Dead Check" },
+        { id: 36, name: "XOR Both Bosses Defeated" },
+        { id: 37, name: "Multiple ALT Groups" },
     ];
     for (const expected of expectedAchievements) {
         assert(`Achievement "${expected.name}" triggered`, triggeredAchievements.includes(expected.id),
@@ -682,6 +793,88 @@ async function runTestProtocol(
             `ALTGroup@${altGroupIdx}, 500Gold@${gold500Index}`);
     }
 
+    // TRIGGER Boss Gate (frame 35) triggers after 200 Gold (frame 20) and before 500 Gold (frame 50)
+    const triggerIdx = triggeredAchievements.indexOf(29);
+    if (triggerIdx >= 0 && gold200Index >= 0) {
+        assert("TRIGGER Boss Gate triggers after 200 Gold",
+            triggerIdx > gold200Index,
+            `Trigger@${triggerIdx}, 200Gold@${gold200Index}`);
+    }
+    if (triggerIdx >= 0 && gold500Index >= 0) {
+        assert("TRIGGER Boss Gate triggers before 500 Gold",
+            triggerIdx < gold500Index,
+            `Trigger@${triggerIdx}, 500Gold@${gold500Index}`);
+    }
+
+    // RESET_NEXT_IF Combo (frame ~18) triggers before 200 Gold (frame 20)
+    const resetNextIdx = triggeredAchievements.indexOf(30);
+    if (resetNextIdx >= 0 && gold200Index >= 0) {
+        assert("RESET_NEXT_IF triggers before 200 Gold",
+            resetNextIdx < gold200Index,
+            `ResetNext@${resetNextIdx}, 200Gold@${gold200Index}`);
+    }
+
+    // ADD_SOURCE Bonus (frame 5) triggers early, before 200 Gold (frame 20)
+    const addSourceIdx = triggeredAchievements.indexOf(32);
+    if (addSourceIdx >= 0 && gold200Index >= 0) {
+        assert("ADD_SOURCE triggers before 200 Gold",
+            addSourceIdx < gold200Index,
+            `AddSource@${addSourceIdx}, 200Gold@${gold200Index}`);
+    }
+
+    // SUB_SOURCE Penalty (frame 5) triggers early, before 200 Gold (frame 20)
+    const subSourceIdx = triggeredAchievements.indexOf(33);
+    if (subSourceIdx >= 0 && gold200Index >= 0) {
+        assert("SUB_SOURCE triggers before 200 Gold",
+            subSourceIdx < gold200Index,
+            `SubSource@${subSourceIdx}, 200Gold@${gold200Index}`);
+    }
+
+    // MEASURED_IF Gated (frame 7) triggers early, before 200 Gold (frame 20)
+    const measuredIfIdx = triggeredAchievements.indexOf(34);
+    if (measuredIfIdx >= 0 && gold200Index >= 0) {
+        assert("MEASURED_IF triggers before 200 Gold",
+            measuredIfIdx < gold200Index,
+            `MeasuredIf@${measuredIfIdx}, 200Gold@${gold200Index}`);
+    }
+
+    // Ternary Dead Check (frame 50) triggers at same time or after 500 Gold
+    const ternaryIdx = triggeredAchievements.indexOf(35);
+    if (ternaryIdx >= 0 && gold200Index >= 0) {
+        assert("Ternary Dead Check triggers after 200 Gold",
+            ternaryIdx > gold200Index,
+            `Ternary@${ternaryIdx}, 200Gold@${gold200Index}`);
+    }
+
+    // XOR Both Bosses Defeated (frame 35) triggers after 200 Gold (frame 20) and before 500 Gold (frame 50)
+    const xorIdx = triggeredAchievements.indexOf(36);
+    if (xorIdx >= 0 && gold200Index >= 0) {
+        assert("XOR triggers after 200 Gold",
+            xorIdx > gold200Index,
+            `XOR@${xorIdx}, 200Gold@${gold200Index}`);
+    }
+    if (xorIdx >= 0 && gold500Index >= 0) {
+        assert("XOR triggers before 500 Gold",
+            xorIdx < gold500Index,
+            `XOR@${xorIdx}, 500Gold@${gold500Index}`);
+    }
+
+    // Multiple ALT Groups (frame 15) triggers before 200 Gold (frame 20)
+    const multiAltIdx = triggeredAchievements.indexOf(37);
+    if (multiAltIdx >= 0 && gold200Index >= 0) {
+        assert("Multiple ALT Groups triggers before 200 Gold",
+            multiAltIdx < gold200Index,
+            `MultiALT@${multiAltIdx}, 200Gold@${gold200Index}`);
+    }
+
+    // SUB_HITS Net Accumulation triggers before 500 Gold (frame 50)
+    const subHitsIdx = triggeredAchievements.indexOf(31);
+    if (subHitsIdx >= 0 && gold500Index >= 0) {
+        assert("SUB_HITS triggers before 500 Gold",
+            subHitsIdx < gold500Index,
+            `SubHits@${subHitsIdx}, 500Gold@${gold500Index}`);
+    }
+
     // Phase 3: DSL Evaluation - Basic property reads
     const goldResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.gold") });
     if (goldResult?.success) {
@@ -721,14 +914,13 @@ async function runTestProtocol(
     } else fail("evaluate stage.frameNum", `Request failed: ${JSON.stringify(frameResult)}`);
 
     // Phase 3b: DSL Evaluation - Arithmetic operations
-    const scoreResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.score") });
-    const goldResult2 = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.gold") });
-    if (scoreResult?.success && goldResult2?.success) {
-        const scoreVal = extractValue(scoreResult.result) as number;
-        const goldVal = extractValue(goldResult2.result) as number;
-        assert("score == gold * 2 (computed property)", scoreVal === goldVal * 2,
-            `Expected score(${scoreVal}) == gold(${goldVal}) * 2`);
-    } else fail("evaluate score vs gold*2", "Request failed");
+    // Use single expression to avoid cross-frame race between two separate evaluate calls
+    const scoreCheckResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.score - stage.gold * 2") });
+    if (scoreCheckResult?.success) {
+        const value = extractValue(scoreCheckResult.result);
+        assert("score == gold * 2 (computed property)", value === 0,
+            `Expected stage.score - stage.gold * 2 == 0, got ${JSON.stringify(value)}`);
+    } else fail("evaluate score vs gold*2", `Request failed: ${JSON.stringify(scoreCheckResult)}`);
 
     const arithmeticResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.gold + stage.level") });
     if (arithmeticResult?.success) {
@@ -740,9 +932,8 @@ async function runTestProtocol(
     const subResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.gold - 100") });
     if (subResult?.success) {
         const value = extractValue(subResult.result);
-        const goldNow = extractValue(goldResult2.result) as number;
-        assert("evaluate stage.gold - 100 returns gold minus 100", typeof value === "number",
-            `Expected number, got ${JSON.stringify(value)}`);
+        assert("evaluate stage.gold - 100 returns positive number", typeof value === "number" && value > 0,
+            `Expected positive number, got ${JSON.stringify(value)}`);
     } else fail("evaluate stage.gold - 100", `Request failed: ${JSON.stringify(subResult)}`);
 
     const mulResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.multiplier * stage.level") });
@@ -992,6 +1183,26 @@ async function runTestProtocol(
             value === false || value === 0,
             `Expected falsy, got ${JSON.stringify(value)}`);
     } else fail("evaluate poisoned ^ shielded", `Request failed: ${JSON.stringify(xorResult2)}`);
+
+    // Phase 3q: Rich Presence verification
+    // Wait a moment to ensure at least one RP evaluation cycle (1 second interval)
+    if (richPresenceMessages.length === 0) {
+        await waitFor(() => richPresenceMessages.length > 0, "Rich Presence sends update", 5000);
+    }
+    assert("Rich Presence sends at least one update",
+        richPresenceMessages.length > 0,
+        `Expected richPresenceUpdate messages, got ${richPresenceMessages.length}`);
+    if (richPresenceMessages.length > 0) {
+        const lastRP = richPresenceMessages[richPresenceMessages.length - 1];
+        assert("Rich Presence contains 'Gold: ' prefix",
+            lastRP.startsWith("Gold: "),
+            `Expected RP starting with 'Gold: ', got '${lastRP}'`);
+        // The gold value should be a positive number after the prefix
+        const goldNum = parseInt(lastRP.replace("Gold: ", ""));
+        assert("Rich Presence gold value is positive number",
+            !isNaN(goldNum) && goldNum > 0,
+            `Expected positive number in RP, got '${lastRP}'`);
+    }
 
     // Phase 4: Memory Search
     const searchResult = await sendRequestWithTimeout("searchTargetForValue", { value: "goblin", pathFormula: null, pathString: "", searchMode: "value" });
