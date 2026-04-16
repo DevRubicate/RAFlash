@@ -7,29 +7,33 @@ RAFlash is a project aimed at bringing [RetroAchievements](https://retroachievem
 
 ## Installation
 
-To install and set up RAFlash, follow these steps:
+Download the latest release from the [GitHub Releases page](https://github.com/DevRubicate/RAFlash/releases) and run `RAFlash.exe`.
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/DevRubicate/RAFlash.git
-   cd RAFlash
-   ```
-2. Install dependencies:
-    * [Deno](https://deno.com/)
-    * [Node.js](https://nodejs.org/) (for npm)
-    * [Haxe](https://haxe.org/download/)
-    * [MTASC Community Fork](https://sourceforge.net/projects/mtasc/)
-    * make
-3. Build the project:
-   ```bash
-   make
-   ```
-   This compiles both firmwares, builds the UI assets, and produces a standalone executable in `.build/`.
-4. Run the project:
-   ```bash
-   make run
-   ```
-   Or double-click `.build/RAFlash.exe`.
+## Building from Source
+
+To build RAFlash from source, you'll need the following dependencies:
+
+* [Deno](https://deno.com/)
+* [Node.js](https://nodejs.org/) (for npm)
+* [Haxe](https://haxe.org/download/)
+* [MTASC Community Fork](https://sourceforge.net/projects/mtasc/)
+* make
+
+Then clone and build:
+
+```bash
+git clone https://github.com/DevRubicate/RAFlash.git
+cd RAFlash
+make
+```
+
+This compiles both firmwares, builds the UI assets, and produces a standalone executable in `.build/`.
+
+To build and run in one step:
+
+```bash
+make run
+```
 
 ## Contributing
 We welcome contributions to RAFlash! To contribute, please follow these steps:
