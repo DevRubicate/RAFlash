@@ -14,7 +14,10 @@
                     <img v-if="badgeImage" :src="badgeImage" alt="Game Badge">
                     <div v-else class="badge-placeholder">No image</div>
                     <input type="file" ref="fileInput" accept="image/*" @change="onFileSelected" style="display: none">
-                    <button class="btn btn-secondary btn-compact" @click="fileInput.click()">Upload</button>
+                    <div class="badge-buttons">
+                        <button class="btn btn-secondary btn-compact" @click="fileInput.click()">Upload</button>
+                        <button class="btn btn-danger btn-compact" v-if="badgeImage" @click="clearBadgeImage">Delete</button>
+                    </div>
                 </div>
                 <div class="badge-fields">
                     <div class="form-group">
@@ -84,6 +87,11 @@
         flex-shrink: 0;
     }
 
+    .badge-buttons {
+        display: flex;
+        gap: 0.375rem;
+    }
+
     .badge-image-wrapper img {
         width: 96px;
         height: 96px;
@@ -149,6 +157,10 @@
         dirty.value = title.value !== savedTitle
             || badgeImage.value !== savedBadgeImage;
     });
+
+    const clearBadgeImage = () => {
+        badgeImage.value = null;
+    };
 
     const onFileSelected = (event) => {
         const file = event.target.files[0];

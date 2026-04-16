@@ -39,7 +39,10 @@
             <div class="header-badge-image">
                 <img :src="selectedAsset.badgeImage" alt="Badge Image">
                 <input type="file" ref="fileInput" accept="image/*" @change="onFileSelected" style="display: none">
-                <button class="btn btn-secondary btn-compact" @click="fileInput.click()">Upload</button>
+                <div class="badge-buttons">
+                    <button class="btn btn-secondary btn-compact" @click="fileInput.click()">Upload</button>
+                    <button class="btn btn-danger btn-compact" v-if="selectedAsset.badgeImage" @click="clearBadgeImage">Delete</button>
+                </div>
             </div>
         </header>
 
@@ -138,6 +141,11 @@
         gap: 0.375rem;
         flex-shrink: 0;
         align-self: center;
+    }
+
+    .badge-buttons {
+        display: flex;
+        gap: 0.375rem;
     }
 
     .header-badge-image img {
@@ -455,6 +463,11 @@
         }
         if (cleared) await App.save();
         await Network.send({ command: 'saveAssets', params: { ids: [selectedAssetId.value] } });
+    };
+
+    const clearBadgeImage = () => {
+        selectedAsset.value.badgeImage = null;
+        App.save();
     };
 
     const onFileSelected = (event) => {
