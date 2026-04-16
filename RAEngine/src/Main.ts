@@ -33,7 +33,7 @@ import { startSitelockProxy, stopSitelockProxy, networkRuleZipPath, reconcileNet
 import { compileAchievementsSWF, type NativeAchResult } from "./swf/NativeEvalCompiler.ts";
 import { buildInjectorTags, findMaxCharacterId } from "./swf/AVM2Injector.ts";
 
-const VERSION = "0.0.18";
+const VERSION = "0.1.0";
 
 // Compile a formula and emit an error log if compilation fails
 function compileFormula(input: string): unknown[] {
