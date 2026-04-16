@@ -18,7 +18,6 @@ To install and set up RAFlash, follow these steps:
     * [Deno](https://deno.com/)
     * [Node.js](https://nodejs.org/) (for npm)
     * [Haxe](https://haxe.org/download/)
-    * [Neko](https://nekovm.org/) (included with Haxe)
     * [MTASC Community Fork](https://sourceforge.net/projects/mtasc/)
     * make
 3. Build the project:
