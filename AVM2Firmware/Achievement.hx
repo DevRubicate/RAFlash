@@ -78,9 +78,11 @@ class Achievement {
 
     private static function clearAssetDeltaValues(asset:Dynamic):Void {
         var groups:Array<Dynamic> = untyped asset.groups;
+        if (groups == null) return;
         var gj:Int = 0;
         while (gj < groups.length) {
             var reqs:Array<Dynamic> = untyped groups[gj].requirements;
+            if (reqs == null) { gj++; continue; }
             var rk:Int = 0;
             while (rk < reqs.length) {
                 deltaValues.remove(Std.string(untyped reqs[rk].id));
@@ -297,6 +299,7 @@ class Achievement {
                     // Native compiled RP path
                     if (nativeAchReady && nativeRpFns != null && nativeRpFnMap.exists(ai)) {
                         var rpFnIdx:Int = nativeRpFnMap.get(ai);
+                        if (rpFnIdx < 0 || rpFnIdx >= nativeRpFns.length) { ai++; continue; }
                         var rpFn:Dynamic = untyped nativeRpFns[rpFnIdx];
                         if (rpFn != null) {
                             // Ensure per-asset storage exists

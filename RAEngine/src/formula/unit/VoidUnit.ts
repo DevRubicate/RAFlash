@@ -6,6 +6,6 @@ export class VoidUnit extends Unit {
         return [
             ...this.children[0].generateMnemonic(generator),
             'VOID',
-        ]
+        ];
     }
 }

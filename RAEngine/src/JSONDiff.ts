@@ -309,7 +309,8 @@ export class JSONDiff {
 
     /**
      * Helper to calculate the salvage ratio for two objects. It averages the salvage
-     * ratios of all shared keys.
+     * ratios across all keys from both objects, treating keys missing from one side
+     * as 0 similarity (they add nothing to the sum but still count in the divisor).
      * @private
      * @param a - The first object.
      * @param b - The second object.

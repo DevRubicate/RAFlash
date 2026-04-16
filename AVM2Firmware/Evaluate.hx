@@ -563,6 +563,7 @@ class Evaluate {
 
                 // OPTIMIZATION: Detect simple property access pattern
                 // Pattern: IDENTIFIER key, READ_GLOBAL, IDENTIFIER <name>, EQUAL (length 6)
+                // Bounds: amount=6 means accesses span i+1..i+6; check i+6 < length guarantees i+6 is valid
                 if (amount == 6 && i + amount < formula.length &&
                     formula[i + 1] == "IDENTIFIER" &&
                     formula[i + 2] == "key" &&

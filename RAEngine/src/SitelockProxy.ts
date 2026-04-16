@@ -192,7 +192,9 @@ async function handleConnection(conn: Deno.TcpConn) {
         const targetUrl = new URL(match[2]);
         const rawHeaders = lines.slice(1).join('\r\n');
 
-        // Extract body if present (everything after \r\n\r\n)
+        // Extract body if present (everything after \r\n\r\n).
+        // Re-encode the header string to find the exact byte offset — the UTF-8
+        // round-trip is lossless so the byte length matches the original raw prefix.
         const headerEndStr = request.indexOf('\r\n\r\n');
         const body = headerEndStr >= 0 ? raw.slice(new TextEncoder().encode(request.slice(0, headerEndStr + 4)).length) : undefined;
 

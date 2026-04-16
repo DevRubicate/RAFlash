@@ -246,12 +246,14 @@ class Main extends MovieClip {
     }
 
     private function clearPendingCallbacks():Void {
+        var pending = new Array<Dynamic->Void>();
         for (key in callbacks.keys()) {
             var cb = callbacks.get(key);
-            callbacks.remove(key);
-            if (cb != null) {
-                try { cb({success: false, error: "Connection lost"}); } catch (e:Dynamic) {}
-            }
+            if (cb != null) pending.push(cb);
+        }
+        callbacks = new Map();
+        for (cb in pending) {
+            try { cb({success: false, error: "Connection lost"}); } catch (e:Dynamic) {}
         }
     }
 

@@ -394,8 +394,12 @@ test("Lexer - string ending with lone backslash throws", () => {
 // Carriage Return Rejection
 // =============================================================================
 
-test("Lexer - carriage return throws", () => {
-    assertThrows(() => new Lexer("a\rb"), Error, "Unrecognized symbol");
+test("Lexer - carriage return normalized to newline", () => {
+    // \r and \r\n are normalized to \n before lexing
+    const lexer = new Lexer("a\rb");
+    const tokens = lexer.tokenize();
+    assertEqual(tokens[0].value, "a");
+    assertEqual(tokens[1].value, "b");
 });
 
 // =============================================================================

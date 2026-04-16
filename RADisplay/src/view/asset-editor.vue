@@ -461,8 +461,9 @@
                 }
             }
         }
+        const assetId = selectedAssetId.value;
         if (cleared) await App.save();
-        await Network.send({ command: 'saveAssets', params: { ids: [selectedAssetId.value] } });
+        await Network.send({ command: 'saveAssets', params: { ids: [assetId] } });
     };
 
     const clearBadgeImage = () => {

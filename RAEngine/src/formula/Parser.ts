@@ -1044,7 +1044,7 @@ class Parser {
                                         qnode.type === NODE_TYPE.FUNCTION_CALL) {
                                         evalStack.push(qnode);
                                     } else if (opDetails && opDetails.type === 'BINARY') {
-                                        if (evalStack.length < 2) break;
+                                        if (evalStack.length < 2) throw new ParseError(`Insufficient operands for binary operator in function arguments`, this.peakToken());
                                         const b = evalStack.pop()!;
                                         const a = evalStack.pop()!;
                                         a.parent = qnode;
@@ -1053,7 +1053,7 @@ class Parser {
                                         qnode.children.push(b);
                                         evalStack.push(qnode);
                                     } else if (opDetails && opDetails.type === 'UNARY') {
-                                        if (evalStack.length < 1) break;
+                                        if (evalStack.length < 1) throw new ParseError(`Insufficient operands for unary operator in function arguments`, this.peakToken());
                                         const a = evalStack.pop()!;
                                         a.parent = qnode;
                                         qnode.children.unshift(a);
@@ -1128,7 +1128,7 @@ class Parser {
                                         qnode.type === NODE_TYPE.FUNCTION_CALL) {
                                         evalStack.push(qnode);
                                     } else if (opDetails && opDetails.type === 'BINARY') {
-                                        if (evalStack.length < 2) break;
+                                        if (evalStack.length < 2) throw new ParseError(`Insufficient operands for binary operator in remembered value`, this.peakToken());
                                         const b = evalStack.pop()!;
                                         const a = evalStack.pop()!;
                                         a.parent = qnode;
@@ -1137,7 +1137,7 @@ class Parser {
                                         qnode.children.push(b);
                                         evalStack.push(qnode);
                                     } else if (opDetails && opDetails.type === 'UNARY') {
-                                        if (evalStack.length < 1) break;
+                                        if (evalStack.length < 1) throw new ParseError(`Insufficient operands for unary operator in remembered value`, this.peakToken());
                                         const a = evalStack.pop()!;
                                         a.parent = qnode;
                                         qnode.children.unshift(a);

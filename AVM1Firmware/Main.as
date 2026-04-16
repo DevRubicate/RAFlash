@@ -2556,6 +2556,7 @@ class Main {
 
                     // OPTIMIZATION: Detect simple property access pattern
                     // Pattern: IDENTIFIER key, READ_GLOBAL, IDENTIFIER <name>, EQUAL (length 6)
+                    // Bounds: amount=6 means accesses span i+2..i+7; check i+8 <= end guarantees i+7 is valid
                     if (amount == 6 && i + amount + 2 <= end &&
                         formula[i + 2] == "IDENTIFIER" &&
                         formula[i + 3] == "key" &&

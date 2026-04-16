@@ -78,8 +78,8 @@ class Lexer {
         input: string,
         options: { positionData: boolean } = { positionData: true },
     ) {
-        this.input = input;
-        this.originalInput = input;
+        this.input = input.replace(/\r\n?/g, '\n');
+        this.originalInput = this.input;
         this.position = 0; // Current position in the input
 
         this.tokens = [];

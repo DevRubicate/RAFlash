@@ -279,7 +279,7 @@
             params: { value: searchValue.value, path: searchPath.value || '', searchMode: searchMode.value }
         });
 
-        if (reply.success) {
+        if (reply.success && reply.params?.result?.output) {
             let newPaths = reply.params.result.output;
 
             if (previousPaths.value !== null) {

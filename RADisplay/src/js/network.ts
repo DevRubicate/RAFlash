@@ -201,11 +201,12 @@ export class Network {
                 });
                 Network.socket!.send(JSON.stringify(['REQUEST', id, message])+'\n');
             } else {
+                let timeout: ReturnType<typeof setTimeout>;
                 const wrapper = (response: Record<string, unknown>) => {
                     clearTimeout(timeout);
                     resolve(response);
                 };
-                const timeout = setTimeout(() => {
+                timeout = setTimeout(() => {
                     const idx = Network.messageQueue.findIndex(([, cb]) => cb === wrapper);
                     if (idx !== -1) Network.messageQueue.splice(idx, 1);
                     resolve({ success: false, error: 'Queued message timed out waiting for connection' });

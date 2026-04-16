@@ -64,10 +64,12 @@ export const App: AppState = reactive({
     },
 
     getFakeId(): number {
+        // Negative IDs are used for local/unpromoted assets that haven't been synced to the server
         return Math.floor(Math.random() * -0xFFFFFF)
     },
 
     setData(key: string, value: unknown) {
+        if (key in this && typeof (this as Record<string, unknown>)[key] === 'function') return;
         this[key] = value;
     },
     _saving: false,

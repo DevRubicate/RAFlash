@@ -447,8 +447,10 @@ test("compile - ternary in parens as part of larger expression", () => {
 // Carriage Return Rejection
 // =============================================================================
 
-test("compile - carriage return in expression returns error", () => {
-    assertEqual(Formula.compile("a\rb"), ERROR_MARKER);
+test("compile - carriage return normalized to newline", () => {
+    // \r is normalized to \n, so "a\rb" is the same as "a\nb" (two identifiers)
+    const bytecode = Formula.compile("a\rb");
+    assertEqual(bytecode[0], "VERSION_1");
 });
 
 test("compile - carriage return in string is literal", () => {

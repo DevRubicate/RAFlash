@@ -27,6 +27,8 @@ export class HTMLWindow {
         // Asynchronously update the state when the user closes the window.
         this.process.status.then(() => {
             this.isClosed = true;
+        }).catch(() => {
+            this.isClosed = true;
         });
 
         HTMLWindow.instances.push(this);
