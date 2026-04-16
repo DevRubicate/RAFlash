@@ -156,7 +156,7 @@ class PrimedBadges {
                 badge._y = badge.badgeY;
 
                 // Set initial X if not set yet
-                if (badge._x == undefined || badge._x == 0) {
+                if (badge._x == undefined) {
                     badge._x = badge.targetX;
                 }
             }

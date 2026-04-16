@@ -26,7 +26,7 @@ export class Network {
     static socket: WebSocket | null = null;
     static messageHandlers = new Map<number, (response: Record<string, unknown>) => void>();
     static currentMessageId = 1;
-    static messageQueue: Array<[NetworkMessage, (response: Record<string, unknown>) => void]> = [];
+    static messageQueue: Array<[NetworkMessage, (response: Record<string, unknown>) => void, ReturnType<typeof setTimeout>]> = [];
     static onMessageCallback: MessageHandler | null = null;
     static eventHandlers = new Map<string, Set<EventCallback>>();
     static reconnectAttempts = 0;
@@ -144,7 +144,8 @@ export class Network {
                                     }
                                 }).catch(console.error);
                             }
-                            Network.messageQueue.forEach(([message, callback]) => {
+                            Network.messageQueue.forEach(([message, callback, timeout]) => {
+                                clearTimeout(timeout);
                                 Network.send(message).then(callback).catch(console.error);
                             });
                             Network.messageQueue.length = 0;
@@ -209,7 +210,7 @@ export class Network {
                     if (idx !== -1) Network.messageQueue.splice(idx, 1);
                     resolve({ success: false, error: 'Queued message timed out waiting for connection' });
                 }, 30000);
-                Network.messageQueue.push([message, wrapper]);
+                Network.messageQueue.push([message, wrapper, timeout]);
             }
         });
     }

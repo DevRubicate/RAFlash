@@ -83,7 +83,7 @@ class Toast extends Sprite {
      * @param title Main title text (white, large)
      * @param description Description text (yellow)
      * @param label Label text (teal)
-     * @param align "left" or "right" (default: "right")
+     * @param align "left" or "right" (default: "left")
      * @param imageUrl URL to load badge image from (optional)
      */
     public static function show(title:String, description:String, label:String, align:String, imageUrl:String = null):Void {

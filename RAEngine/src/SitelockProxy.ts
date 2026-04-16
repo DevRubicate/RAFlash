@@ -193,35 +193,14 @@ async function handleConnection(conn: Deno.TcpConn) {
         const rawHeaders = lines.slice(1).join('\r\n');
 
         // Extract body if present (everything after \r\n\r\n)
-        const headerEnd = raw.indexOf(0x0D); // Find the split point in raw bytes
         const headerEndStr = request.indexOf('\r\n\r\n');
         const body = headerEndStr >= 0 ? raw.slice(new TextEncoder().encode(request.slice(0, headerEndStr + 4)).length) : undefined;
 
         const log = config.onRequest;
 
-        // Game domain → forward to the flash server (same-origin with firmware for sandbox compat)
-        if (config.gameDomain && (targetUrl.hostname === config.gameDomain || targetUrl.hostname === `www.${config.gameDomain}`)) {
-            try {
-                const localUrl = new URL(targetUrl.href);
-                localUrl.hostname = '127.0.0.1';
-                localUrl.port = String(config.flashPort);
-                const response = await forwardRequest(localUrl, method, rawHeaders, body);
-                const writer = conn.writable.getWriter();
-                await writer.write(response);
-                writer.releaseLock();
-                log?.(method, match[2], 200);
-            } catch {
-                const writer = conn.writable.getWriter();
-                await writer.write(httpResponse(502, 'Bad Gateway', { 'Connection': 'close' }));
-                writer.releaseLock();
-                log?.(method, match[2], 502);
-            }
-            conn.close();
-            return;
-        }
-
-        // raflash.local → forward to the flash server
-        if (targetUrl.hostname === 'raflash.local') {
+        // Game domain or raflash.local → forward to the flash server (same-origin with firmware for sandbox compat)
+        const isGameDomain = config.gameDomain && (targetUrl.hostname === config.gameDomain || targetUrl.hostname === `www.${config.gameDomain}`);
+        if (isGameDomain || targetUrl.hostname === 'raflash.local') {
             try {
                 const localUrl = new URL(targetUrl.href);
                 localUrl.hostname = '127.0.0.1';

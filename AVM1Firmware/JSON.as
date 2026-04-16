@@ -202,7 +202,7 @@ class JSON {
                 case 'n':
                     if (next() == 'u' && next() == 'l' && next() == 'l') {
                         next();
-return null;
+                        return null;
                     }
                     break;
             }
