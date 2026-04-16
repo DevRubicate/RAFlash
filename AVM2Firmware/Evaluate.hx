@@ -790,6 +790,19 @@ class Evaluate {
 
     // === Output Formatting ===
 
+    /** Check if a value is a Vector (Vector.<int>, Vector.<Number>, etc.). */
+    private static function isVector(value:Dynamic):Bool {
+        #if flash
+        // Vector types don't share a common base class detectable by Std.isOfType.
+        // Check the class name — Vectors report as "__AS3__.vec::Vector.<T>".
+        try {
+            var cn:String = untyped __global__["flash.utils.getQualifiedClassName"](value);
+            return cn != null && StringTools.startsWith(cn, "__AS3__.vec::Vector.");
+        } catch (_:Dynamic) {}
+        #end
+        return false;
+    }
+
     /**
      * Format evaluation results for display in devtools.
      * Port of AVM1Firmware/Main.as formatOutput() (lines 1446-1508).
@@ -842,17 +855,18 @@ class Evaluate {
             } else if (untyped __is__(value, __global__["Date"])) {
                 output.push({value: "[Date \"" + Std.string(value) + "\"]"});
             #end
-            } else if (Std.isOfType(value, Array)) {
-                var arr:Array<Dynamic> = cast value;
+            } else if (Std.isOfType(value, Array) || isVector(value)) {
+                // Vectors can't be cast to Array — access elements via untyped indexing
+                var arrLen:Int = untyped value.length;
                 if (level == 0 && singular) {
                     var k:Int = 0;
-                    while (k < arr.length) {
-                        var childFormatted:Dynamic = formatOutput([arr[k]], level + 1);
+                    while (k < arrLen) {
+                        var childFormatted:Dynamic = formatOutput([untyped value[k]], level + 1);
                         output.push({value: k + ": " + childFormatted.output[0].value});
                         k++;
                     }
                 } else {
-                    output.push({value: "[Array ..." + arr.length + "]"});
+                    output.push({value: "[Array ..." + arrLen + "]"});
                 }
             } else if (value == null) {
                 output.push({value: "null"});
