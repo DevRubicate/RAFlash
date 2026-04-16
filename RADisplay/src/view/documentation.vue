@@ -76,6 +76,40 @@
                 </dl>
             </section>
 
+            <section id="tool-network-behavior">
+                <h1>Network Behavior</h1>
+                <p>
+                    Configure how the game's HTTP requests are handled. By default, all external
+                    network requests are blocked. Use this tool to define custom response rules
+                    for specific URLs that the game expects to reach.
+                </p>
+                <p>
+                    Each entry has a <strong>URL pattern</strong> to match against and a
+                    <strong>response action</strong> that determines what the game receives.
+                    Available response actions:
+                </p>
+                <dl>
+                    <dt>Block</dt>
+                    <dd>Returns an empty response (the default for unhandled requests).</dd>
+
+                    <dt>Text</dt>
+                    <dd>Returns a custom text response body that you define.</dd>
+
+                    <dt>File</dt>
+                    <dd>Serves the contents of a file from the .raflash archive as the response.</dd>
+                </dl>
+                <p>
+                    Entries can be reordered via drag-and-drop. Use the <strong>+</strong> button
+                    to add new rules. Requests that don't match any rule are tagged as
+                    <strong>UNHANDLED</strong> in the Event Log.
+                </p>
+                <p>
+                    Only available for <strong>.raflash</strong> files. The <strong>Origin URL</strong>
+                    field (also in Game Behavior) controls the base URL used for resolving relative
+                    resource paths.
+                </p>
+            </section>
+
             <section id="tool-asset-list">
                 <h1>Asset List</h1>
                 <p>
@@ -293,7 +327,7 @@
                 </p>
                 <p>
                     The optional <strong>Starting path</strong> field lets you narrow the search to
-                    a subtree (e.g. <code>stage.enemies</code>) instead of scanning the entire stage.
+                    a subtree (e.g. <code>root.enemies</code>) instead of scanning everything.
                 </p>
                 <p>Two search modes are available via the radio toggle:</p>
                 <dl>
@@ -456,9 +490,27 @@
                     </dd>
                 </dl>
                 <p>
-                    Mode changes apply on the next game launch. For AVM2 (AS3) games, "Child Injection"
-                    silently falls back to "Parent Wrapper" since AVM2 child mode isn't implemented yet.
+                    Mode changes apply on the next game launch.
                 </p>
+
+                <h2>AVM1</h2>
+                <p>
+                    Controls how AVM1 (AS2) achievements are executed. Two modes are available:
+                </p>
+                <dl>
+                    <dt>Interpreter</dt>
+                    <dd>
+                        Evaluates achievement bytecode in the firmware's ActionScript interpreter.
+                        The <strong>Enable fast-path evaluation</strong> toggle enables an optimized
+                        evaluation path for better performance.
+                    </dd>
+
+                    <dt>Compiled</dt>
+                    <dd>
+                        Compiles achievements to native AVM1 bytecode that runs directly in Flash Player.
+                        Supports rich presence and devtools. Offers the best performance.
+                    </dd>
+                </dl>
 
                 <h2>Developer</h2>
                 <dl>
@@ -580,7 +632,8 @@ stage.level.coins        // [coinCount]</pre>
 
                 <h2>Array Indexing</h2>
                 <pre>stage.inventory[0]       // first inventory item
-stage.enemies[2].health  // third enemy's health</pre>
+stage.enemies[2].health  // third enemy's health
+root.tooltips.60         // numeric property names work in dot access too</pre>
 
                 <h2>Implicit "this"</h2>
                 <pre>.health    // equivalent to this.health</pre>
@@ -611,6 +664,21 @@ stage.player.x + 100        // scalar + scalar</pre>
                     </tbody>
                 </table>
 
+                <h2>Functions</h2>
+                <table>
+                    <thead><tr><th>Function</th><th>Description</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>len(expr)</code></td><td>Returns the number of elements in the array produced by <code>expr</code></td></tr>
+                    </tbody>
+                </table>
+                <pre>len(stage.enemies)       // number of enemies on stage
+len(stage.inventory)     // number of inventory items</pre>
+
+                <h2>Number Literals</h2>
+                <p>Both integers and floating-point numbers are supported:</p>
+                <pre>100                      // integer
+3.14                     // floating-point</pre>
+
                 <h2>Negation</h2>
                 <p>The <code>!</code> operator negates a boolean value. It broadcasts over arrays:</p>
                 <pre>!stage.player.dead           // true when player is alive
@@ -623,6 +691,9 @@ stage.player.x + 100        // scalar + scalar</pre>
                     <thead><tr><th>Global</th><th>Description</th></tr></thead>
                     <tbody>
                         <tr><td><code>stage</code></td><td>The game's root MovieClip (singleton)</td></tr>
+                        <tr><td><code>root</code></td><td>Combined game state &mdash; includes the stage tree plus class statics</td></tr>
+                        <tr><td><code>main</code></td><td>Smart alias that resolves to the most useful root object for the current game</td></tr>
+                        <tr><td><code>class</code></td><td>Namespace for accessing static fields on game classes</td></tr>
                         <tr><td><code>this</code></td><td>Current context array &mdash; the values being filtered in a property access</td></tr>
                         <tr><td><code>key</code></td><td>Current keys array &mdash; property names or indices, parallel to <code>this</code></td></tr>
                         <tr><td><code>stage_frame</code></td><td>Current frame number of the game's root MovieClip</td></tr>
@@ -918,6 +989,7 @@ stage.menu.gotoMySite.triggered // 1 on frames the function fired, else 0</pre>
     const toolsChapters = [
         { id: 'tool-game-info',           title: 'Game Info' },
         { id: 'tool-game-behavior',       title: 'Game Behavior' },
+        { id: 'tool-network-behavior',    title: 'Network Behavior' },
         { id: 'tool-asset-list',          title: 'Asset List' },
         { id: 'tool-asset-editor',        title: 'Asset Editor' },
         { id: 'tool-rich-presence',       title: 'Rich Presence Editor' },
