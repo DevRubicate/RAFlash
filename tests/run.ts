@@ -211,6 +211,7 @@ const SUITES: Record<string, () => Promise<SuiteResult>> = {
         "RAEngine/tests/UserProfile.test.ts",
         "RAEngine/tests/SWFWriter.test.ts",
         "RAEngine/tests/AVM1Builder.test.ts",
+        "RAEngine/tests/AVM2Builder.test.ts",
         "RAEngine/tests/NativeEvalCompiler.test.ts",
         "RAEngine/tests/SitelockProxy.test.ts",
         "RAEngine/tests/NetworkBehavior.test.ts",
