@@ -59,12 +59,33 @@ function makeAchievement(id: number, name: string, formula: string, cmp: string,
     };
 }
 
+function makeMemVsDeltaRequirement(formula: string, cmp: string, deltaFormula: string) {
+    const id = nextReqId++;
+    return {
+        id, flag: "", typeA: "Mem", addressA: formula,
+        compiledA: Formula.compile(formula), cmp, typeB: "DELTA",
+        addressB: deltaFormula, compiledB: Formula.compile(deltaFormula), maxHits: 0, hits: 0,
+    };
+}
+
 function makeMultiReqAchievement(id: number, name: string, requirements: ReturnType<typeof makeRequirement>[]) {
     return {
         id, type: "ACHIEVEMENT", name, description: `Integration test: ${name}`,
         points: 10, progressionType: "STANDARD", category: "", badgeImage: "",
         state: "ACTIVE", published: false, modified: false,
         groups: [{ id: 1, type: "CORE", requirements }],
+    };
+}
+
+function makeMultiGroupAchievement(
+    id: number, name: string,
+    groups: { type: string; requirements: ReturnType<typeof makeRequirement>[] }[],
+) {
+    return {
+        id, type: "ACHIEVEMENT", name, description: `Integration test: ${name}`,
+        points: 10, progressionType: "STANDARD", category: "", badgeImage: "",
+        state: "ACTIVE", published: false, modified: false,
+        groups: groups.map((g, i) => ({ id: i + 1, type: g.type, requirements: g.requirements })),
     };
 }
 
@@ -130,6 +151,66 @@ function buildAppData() {
             makeAchievement(18, "First Kill", "stage.aliveEnemies", "==", "2"),
             // aliveEnemies drops to 1 when goblin dies (frame 15)
             makeAchievement(19, "Two Kills", "stage.aliveEnemies", "==", "1"),
+
+            // --- len() achievements (IDs 20-21) ---
+            // inventory gains "potion" at frame 5
+            makeAchievement(20, "Inventory Started", "len(stage.inventory)", ">=", "1"),
+            // inventory has 3 items at frame 15 (potion, shield, sword)
+            makeAchievement(21, "Full Inventory", "len(stage.inventory)", ">=", "3"),
+
+            // --- String comparison achievement (ID 22) ---
+            // phase changes to "combat" at frame 20
+            makeAchievement(22, "Combat Phase", "stage.phase", "==", '"combat"'),
+
+            // --- Delta requirement achievement (ID 23) ---
+            // Detects the moment level changes: current level > previous level
+            // Level changes from 1->2 at frame 50
+            makeMultiReqAchievement(23, "Level Changed", [
+                makeMemVsDeltaRequirement("stage.level", ">", "stage.level"),
+            ]),
+
+            // --- ALT group achievement (ID 24) ---
+            // CORE: gold >= 200 (frame 20). ALT: bat dead (frame 5) OR goblin dead (frame 15)
+            // Triggers at frame 20 when CORE passes and ALT already satisfied
+            makeMultiGroupAchievement(24, "ALT Group Test", [
+                { type: "CORE", requirements: [makeRequirement("stage.gold", ">=", "200")] },
+                { type: "ALT", requirements: [
+                    makeRequirement("stage.enemies[1].health", "==", "0"),
+                    makeRequirement("stage.enemies[0].health", "==", "0"),
+                ]},
+            ]),
+
+            // --- PAUSE_IF achievement (ID 25) ---
+            // Normal: gold >= 50 needs 15 hits. PAUSE_IF: combo == 0 (pauses on frames 10, 20, 30...)
+            // Without pause: 15 hits from frame 5 = triggers frame 19
+            // With pause: skips frame 10, so triggers frame 20 or 21
+            makeMultiReqAchievement(25, "Paused Accumulation", [
+                makeRequirementWithFlag("stage.gold", ">=", "50", "", 15),
+                makeRequirementWithFlag("stage.combo", "==", "0", "PAUSE_IF", 0),
+            ]),
+
+            // --- AND_NEXT chain achievement (ID 26) ---
+            // gold >= 100 AND shielded == 1 (compound condition, both must be true same frame)
+            // Gold >= 100 at frame 10, shielded always true -> triggers frame 10
+            makeMultiReqAchievement(26, "AND_NEXT Chain", [
+                makeRequirementWithFlag("stage.gold", ">=", "100", "AND_NEXT"),
+                makeRequirement("stage.flags.shielded", "==", "1"),
+            ]),
+
+            // --- OR_NEXT chain achievement (ID 27) ---
+            // player dead OR poisoned (either condition satisfies the chain)
+            // Poisoned at frame 25 (before player dies at frame 50) -> triggers frame 25
+            makeMultiReqAchievement(27, "OR_NEXT Chain", [
+                makeRequirementWithFlag("stage.player.alive", "==", "0", "OR_NEXT"),
+                makeRequirement("stage.flags.poisoned", "==", "1"),
+            ]),
+
+            // --- MEASURED achievement (ID 28) ---
+            // gold >= 50 with MEASURED flag, maxHits=5: tracks hit progress toward 5
+            // Gold >= 50 from frame 5, so 5 hits reached at frame 9
+            makeMultiReqAchievement(28, "MEASURED Hit Progress", [
+                makeRequirementWithFlag("stage.gold", ">=", "50", "MEASURED", 5),
+            ]),
         ],
         codeNotes: [],
         gameConfig: {
@@ -455,7 +536,7 @@ async function runTestProtocol(
     pass("Game loads successfully");
 
     // Phase 2: Achievement triggers
-    const TOTAL_ACHIEVEMENTS = 19;
+    const TOTAL_ACHIEVEMENTS = 28;
     const allTriggered = await waitFor(
         () => triggeredAchievements.length >= TOTAL_ACHIEVEMENTS,
         `All ${TOTAL_ACHIEVEMENTS} achievements trigger`, 15000,
@@ -473,6 +554,14 @@ async function runTestProtocol(
         { id: 14, name: "Zone1 Boss Defeated" }, { id: 15, name: "Zone2 Boss Defeated" },
         { id: 16, name: "Sustained Gold" }, { id: 17, name: "Gold Before Reset" },
         { id: 18, name: "First Kill" }, { id: 19, name: "Two Kills" },
+        { id: 20, name: "Inventory Started" }, { id: 21, name: "Full Inventory" },
+        { id: 22, name: "Combat Phase" },
+        { id: 23, name: "Level Changed" },
+        { id: 24, name: "ALT Group Test" },
+        { id: 25, name: "Paused Accumulation" },
+        { id: 26, name: "AND_NEXT Chain" },
+        { id: 27, name: "OR_NEXT Chain" },
+        { id: 28, name: "MEASURED Hit Progress" },
     ];
     for (const expected of expectedAchievements) {
         assert(`Achievement "${expected.name}" triggered`, triggeredAchievements.includes(expected.id),
@@ -533,6 +622,64 @@ async function runTestProtocol(
         assert("Gold Before Reset triggers before 200 Gold or near it",
             goldBeforeResetIndex <= gold200Idx + 2,
             `GoldBeforeReset@${goldBeforeResetIndex}, 200Gold@${gold200Idx}`);
+    }
+
+    // Inventory Started (frame 5) triggers before Full Inventory (frame 15)
+    const invStartedIdx = triggeredAchievements.indexOf(20);
+    const invFullIdx = triggeredAchievements.indexOf(21);
+    if (invStartedIdx >= 0 && invFullIdx >= 0) {
+        assert("Inventory Started triggers before Full Inventory",
+            invStartedIdx < invFullIdx,
+            `InvStarted@${invStartedIdx}, InvFull@${invFullIdx}`);
+    }
+
+    // AND_NEXT Chain (frame 10) triggers before Combat Phase (frame 20)
+    const andNextIdx = triggeredAchievements.indexOf(26);
+    const combatPhaseIdx = triggeredAchievements.indexOf(22);
+    if (andNextIdx >= 0 && combatPhaseIdx >= 0) {
+        assert("AND_NEXT Chain triggers before Combat Phase",
+            andNextIdx < combatPhaseIdx,
+            `ANDNext@${andNextIdx}, Combat@${combatPhaseIdx}`);
+    }
+
+    // OR_NEXT Chain (frame 25, via poisoned) triggers before Player Died (frame 50)
+    const orNextIdx = triggeredAchievements.indexOf(27);
+    if (orNextIdx >= 0 && diedIndex >= 0) {
+        assert("OR_NEXT Chain triggers before Player Died",
+            orNextIdx < diedIndex,
+            `ORNext@${orNextIdx}, Died@${diedIndex}`);
+    }
+
+    // Level Changed (Delta, frame 50) triggers after OR_NEXT Chain (frame 25)
+    const levelChangedIdx = triggeredAchievements.indexOf(23);
+    if (levelChangedIdx >= 0 && orNextIdx >= 0) {
+        assert("Level Changed (Delta) triggers after OR_NEXT Chain",
+            levelChangedIdx > orNextIdx,
+            `LevelChanged@${levelChangedIdx}, ORNext@${orNextIdx}`);
+    }
+
+    // MEASURED Hit Progress (gold>=50, 5 hits from frame 5 = frame 9) before 200 Gold (frame 20)
+    const measuredIdx = triggeredAchievements.indexOf(28);
+    if (measuredIdx >= 0 && gold200Index >= 0) {
+        assert("MEASURED Hit Progress triggers before 200 Gold",
+            measuredIdx < gold200Index,
+            `Measured@${measuredIdx}, 200Gold@${gold200Index}`);
+    }
+
+    // Paused Accumulation (15 hits with pause, ~frame 20) triggers before 500 Gold (frame 50)
+    const pausedIdx = triggeredAchievements.indexOf(25);
+    if (pausedIdx >= 0 && gold500Index >= 0) {
+        assert("Paused Accumulation triggers before 500 Gold",
+            pausedIdx < gold500Index,
+            `Paused@${pausedIdx}, 500Gold@${gold500Index}`);
+    }
+
+    // ALT Group Test (CORE: gold>=200, frame 20) triggers before 500 Gold (frame 50)
+    const altGroupIdx = triggeredAchievements.indexOf(24);
+    if (altGroupIdx >= 0 && gold500Index >= 0) {
+        assert("ALT Group Test triggers before 500 Gold",
+            altGroupIdx < gold500Index,
+            `ALTGroup@${altGroupIdx}, 500Gold@${gold500Index}`);
     }
 
     // Phase 3: DSL Evaluation - Basic property reads
@@ -746,6 +893,105 @@ async function runTestProtocol(
         assert("evaluate (10 + 20) * 3 returns 90 (parentheses)", value === 90,
             `Expected 90, got ${JSON.stringify(value)}`);
     } else fail("evaluate (10 + 20) * 3", `Request failed: ${JSON.stringify(parenResult)}`);
+
+    // Phase 3k: DSL Evaluation - len() function
+    const lenEnemiesResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("len(stage.enemies)") });
+    if (lenEnemiesResult?.success) {
+        const value = extractValue(lenEnemiesResult.result);
+        assert("evaluate len(stage.enemies) returns 3", value === 3,
+            `Expected 3, got ${JSON.stringify(value)}`);
+    } else fail("evaluate len(stage.enemies)", `Request failed: ${JSON.stringify(lenEnemiesResult)}`);
+
+    const lenInventoryResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("len(stage.inventory)") });
+    if (lenInventoryResult?.success) {
+        const value = extractValue(lenInventoryResult.result);
+        assert("evaluate len(stage.inventory) returns 3", value === 3,
+            `Expected 3, got ${JSON.stringify(value)}`);
+    } else fail("evaluate len(stage.inventory)", `Request failed: ${JSON.stringify(lenInventoryResult)}`);
+
+    // Phase 3l: DSL Evaluation - Division, modulo, exponentiation
+    const divResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.gold / 10") });
+    if (divResult?.success) {
+        const value = extractValue(divResult.result);
+        assert("evaluate stage.gold / 10 returns frameNum (positive number)",
+            typeof value === "number" && value > 0,
+            `Expected positive number, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage.gold / 10", `Request failed: ${JSON.stringify(divResult)}`);
+
+    const modResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.frameNum % 10") });
+    if (modResult?.success) {
+        const value = extractValue(modResult.result);
+        assert("evaluate stage.frameNum % 10 returns 0-9",
+            typeof value === "number" && value >= 0 && value <= 9,
+            `Expected 0-9, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage.frameNum % 10", `Request failed: ${JSON.stringify(modResult)}`);
+
+    const powResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("2 ** 10") });
+    if (powResult?.success) {
+        const value = extractValue(powResult.result);
+        assert("evaluate 2 ** 10 returns 1024", value === 1024,
+            `Expected 1024, got ${JSON.stringify(value)}`);
+    } else fail("evaluate 2 ** 10", `Request failed: ${JSON.stringify(powResult)}`);
+
+    // Phase 3m: DSL Evaluation - stage_frame global
+    const stageFrameResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage_frame") });
+    if (stageFrameResult?.success) {
+        const value = extractValue(stageFrameResult.result);
+        assert("evaluate stage_frame returns positive number",
+            typeof value === "number" && value > 0,
+            `Expected positive number, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage_frame", `Request failed: ${JSON.stringify(stageFrameResult)}`);
+
+    // Phase 3n: DSL Evaluation - Remembered values {expr}
+    const rememberedResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("{stage.combo}") });
+    if (rememberedResult?.success) {
+        const value = extractValue(rememberedResult.result);
+        assert("evaluate {stage.combo} returns cached non-zero value",
+            typeof value === "number" && value > 0,
+            `Expected positive number (cached from last non-zero combo), got ${JSON.stringify(value)}`);
+    } else fail("evaluate {stage.combo}", `Request failed: ${JSON.stringify(rememberedResult)}`);
+
+    // Phase 3o: DSL Evaluation - String comparison
+    const strCmpResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile('stage.phase == "critical"') });
+    if (strCmpResult?.success) {
+        const value = extractValue(strCmpResult.result);
+        assert("evaluate stage.phase == \"critical\" returns truthy",
+            value === true || value === 1,
+            `Expected truthy, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage.phase == \"critical\"", `Request failed: ${JSON.stringify(strCmpResult)}`);
+
+    const strCmpResult2 = await sendRequestWithTimeout("evaluate", { formula: Formula.compile('stage.player.name == "Hero"') });
+    if (strCmpResult2?.success) {
+        const value = extractValue(strCmpResult2.result);
+        assert("evaluate stage.player.name == \"Hero\" returns truthy",
+            value === true || value === 1,
+            `Expected truthy, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage.player.name == \"Hero\"", `Request failed: ${JSON.stringify(strCmpResult2)}`);
+
+    const strNeqResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile('stage.phase != "explore"') });
+    if (strNeqResult?.success) {
+        const value = extractValue(strNeqResult.result);
+        assert("evaluate stage.phase != \"explore\" returns truthy (phase is critical)",
+            value === true || value === 1,
+            `Expected truthy, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage.phase != \"explore\"", `Request failed: ${JSON.stringify(strNeqResult)}`);
+
+    // Phase 3p: DSL Evaluation - XOR operator
+    const xorResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.flags.poisoned ^ stage.player.alive") });
+    if (xorResult?.success) {
+        const value = extractValue(xorResult.result);
+        assert("evaluate poisoned ^ alive returns truthy (true XOR false = true)",
+            value === true || value === 1,
+            `Expected truthy, got ${JSON.stringify(value)}`);
+    } else fail("evaluate poisoned ^ alive", `Request failed: ${JSON.stringify(xorResult)}`);
+
+    const xorResult2 = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.flags.poisoned ^ stage.flags.shielded") });
+    if (xorResult2?.success) {
+        const value = extractValue(xorResult2.result);
+        assert("evaluate poisoned ^ shielded returns falsy (true XOR true = false)",
+            value === false || value === 0,
+            `Expected falsy, got ${JSON.stringify(value)}`);
+    } else fail("evaluate poisoned ^ shielded", `Request failed: ${JSON.stringify(xorResult2)}`);
 
     // Phase 4: Memory Search
     const searchResult = await sendRequestWithTimeout("searchTargetForValue", { value: "goblin", pathFormula: null, pathString: "", searchMode: "value" });
