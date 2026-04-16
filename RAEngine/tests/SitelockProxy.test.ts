@@ -5,7 +5,7 @@
  * and verifies responses. Tests network behavior rules, 404 blocking, etc.
  */
 
-import { assertEquals } from "https://deno.land/std/assert/mod.ts";
+import { test, assertEqual } from "../../tests/framework.ts";
 import { startSitelockProxy, stopSitelockProxy, networkRuleZipPath } from "../src/SitelockProxy.ts";
 
 const TEST_PORT = 19876;
@@ -58,7 +58,7 @@ function parseResponse(raw: string): { status: number; headers: Record<string, s
 // Unknown hosts are blocked with 404
 // =============================================================================
 
-Deno.test("proxy - unknown host returns 404", async () => {
+test("proxy - unknown host returns 404", async () => {
     const rules: any[] = [];
     startSitelockProxy({
         port: TEST_PORT,
@@ -70,7 +70,7 @@ Deno.test("proxy - unknown host returns 404", async () => {
     try {
         const raw = await proxyRequest("GET", "http://unknown.example.com/something");
         const res = parseResponse(raw);
-        assertEquals(res.status, 404);
+        assertEqual(res.status, 404);
     } finally {
         stopSitelockProxy();
     }
@@ -80,7 +80,7 @@ Deno.test("proxy - unknown host returns 404", async () => {
 // Network behavior rules - text response
 // =============================================================================
 
-Deno.test("proxy - active text rule returns configured response", async () => {
+test("proxy - active text rule returns configured response", async () => {
     const rules = [
         { active: true, url: "http://api.example.com/data.json", status: 200, action: "text", body: '{"hello":"world"}' },
     ];
@@ -94,15 +94,15 @@ Deno.test("proxy - active text rule returns configured response", async () => {
     try {
         const raw = await proxyRequest("GET", "http://api.example.com/data.json");
         const res = parseResponse(raw);
-        assertEquals(res.status, 200);
-        assertEquals(res.headers["content-type"], "text/plain");
-        assertEquals(res.body, '{"hello":"world"}');
+        assertEqual(res.status, 200);
+        assertEqual(res.headers["content-type"], "text/plain");
+        assertEqual(res.body, '{"hello":"world"}');
     } finally {
         stopSitelockProxy();
     }
 });
 
-Deno.test("proxy - text rule with custom status code", async () => {
+test("proxy - text rule with custom status code", async () => {
     const rules = [
         { active: true, url: "http://api.example.com/gone", status: 410, action: "text", body: "gone away" },
     ];
@@ -116,8 +116,8 @@ Deno.test("proxy - text rule with custom status code", async () => {
     try {
         const raw = await proxyRequest("GET", "http://api.example.com/gone");
         const res = parseResponse(raw);
-        assertEquals(res.status, 410);
-        assertEquals(res.body, "gone away");
+        assertEqual(res.status, 410);
+        assertEqual(res.body, "gone away");
     } finally {
         stopSitelockProxy();
     }
@@ -127,7 +127,7 @@ Deno.test("proxy - text rule with custom status code", async () => {
 // Inactive rules are ignored
 // =============================================================================
 
-Deno.test("proxy - inactive rule is skipped, returns 404", async () => {
+test("proxy - inactive rule is skipped, returns 404", async () => {
     const rules = [
         { active: false, url: "http://api.example.com/data.json", status: 200, action: "text", body: "nope" },
     ];
@@ -141,7 +141,7 @@ Deno.test("proxy - inactive rule is skipped, returns 404", async () => {
     try {
         const raw = await proxyRequest("GET", "http://api.example.com/data.json");
         const res = parseResponse(raw);
-        assertEquals(res.status, 404);
+        assertEqual(res.status, 404);
     } finally {
         stopSitelockProxy();
     }
@@ -151,7 +151,7 @@ Deno.test("proxy - inactive rule is skipped, returns 404", async () => {
 // Empty URL rules never match
 // =============================================================================
 
-Deno.test("proxy - empty URL rule never matches", async () => {
+test("proxy - empty URL rule never matches", async () => {
     const rules = [
         { active: true, url: "", status: 200, action: "text", body: "should not match" },
     ];
@@ -165,7 +165,7 @@ Deno.test("proxy - empty URL rule never matches", async () => {
     try {
         const raw = await proxyRequest("GET", "http://anything.com/");
         const res = parseResponse(raw);
-        assertEquals(res.status, 404);
+        assertEqual(res.status, 404);
     } finally {
         stopSitelockProxy();
     }
@@ -175,7 +175,7 @@ Deno.test("proxy - empty URL rule never matches", async () => {
 // Exact match only - similar URLs don't match
 // =============================================================================
 
-Deno.test("proxy - URL must match exactly", async () => {
+test("proxy - URL must match exactly", async () => {
     const rules = [
         { active: true, url: "http://api.example.com/data.json", status: 200, action: "text", body: "matched" },
     ];
@@ -189,16 +189,16 @@ Deno.test("proxy - URL must match exactly", async () => {
     try {
         // Different path
         const raw1 = await proxyRequest("GET", "http://api.example.com/other.json");
-        assertEquals(parseResponse(raw1).status, 404);
+        assertEqual(parseResponse(raw1).status, 404);
 
         // Different host
         const raw2 = await proxyRequest("GET", "http://other.example.com/data.json");
-        assertEquals(parseResponse(raw2).status, 404);
+        assertEqual(parseResponse(raw2).status, 404);
 
         // Exact match works
         const raw3 = await proxyRequest("GET", "http://api.example.com/data.json");
-        assertEquals(parseResponse(raw3).status, 200);
-        assertEquals(parseResponse(raw3).body, "matched");
+        assertEqual(parseResponse(raw3).status, 200);
+        assertEqual(parseResponse(raw3).body, "matched");
     } finally {
         stopSitelockProxy();
     }
@@ -208,7 +208,7 @@ Deno.test("proxy - URL must match exactly", async () => {
 // Rules update live without proxy restart
 // =============================================================================
 
-Deno.test("proxy - rules update live without restart", async () => {
+test("proxy - rules update live without restart", async () => {
     const rules: any[] = [];
     startSitelockProxy({
         port: TEST_PORT,
@@ -220,21 +220,21 @@ Deno.test("proxy - rules update live without restart", async () => {
     try {
         // No rules — 404
         const raw1 = await proxyRequest("GET", "http://api.example.com/live");
-        assertEquals(parseResponse(raw1).status, 404);
+        assertEqual(parseResponse(raw1).status, 404);
 
         // Add a rule live
         rules.push({ active: true, url: "http://api.example.com/live", status: 200, action: "text", body: "live!" });
 
         const raw2 = await proxyRequest("GET", "http://api.example.com/live");
         const res2 = parseResponse(raw2);
-        assertEquals(res2.status, 200);
-        assertEquals(res2.body, "live!");
+        assertEqual(res2.status, 200);
+        assertEqual(res2.body, "live!");
 
         // Deactivate it live
         rules[0].active = false;
 
         const raw3 = await proxyRequest("GET", "http://api.example.com/live");
-        assertEquals(parseResponse(raw3).status, 404);
+        assertEqual(parseResponse(raw3).status, 404);
     } finally {
         stopSitelockProxy();
     }
@@ -244,7 +244,7 @@ Deno.test("proxy - rules update live without restart", async () => {
 // File response rules
 // =============================================================================
 
-Deno.test("proxy - file rule serves bytes with correct content-type", async () => {
+test("proxy - file rule serves bytes with correct content-type", async () => {
     const swfBytes = new Uint8Array([0x46, 0x57, 0x53, 0x09]); // "FWS\t" — fake SWF header
     const rules = [
         { active: true, url: "http://cdn.example.com/game.swf", status: 200, action: "file", body: "", fileBytes: swfBytes },
@@ -259,15 +259,15 @@ Deno.test("proxy - file rule serves bytes with correct content-type", async () =
     try {
         const raw = await proxyRequest("GET", "http://cdn.example.com/game.swf");
         const res = parseResponse(raw);
-        assertEquals(res.status, 200);
-        assertEquals(res.headers["content-type"], "application/x-shockwave-flash");
-        assertEquals(res.headers["content-length"], "4");
+        assertEqual(res.status, 200);
+        assertEqual(res.headers["content-type"], "application/x-shockwave-flash");
+        assertEqual(res.headers["content-length"], "4");
     } finally {
         stopSitelockProxy();
     }
 });
 
-Deno.test("proxy - file rule without fileBytes falls back to empty text", async () => {
+test("proxy - file rule without fileBytes falls back to empty text", async () => {
     const rules = [
         { active: true, url: "http://cdn.example.com/missing.swf", status: 200, action: "file", body: "" },
     ];
@@ -281,15 +281,15 @@ Deno.test("proxy - file rule without fileBytes falls back to empty text", async 
     try {
         const raw = await proxyRequest("GET", "http://cdn.example.com/missing.swf");
         const res = parseResponse(raw);
-        assertEquals(res.status, 200);
-        assertEquals(res.headers["content-type"], "text/plain");
-        assertEquals(res.body, "");
+        assertEqual(res.status, 200);
+        assertEqual(res.headers["content-type"], "text/plain");
+        assertEqual(res.body, "");
     } finally {
         stopSitelockProxy();
     }
 });
 
-Deno.test("proxy - file rule content-type detected from extension", async () => {
+test("proxy - file rule content-type detected from extension", async () => {
     const pngBytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47]); // PNG header
     const rules = [
         { active: true, url: "http://cdn.example.com/image.png", status: 200, action: "file", body: "", fileBytes: pngBytes },
@@ -304,7 +304,7 @@ Deno.test("proxy - file rule content-type detected from extension", async () => 
     try {
         const raw = await proxyRequest("GET", "http://cdn.example.com/image.png");
         const res = parseResponse(raw);
-        assertEquals(res.headers["content-type"], "image/png");
+        assertEqual(res.headers["content-type"], "image/png");
     } finally {
         stopSitelockProxy();
     }
@@ -314,14 +314,14 @@ Deno.test("proxy - file rule content-type detected from extension", async () => 
 // networkRuleZipPath
 // =============================================================================
 
-Deno.test("networkRuleZipPath - strips http and prepends network/", () => {
-    assertEquals(networkRuleZipPath("http://kongregate.com/category/games/tracker.swf"), "network/kongregate.com/category/games/tracker.swf");
+test("networkRuleZipPath - strips http and prepends network/", () => {
+    assertEqual(networkRuleZipPath("http://kongregate.com/category/games/tracker.swf"), "network/kongregate.com/category/games/tracker.swf");
 });
 
-Deno.test("networkRuleZipPath - strips https", () => {
-    assertEquals(networkRuleZipPath("https://example.com/api/data.json"), "network/example.com/api/data.json");
+test("networkRuleZipPath - strips https", () => {
+    assertEqual(networkRuleZipPath("https://example.com/api/data.json"), "network/example.com/api/data.json");
 });
 
-Deno.test("networkRuleZipPath - preserves query string", () => {
-    assertEquals(networkRuleZipPath("http://host.com/path?key=val"), "network/host.com/path?key=val");
+test("networkRuleZipPath - preserves query string", () => {
+    assertEqual(networkRuleZipPath("http://host.com/path?key=val"), "network/host.com/path?key=val");
 });

@@ -24,7 +24,7 @@
  *   - Edge cases (empty results, boundary values)
  */
 
-import { assertEquals, assertThrows } from "https://deno.land/std/assert/mod.ts";
+import { test, assertEqual, assertThrows } from "../../tests/framework.ts";
 import { compileAchievementsSWF } from "../src/swf/NativeEvalCompiler.ts";
 
 // =============================================================================
@@ -550,38 +550,38 @@ function compileSingle(asset: Record<string, unknown>): VMFunction {
 // Compilation smoke tests
 // =============================================================================
 
-Deno.test("NativeEval - compiles empty requirement list throws", () => {
+test("NativeEval - compiles empty requirement list throws", () => {
     assertThrows(() => {
         compileAchievementsSWF([{ groups: [] }]);
     });
 });
 
-Deno.test("NativeEval - compiles single requirement", () => {
+test("NativeEval - compiles single requirement", () => {
     const asset = simpleAsset([{ addressA: "stage.x", addressB: "10", cmp: "==" }]);
     const { functions, compiledIndices } = compileAndExtract([asset]);
-    assertEquals(functions.length, 1);
-    assertEquals(compiledIndices, [0]);
+    assertEqual(functions.length, 1);
+    assertEqual(compiledIndices, [0]);
 });
 
-Deno.test("NativeEval - separates RICH_PRESENCE and achievement assets", () => {
+test("NativeEval - separates RICH_PRESENCE and achievement assets", () => {
     const assets = [
         { type: "RICH_PRESENCE", formula: '"Hello"', groups: [] },
         simpleAsset([{ addressA: "stage.x", addressB: "10", cmp: "==" }]),
     ];
     const { functions, compiledIndices, rpFunctions, rpCompiledIndices } = compileAndExtract(assets);
-    assertEquals(functions.length, 1);
-    assertEquals(compiledIndices, [1]);
-    assertEquals(rpFunctions.length, 1);
-    assertEquals(rpCompiledIndices, [0]);
+    assertEqual(functions.length, 1);
+    assertEqual(compiledIndices, [1]);
+    assertEqual(rpFunctions.length, 1);
+    assertEqual(rpCompiledIndices, [0]);
 });
 
-Deno.test("NativeEval - throws on unknown flag", () => {
+test("NativeEval - throws on unknown flag", () => {
     assertThrows(() => {
         compileAchievementsSWF([simpleAsset([{ addressA: "0", addressB: "0", cmp: "==", flag: "UNKNOWN_FLAG" }])]);
     });
 });
 
-Deno.test("NativeEval - throws on unknown group type", () => {
+test("NativeEval - throws on unknown group type", () => {
     assertThrows(() => {
         compileAchievementsSWF([makeAsset([{ type: "UNKNOWN", requirements: [{ addressA: "0", addressB: "0", cmp: "==" }] }])]);
     });
@@ -591,131 +591,131 @@ Deno.test("NativeEval - throws on unknown group type", () => {
 // Basic comparisons
 // =============================================================================
 
-Deno.test("NativeEval - equal true", () => {
+test("NativeEval - equal true", () => {
     const fn = compileSingle(simpleAsset([{ addressA: "stage.x", addressB: "10", cmp: "==" }]));
-    assertEquals(fn({ x: 10 }, {}), 1);
+    assertEqual(fn({ x: 10 }, {}), 1);
 });
 
-Deno.test("NativeEval - equal false", () => {
+test("NativeEval - equal false", () => {
     const fn = compileSingle(simpleAsset([{ addressA: "stage.x", addressB: "10", cmp: "==" }]));
-    assertEquals(fn({ x: 5 }, {}), 0);
+    assertEqual(fn({ x: 5 }, {}), 0);
 });
 
-Deno.test("NativeEval - not equal true", () => {
+test("NativeEval - not equal true", () => {
     const fn = compileSingle(simpleAsset([{ addressA: "stage.x", addressB: "10", cmp: "!=" }]));
-    assertEquals(fn({ x: 5 }, {}), 1);
+    assertEqual(fn({ x: 5 }, {}), 1);
 });
 
-Deno.test("NativeEval - not equal false", () => {
+test("NativeEval - not equal false", () => {
     const fn = compileSingle(simpleAsset([{ addressA: "stage.x", addressB: "10", cmp: "!=" }]));
-    assertEquals(fn({ x: 10 }, {}), 0);
+    assertEqual(fn({ x: 10 }, {}), 0);
 });
 
-Deno.test("NativeEval - greater true", () => {
+test("NativeEval - greater true", () => {
     const fn = compileSingle(simpleAsset([{ addressA: "stage.x", addressB: "10", cmp: ">" }]));
-    assertEquals(fn({ x: 15 }, {}), 1);
+    assertEqual(fn({ x: 15 }, {}), 1);
 });
 
-Deno.test("NativeEval - greater false", () => {
+test("NativeEval - greater false", () => {
     const fn = compileSingle(simpleAsset([{ addressA: "stage.x", addressB: "10", cmp: ">" }]));
-    assertEquals(fn({ x: 10 }, {}), 0);
+    assertEqual(fn({ x: 10 }, {}), 0);
 });
 
-Deno.test("NativeEval - greater_equal true at boundary", () => {
+test("NativeEval - greater_equal true at boundary", () => {
     const fn = compileSingle(simpleAsset([{ addressA: "stage.x", addressB: "10", cmp: ">=" }]));
-    assertEquals(fn({ x: 10 }, {}), 1);
+    assertEqual(fn({ x: 10 }, {}), 1);
 });
 
-Deno.test("NativeEval - greater_equal false", () => {
+test("NativeEval - greater_equal false", () => {
     const fn = compileSingle(simpleAsset([{ addressA: "stage.x", addressB: "10", cmp: ">=" }]));
-    assertEquals(fn({ x: 9 }, {}), 0);
+    assertEqual(fn({ x: 9 }, {}), 0);
 });
 
-Deno.test("NativeEval - less true", () => {
+test("NativeEval - less true", () => {
     const fn = compileSingle(simpleAsset([{ addressA: "stage.x", addressB: "10", cmp: "<" }]));
-    assertEquals(fn({ x: 5 }, {}), 1);
+    assertEqual(fn({ x: 5 }, {}), 1);
 });
 
-Deno.test("NativeEval - less false", () => {
+test("NativeEval - less false", () => {
     const fn = compileSingle(simpleAsset([{ addressA: "stage.x", addressB: "10", cmp: "<" }]));
-    assertEquals(fn({ x: 10 }, {}), 0);
+    assertEqual(fn({ x: 10 }, {}), 0);
 });
 
-Deno.test("NativeEval - less_equal true at boundary", () => {
+test("NativeEval - less_equal true at boundary", () => {
     const fn = compileSingle(simpleAsset([{ addressA: "stage.x", addressB: "10", cmp: "<=" }]));
-    assertEquals(fn({ x: 10 }, {}), 1);
+    assertEqual(fn({ x: 10 }, {}), 1);
 });
 
-Deno.test("NativeEval - less_equal false", () => {
+test("NativeEval - less_equal false", () => {
     const fn = compileSingle(simpleAsset([{ addressA: "stage.x", addressB: "10", cmp: "<=" }]));
-    assertEquals(fn({ x: 11 }, {}), 0);
+    assertEqual(fn({ x: 11 }, {}), 0);
 });
 
 // =============================================================================
 // Multiple requirements (all must pass)
 // =============================================================================
 
-Deno.test("NativeEval - two requirements both pass", () => {
+test("NativeEval - two requirements both pass", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "10", cmp: ">=" },
         { addressA: "stage.y", addressB: "5", cmp: "<" },
     ]));
-    assertEquals(fn({ x: 15, y: 3 }, {}), 1);
+    assertEqual(fn({ x: 15, y: 3 }, {}), 1);
 });
 
-Deno.test("NativeEval - two requirements one fails", () => {
+test("NativeEval - two requirements one fails", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "10", cmp: ">=" },
         { addressA: "stage.y", addressB: "5", cmp: "<" },
     ]));
-    assertEquals(fn({ x: 15, y: 6 }, {}), 0);
+    assertEqual(fn({ x: 15, y: 6 }, {}), 0);
 });
 
-Deno.test("NativeEval - two requirements first fails", () => {
+test("NativeEval - two requirements first fails", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "10", cmp: ">=" },
         { addressA: "stage.y", addressB: "5", cmp: "<" },
     ]));
-    assertEquals(fn({ x: 5, y: 3 }, {}), 0);
+    assertEqual(fn({ x: 5, y: 3 }, {}), 0);
 });
 
 // =============================================================================
 // Hit tracking
 // =============================================================================
 
-Deno.test("NativeEval - hit tracking increments on pass", () => {
+test("NativeEval - hit tracking increments on pass", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 3 },
     ]));
     const storage: Record<string, unknown> = {};
     // Frame 1: pass
-    assertEquals(fn({ x: 1 }, storage), 0);
-    assertEquals(storage["h0_0"], 1);
+    assertEqual(fn({ x: 1 }, storage), 0);
+    assertEqual(storage["h0_0"], 1);
     // Frame 2: pass
-    assertEquals(fn({ x: 1 }, storage), 0);
-    assertEquals(storage["h0_0"], 2);
+    assertEqual(fn({ x: 1 }, storage), 0);
+    assertEqual(storage["h0_0"], 2);
     // Frame 3: pass → triggers (hits reaches maxHits)
-    assertEquals(fn({ x: 1 }, storage), 1);
-    assertEquals(storage["h0_0"], 3);
+    assertEqual(fn({ x: 1 }, storage), 1);
+    assertEqual(storage["h0_0"], 3);
 });
 
-Deno.test("NativeEval - hit tracking does not increment on fail", () => {
+test("NativeEval - hit tracking does not increment on fail", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 3 },
     ]));
     const storage: Record<string, unknown> = {};
     // Frame 1: pass
     fn({ x: 1 }, storage);
-    assertEquals(storage["h0_0"], 1);
+    assertEqual(storage["h0_0"], 1);
     // Frame 2: fail
     fn({ x: 0 }, storage);
-    assertEquals(storage["h0_0"], 1); // unchanged
+    assertEqual(storage["h0_0"], 1); // unchanged
     // Frame 3: pass
     fn({ x: 1 }, storage);
-    assertEquals(storage["h0_0"], 2);
+    assertEqual(storage["h0_0"], 2);
 });
 
-Deno.test("NativeEval - hit tracking caps at maxHits", () => {
+test("NativeEval - hit tracking caps at maxHits", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 2 },
     ]));
@@ -723,10 +723,10 @@ Deno.test("NativeEval - hit tracking caps at maxHits", () => {
     fn({ x: 1 }, storage); // 1
     fn({ x: 1 }, storage); // 2 → triggers
     fn({ x: 1 }, storage); // already at max
-    assertEquals(storage["h0_0"], 2); // capped
+    assertEqual(storage["h0_0"], 2); // capped
 });
 
-Deno.test("NativeEval - locked true with multiple requirements", () => {
+test("NativeEval - locked true with multiple requirements", () => {
     // Req 0: hit-tracked (maxHits=1), Req 1: no hits
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 1 },
@@ -734,28 +734,28 @@ Deno.test("NativeEval - locked true with multiple requirements", () => {
     ]));
     const storage: Record<string, unknown> = {};
     // Frame 1: x=1, y=0 → req0 passes (hits=1), req1 fails → no trigger
-    assertEquals(fn({ x: 1, y: 0 }, storage), 0);
-    assertEquals(storage["h0_0"], 1);
+    assertEqual(fn({ x: 1, y: 0 }, storage), 0);
+    assertEqual(storage["h0_0"], 1);
     // Frame 2: x=0, y=1 → req0 locked-true (hits=1>=1), req1 passes → trigger
-    assertEquals(fn({ x: 0, y: 1 }, storage), 1);
+    assertEqual(fn({ x: 0, y: 1 }, storage), 1);
 });
 
 // =============================================================================
 // Delta values
 // =============================================================================
 
-Deno.test("NativeEval - delta first frame not initialized", () => {
+test("NativeEval - delta first frame not initialized", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "0", cmp: ">", typeA: "DELTA" },
     ]));
     const storage: Record<string, unknown> = {};
     // First frame: delta not initialized → requirement fails (allMet=false)
-    assertEquals(fn({ x: 10 }, storage), 0);
+    assertEqual(fn({ x: 10 }, storage), 0);
     // Second frame: delta = 20 - 10 = 10, 10 > 0 → pass
-    assertEquals(fn({ x: 20 }, storage), 1);
+    assertEqual(fn({ x: 20 }, storage), 1);
 });
 
-Deno.test("NativeEval - delta uses previous frame value", () => {
+test("NativeEval - delta uses previous frame value", () => {
     // DELTA means "use the previous frame's value" for comparison
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "10", cmp: "==", typeA: "DELTA" },
@@ -763,63 +763,63 @@ Deno.test("NativeEval - delta uses previous frame value", () => {
     const storage: Record<string, unknown> = {};
     fn({ x: 10 }, storage); // init frame: stores 10, not yet initialized → fail
     // Frame 2: previous=10, current=15 → valA becomes 10 (previous), 10 == 10 → trigger
-    assertEquals(fn({ x: 15 }, storage), 1);
+    assertEqual(fn({ x: 15 }, storage), 1);
 });
 
-Deno.test("NativeEval - delta tracks previous value each frame", () => {
+test("NativeEval - delta tracks previous value each frame", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "5", cmp: "==", typeA: "DELTA" },
     ]));
     const storage: Record<string, unknown> = {};
     fn({ x: 5 }, storage); // init: store 5
-    assertEquals(fn({ x: 10 }, storage), 1); // prev=5, 5==5 → trigger
-    assertEquals(fn({ x: 10 }, storage), 0); // prev=10, 10==5 → fail
-    assertEquals(fn({ x: 3 }, storage), 0); // prev=10, 10==5 → fail
-    assertEquals(fn({ x: 5 }, storage), 0); // prev=3, 3==5 → fail
-    assertEquals(fn({ x: 8 }, storage), 1); // prev=5, 5==5 → trigger
+    assertEqual(fn({ x: 10 }, storage), 1); // prev=5, 5==5 → trigger
+    assertEqual(fn({ x: 10 }, storage), 0); // prev=10, 10==5 → fail
+    assertEqual(fn({ x: 3 }, storage), 0); // prev=10, 10==5 → fail
+    assertEqual(fn({ x: 5 }, storage), 0); // prev=3, 3==5 → fail
+    assertEqual(fn({ x: 8 }, storage), 1); // prev=5, 5==5 → trigger
 });
 
-Deno.test("NativeEval - delta on B side", () => {
+test("NativeEval - delta on B side", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "5", addressB: "stage.x", cmp: "==", typeB: "DELTA" },
     ]));
     const storage: Record<string, unknown> = {};
     fn({ x: 5 }, storage); // init B
-    assertEquals(fn({ x: 10 }, storage), 1); // prevB=5, 5==5 → trigger
-    assertEquals(fn({ x: 10 }, storage), 0); // prevB=10, 5==10 → fail
+    assertEqual(fn({ x: 10 }, storage), 1); // prevB=5, 5==5 → trigger
+    assertEqual(fn({ x: 10 }, storage), 0); // prevB=10, 5==10 → fail
 });
 
 // =============================================================================
 // PAUSE_IF
 // =============================================================================
 
-Deno.test("NativeEval - PAUSE_IF transient pauses when true", () => {
+test("NativeEval - PAUSE_IF transient pauses when true", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.paused", addressB: "1", cmp: "==", flag: "PAUSE_IF" },
         { addressA: "stage.x", addressB: "1", cmp: "==" },
     ]));
     const storage: Record<string, unknown> = {};
     // Paused → should not trigger
-    assertEquals(fn({ paused: 1, x: 1 }, storage), 0);
+    assertEqual(fn({ paused: 1, x: 1 }, storage), 0);
     // Unpaused → should trigger
-    assertEquals(fn({ paused: 0, x: 1 }, storage), 1);
+    assertEqual(fn({ paused: 0, x: 1 }, storage), 1);
 });
 
-Deno.test("NativeEval - PAUSE_IF threshold pauses after hits", () => {
+test("NativeEval - PAUSE_IF threshold pauses after hits", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.flag", addressB: "1", cmp: "==", flag: "PAUSE_IF", maxHits: 2 },
         { addressA: "stage.x", addressB: "1", cmp: "==" },
     ]));
     const storage: Record<string, unknown> = {};
     // Frame 1: flag=1 → hits=1, not yet at threshold
-    assertEquals(fn({ flag: 1, x: 1 }, storage), 1);
+    assertEqual(fn({ flag: 1, x: 1 }, storage), 1);
     // Frame 2: flag=1 → hits=2, threshold reached → paused
-    assertEquals(fn({ flag: 1, x: 1 }, storage), 0);
+    assertEqual(fn({ flag: 1, x: 1 }, storage), 0);
     // Frame 3: flag=0, hits still=2 → still paused
-    assertEquals(fn({ flag: 0, x: 1 }, storage), 0);
+    assertEqual(fn({ flag: 0, x: 1 }, storage), 0);
 });
 
-Deno.test("NativeEval - PAUSE_IF delta still updates while paused", () => {
+test("NativeEval - PAUSE_IF delta still updates while paused", () => {
     // Delta means "previous frame's value". While paused, deltas still update
     // so the previous-value tracking stays current.
     const fn = compileSingle(simpleAsset([
@@ -832,14 +832,14 @@ Deno.test("NativeEval - PAUSE_IF delta still updates while paused", () => {
     // Frame 2: paused → delta still updates (stores 20)
     fn({ paused: 1, x: 20 }, storage);
     // Frame 3: unpaused → prev=20, 20 == 20 → trigger
-    assertEquals(fn({ paused: 0, x: 25 }, storage), 1);
+    assertEqual(fn({ paused: 0, x: 25 }, storage), 1);
 });
 
 // =============================================================================
 // RESET_IF
 // =============================================================================
 
-Deno.test("NativeEval - RESET_IF transient clears hits", () => {
+test("NativeEval - RESET_IF transient clears hits", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 3 },
         { addressA: "stage.reset", addressB: "1", cmp: "==", flag: "RESET_IF" },
@@ -847,13 +847,13 @@ Deno.test("NativeEval - RESET_IF transient clears hits", () => {
     const storage: Record<string, unknown> = {};
     fn({ x: 1, reset: 0 }, storage); // hits=1
     fn({ x: 1, reset: 0 }, storage); // hits=2
-    assertEquals(storage["h0_0"], 2);
+    assertEqual(storage["h0_0"], 2);
     // RESET fires → all hits cleared, returns 0
-    assertEquals(fn({ x: 1, reset: 1 }, storage), 0);
-    assertEquals(storage["h0_0"], 0);
+    assertEqual(fn({ x: 1, reset: 1 }, storage), 0);
+    assertEqual(storage["h0_0"], 0);
 });
 
-Deno.test("NativeEval - RESET_IF threshold fires after hits", () => {
+test("NativeEval - RESET_IF threshold fires after hits", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 5 },
         { addressA: "stage.r", addressB: "1", cmp: "==", flag: "RESET_IF", maxHits: 2 },
@@ -861,26 +861,26 @@ Deno.test("NativeEval - RESET_IF threshold fires after hits", () => {
     const storage: Record<string, unknown> = {};
     fn({ x: 1, r: 0 }, storage); // x hits=1
     fn({ x: 1, r: 1 }, storage); // x hits=2, reset hits=1 (not yet)
-    assertEquals(storage["h0_0"], 2);
+    assertEqual(storage["h0_0"], 2);
     fn({ x: 1, r: 1 }, storage); // x would be 3, reset hits=2 → fires → all cleared
-    assertEquals(storage["h0_0"], 0);
-    assertEquals(storage["h0_1"], 0);
+    assertEqual(storage["h0_0"], 0);
+    assertEqual(storage["h0_1"], 0);
 });
 
-Deno.test("NativeEval - RESET_IF returns 0 even if all met", () => {
+test("NativeEval - RESET_IF returns 0 even if all met", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==" },
         { addressA: "stage.x", addressB: "1", cmp: "==", flag: "RESET_IF" },
     ]));
     // Even though req0 passes, reset fires → return 0
-    assertEquals(fn({ x: 1 }, {}), 0);
+    assertEqual(fn({ x: 1 }, {}), 0);
 });
 
 // =============================================================================
 // RESET_NEXT_IF
 // =============================================================================
 
-Deno.test("NativeEval - RESET_NEXT_IF clears next requirement hits", () => {
+test("NativeEval - RESET_NEXT_IF clears next requirement hits", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.reset", addressB: "1", cmp: "==", flag: "RESET_NEXT_IF" },
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 5 },
@@ -889,13 +889,13 @@ Deno.test("NativeEval - RESET_NEXT_IF clears next requirement hits", () => {
     // Build up hits on req1
     fn({ reset: 0, x: 1 }, storage); // req1 hits=1
     fn({ reset: 0, x: 1 }, storage); // req1 hits=2
-    assertEquals(storage["h0_1"], 2);
+    assertEqual(storage["h0_1"], 2);
     // RESET_NEXT_IF fires → clears req1 hits
     fn({ reset: 1, x: 1 }, storage);
-    assertEquals(storage["h0_1"], 0);
+    assertEqual(storage["h0_1"], 0);
 });
 
-Deno.test("NativeEval - RESET_NEXT_IF does not affect other requirements", () => {
+test("NativeEval - RESET_NEXT_IF does not affect other requirements", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.reset", addressB: "1", cmp: "==", flag: "RESET_NEXT_IF" },
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 5 },
@@ -904,99 +904,99 @@ Deno.test("NativeEval - RESET_NEXT_IF does not affect other requirements", () =>
     const storage: Record<string, unknown> = {};
     fn({ reset: 0, x: 1, y: 1 }, storage); // req1 hits=1, req2 hits=1
     fn({ reset: 1, x: 1, y: 1 }, storage); // reset fires → clears req1 only
-    assertEquals(storage["h0_1"], 0); // cleared
-    assertEquals(storage["h0_2"], 2); // still counting
+    assertEqual(storage["h0_1"], 0); // cleared
+    assertEqual(storage["h0_2"], 2); // still counting
 });
 
 // =============================================================================
 // AND_NEXT / OR_NEXT chains
 // =============================================================================
 
-Deno.test("NativeEval - AND_NEXT both pass", () => {
+test("NativeEval - AND_NEXT both pass", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", flag: "AND_NEXT" },
         { addressA: "stage.y", addressB: "1", cmp: "==" },
     ]));
-    assertEquals(fn({ x: 1, y: 1 }, {}), 1);
+    assertEqual(fn({ x: 1, y: 1 }, {}), 1);
 });
 
-Deno.test("NativeEval - AND_NEXT first fails", () => {
+test("NativeEval - AND_NEXT first fails", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", flag: "AND_NEXT" },
         { addressA: "stage.y", addressB: "1", cmp: "==" },
     ]));
-    assertEquals(fn({ x: 0, y: 1 }, {}), 0);
+    assertEqual(fn({ x: 0, y: 1 }, {}), 0);
 });
 
-Deno.test("NativeEval - AND_NEXT second fails", () => {
+test("NativeEval - AND_NEXT second fails", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", flag: "AND_NEXT" },
         { addressA: "stage.y", addressB: "1", cmp: "==" },
     ]));
-    assertEquals(fn({ x: 1, y: 0 }, {}), 0);
+    assertEqual(fn({ x: 1, y: 0 }, {}), 0);
 });
 
-Deno.test("NativeEval - OR_NEXT either passes", () => {
+test("NativeEval - OR_NEXT either passes", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", flag: "OR_NEXT" },
         { addressA: "stage.y", addressB: "1", cmp: "==" },
     ]));
-    assertEquals(fn({ x: 0, y: 1 }, {}), 1);
-    assertEquals(fn({ x: 1, y: 0 }, {}), 1);
-    assertEquals(fn({ x: 1, y: 1 }, {}), 1);
+    assertEqual(fn({ x: 0, y: 1 }, {}), 1);
+    assertEqual(fn({ x: 1, y: 0 }, {}), 1);
+    assertEqual(fn({ x: 1, y: 1 }, {}), 1);
 });
 
-Deno.test("NativeEval - OR_NEXT both fail", () => {
+test("NativeEval - OR_NEXT both fail", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", flag: "OR_NEXT" },
         { addressA: "stage.y", addressB: "1", cmp: "==" },
     ]));
-    assertEquals(fn({ x: 0, y: 0 }, {}), 0);
+    assertEqual(fn({ x: 0, y: 0 }, {}), 0);
 });
 
-Deno.test("NativeEval - multi-step AND chain", () => {
+test("NativeEval - multi-step AND chain", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.a", addressB: "1", cmp: "==", flag: "AND_NEXT" },
         { addressA: "stage.b", addressB: "1", cmp: "==", flag: "AND_NEXT" },
         { addressA: "stage.c", addressB: "1", cmp: "==" },
     ]));
-    assertEquals(fn({ a: 1, b: 1, c: 1 }, {}), 1);
-    assertEquals(fn({ a: 1, b: 0, c: 1 }, {}), 0);
-    assertEquals(fn({ a: 1, b: 1, c: 0 }, {}), 0);
+    assertEqual(fn({ a: 1, b: 1, c: 1 }, {}), 1);
+    assertEqual(fn({ a: 1, b: 0, c: 1 }, {}), 0);
+    assertEqual(fn({ a: 1, b: 1, c: 0 }, {}), 0);
 });
 
-Deno.test("NativeEval - mixed AND_NEXT/OR_NEXT chain", () => {
+test("NativeEval - mixed AND_NEXT/OR_NEXT chain", () => {
     // Left-to-right: (a AND b) OR c
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.a", addressB: "1", cmp: "==", flag: "AND_NEXT" },
         { addressA: "stage.b", addressB: "1", cmp: "==", flag: "OR_NEXT" },
         { addressA: "stage.c", addressB: "1", cmp: "==" },
     ]));
-    assertEquals(fn({ a: 1, b: 0, c: 1 }, {}), 1); // (T AND F) OR T = T
-    assertEquals(fn({ a: 1, b: 0, c: 0 }, {}), 0); // (T AND F) OR F = F
-    assertEquals(fn({ a: 0, b: 1, c: 1 }, {}), 1); // (F AND T) OR T = T
-    assertEquals(fn({ a: 0, b: 0, c: 0 }, {}), 0); // (F AND F) OR F = F
+    assertEqual(fn({ a: 1, b: 0, c: 1 }, {}), 1); // (T AND F) OR T = T
+    assertEqual(fn({ a: 1, b: 0, c: 0 }, {}), 0); // (T AND F) OR F = F
+    assertEqual(fn({ a: 0, b: 1, c: 1 }, {}), 1); // (F AND T) OR T = T
+    assertEqual(fn({ a: 0, b: 0, c: 0 }, {}), 0); // (F AND F) OR F = F
 });
 
-Deno.test("NativeEval - chain with hit tracking on terminal", () => {
+test("NativeEval - chain with hit tracking on terminal", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", flag: "AND_NEXT" },
         { addressA: "stage.y", addressB: "1", cmp: "==", maxHits: 2 },
     ]));
     const storage: Record<string, unknown> = {};
     fn({ x: 1, y: 1 }, storage); // chain passes → hits=1
-    assertEquals(storage["h0_1"], 1);
+    assertEqual(storage["h0_1"], 1);
     fn({ x: 0, y: 1 }, storage); // chain fails (x=0) → no increment
-    assertEquals(storage["h0_1"], 1);
+    assertEqual(storage["h0_1"], 1);
     fn({ x: 1, y: 1 }, storage); // chain passes → hits=2 → trigger
-    assertEquals(fn({ x: 1, y: 1 }, storage), 1);
+    assertEqual(fn({ x: 1, y: 1 }, storage), 1);
 });
 
 // =============================================================================
 // ADD_HITS / SUB_HITS
 // =============================================================================
 
-Deno.test("NativeEval - ADD_HITS contributes to terminal", () => {
+test("NativeEval - ADD_HITS contributes to terminal", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.bonus", addressB: "1", cmp: "==", flag: "ADD_HITS" },
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 3 },
@@ -1005,13 +1005,13 @@ Deno.test("NativeEval - ADD_HITS contributes to terminal", () => {
     // Frame 1: bonus=1 (add_hits gets hit), x=1 (terminal gets hit)
     fn({ bonus: 1, x: 1 }, storage);
     // Terminal effective = own(1) + add_hits(1) = 2
-    assertEquals(storage["h0_1"], 1); // terminal own hits
-    assertEquals(storage["h0_0"], 1); // contributor hits
+    assertEqual(storage["h0_1"], 1); // terminal own hits
+    assertEqual(storage["h0_0"], 1); // contributor hits
     // Frame 2: bonus=1, x=1 → terminal own=2, contributor=2, effective=4 → >=3 → trigger
-    assertEquals(fn({ bonus: 1, x: 1 }, storage), 1);
+    assertEqual(fn({ bonus: 1, x: 1 }, storage), 1);
 });
 
-Deno.test("NativeEval - SUB_HITS reduces effective hits", () => {
+test("NativeEval - SUB_HITS reduces effective hits", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.penalty", addressB: "1", cmp: "==", flag: "SUB_HITS" },
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 5 },
@@ -1023,47 +1023,47 @@ Deno.test("NativeEval - SUB_HITS reduces effective hits", () => {
     fn({ penalty: 0, x: 1 }, storage); // own=3, sub=0, effective=3
     // Now penalty fires
     fn({ penalty: 1, x: 1 }, storage); // own=4, sub=1, effective=3
-    assertEquals(storage["h0_1"], 4); // terminal own
-    assertEquals(storage["h0_0"], 1); // sub contributor
+    assertEqual(storage["h0_1"], 4); // terminal own
+    assertEqual(storage["h0_0"], 1); // sub contributor
     // Keep going
     fn({ penalty: 1, x: 1 }, storage); // own=5(capped), sub=2, effective=3
     fn({ penalty: 1, x: 1 }, storage); // own=5(capped), sub=3, effective=2
-    assertEquals(fn({ penalty: 0, x: 1 }, storage), 0); // own=5, sub=3, effective=2 < 5
+    assertEqual(fn({ penalty: 0, x: 1 }, storage), 0); // own=5, sub=3, effective=2 < 5
     // Now without penalties, effective catches up: own=5, sub stays at 3
-    assertEquals(fn({ penalty: 0, x: 1 }, storage), 0); // still effective=2
+    assertEqual(fn({ penalty: 0, x: 1 }, storage), 0); // still effective=2
 });
 
 // =============================================================================
 // ADD_SOURCE / SUB_SOURCE
 // =============================================================================
 
-Deno.test("NativeEval - ADD_SOURCE adds to next requirement formula A", () => {
+test("NativeEval - ADD_SOURCE adds to next requirement formula A", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.bonus", addressB: "0", cmp: "==", flag: "ADD_SOURCE" },
         { addressA: "stage.base", addressB: "15", cmp: ">=" },
     ]));
     // base=10, bonus=5 → effective A = 10 + 5 = 15 >= 15 → trigger
-    assertEquals(fn({ bonus: 5, base: 10 }, {}), 1);
+    assertEqual(fn({ bonus: 5, base: 10 }, {}), 1);
     // base=10, bonus=4 → effective A = 10 + 4 = 14 < 15 → no trigger
-    assertEquals(fn({ bonus: 4, base: 10 }, {}), 0);
+    assertEqual(fn({ bonus: 4, base: 10 }, {}), 0);
 });
 
-Deno.test("NativeEval - SUB_SOURCE subtracts from next requirement formula A", () => {
+test("NativeEval - SUB_SOURCE subtracts from next requirement formula A", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.penalty", addressB: "0", cmp: "==", flag: "SUB_SOURCE" },
         { addressA: "stage.base", addressB: "5", cmp: ">=" },
     ]));
     // base=10, penalty=3 → effective A = 10 - 3 = 7 >= 5 → trigger
-    assertEquals(fn({ penalty: 3, base: 10 }, {}), 1);
+    assertEqual(fn({ penalty: 3, base: 10 }, {}), 1);
     // base=10, penalty=6 → effective A = 10 - 6 = 4 < 5 → no trigger
-    assertEquals(fn({ penalty: 6, base: 10 }, {}), 0);
+    assertEqual(fn({ penalty: 6, base: 10 }, {}), 0);
 });
 
 // =============================================================================
 // TRIGGER / primed state
 // =============================================================================
 
-Deno.test("NativeEval - TRIGGER sets primed when non-trigger met but trigger not", () => {
+test("NativeEval - TRIGGER sets primed when non-trigger met but trigger not", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==" },
         { addressA: "stage.boss", addressB: "1", cmp: "==", flag: "TRIGGER" },
@@ -1071,30 +1071,30 @@ Deno.test("NativeEval - TRIGGER sets primed when non-trigger met but trigger not
     const storage: Record<string, unknown> = {};
     // x met, boss not met → primed (AVM1 stores as 1, not true)
     fn({ x: 1, boss: 0 }, storage);
-    assertEquals(storage["_primed"], 1);
-    assertEquals(fn({ x: 1, boss: 0 }, storage), 0); // primed, not triggered
+    assertEqual(storage["_primed"], 1);
+    assertEqual(fn({ x: 1, boss: 0 }, storage), 0); // primed, not triggered
 });
 
-Deno.test("NativeEval - TRIGGER triggers when all met including trigger", () => {
+test("NativeEval - TRIGGER triggers when all met including trigger", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==" },
         { addressA: "stage.boss", addressB: "1", cmp: "==", flag: "TRIGGER" },
     ]));
     const storage: Record<string, unknown> = {};
-    assertEquals(fn({ x: 1, boss: 1 }, storage), 1);
+    assertEqual(fn({ x: 1, boss: 1 }, storage), 1);
 });
 
-Deno.test("NativeEval - TRIGGER not primed when non-trigger not met", () => {
+test("NativeEval - TRIGGER not primed when non-trigger not met", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==" },
         { addressA: "stage.boss", addressB: "1", cmp: "==", flag: "TRIGGER" },
     ]));
     const storage: Record<string, unknown> = {};
     fn({ x: 0, boss: 0 }, storage);
-    assertEquals(storage["_primed"], 0);
+    assertEqual(storage["_primed"], 0);
 });
 
-Deno.test("NativeEval - TRIGGER primed then triggered", () => {
+test("NativeEval - TRIGGER primed then triggered", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==" },
         { addressA: "stage.boss", addressB: "1", cmp: "==", flag: "TRIGGER" },
@@ -1102,80 +1102,80 @@ Deno.test("NativeEval - TRIGGER primed then triggered", () => {
     const storage: Record<string, unknown> = {};
     // Frame 1: primed
     fn({ x: 1, boss: 0 }, storage);
-    assertEquals(storage["_primed"], 1);
+    assertEqual(storage["_primed"], 1);
     // Frame 2: all met → trigger
-    assertEquals(fn({ x: 1, boss: 1 }, storage), 1);
+    assertEqual(fn({ x: 1, boss: 1 }, storage), 1);
 });
 
 // =============================================================================
 // MEASURED (hit-count mode)
 // =============================================================================
 
-Deno.test("NativeEval - MEASURED hit-count mode stores current and target", () => {
+test("NativeEval - MEASURED hit-count mode stores current and target", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 10, flag: "MEASURED" },
     ]));
     const storage: Record<string, unknown> = {};
     fn({ x: 1 }, storage);
-    assertEquals(storage["_mCur"], 1);
-    assertEquals(storage["_mTgt"], 10);
+    assertEqual(storage["_mCur"], 1);
+    assertEqual(storage["_mTgt"], 10);
     fn({ x: 1 }, storage);
-    assertEquals(storage["_mCur"], 2);
+    assertEqual(storage["_mCur"], 2);
     fn({ x: 0 }, storage); // no increment
-    assertEquals(storage["_mCur"], 2);
+    assertEqual(storage["_mCur"], 2);
 });
 
 // =============================================================================
 // MEASURED (value mode)
 // =============================================================================
 
-Deno.test("NativeEval - MEASURED value mode stores formula results", () => {
+test("NativeEval - MEASURED value mode stores formula results", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.score", addressB: "100", cmp: ">=", flag: "MEASURED" },
     ]));
     const storage: Record<string, unknown> = {};
     fn({ score: 50 }, storage);
-    assertEquals(storage["_mCur"], 50);
-    assertEquals(storage["_mTgt"], 100);
+    assertEqual(storage["_mCur"], 50);
+    assertEqual(storage["_mTgt"], 100);
 });
 
 // =============================================================================
 // Multiple groups (CORE + ALT)
 // =============================================================================
 
-Deno.test("NativeEval - CORE only passes when CORE passes", () => {
+test("NativeEval - CORE only passes when CORE passes", () => {
     const fn = compileSingle(makeAsset([
         { type: "CORE", requirements: [{ addressA: "stage.x", addressB: "1", cmp: "==" }] },
         { type: "ALT", requirements: [{ addressA: "stage.a", addressB: "1", cmp: "==" }] },
         { type: "ALT", requirements: [{ addressA: "stage.b", addressB: "1", cmp: "==" }] },
     ]));
     // CORE fails → no trigger regardless of ALT
-    assertEquals(fn({ x: 0, a: 1, b: 1 }, {}), 0);
+    assertEqual(fn({ x: 0, a: 1, b: 1 }, {}), 0);
 });
 
-Deno.test("NativeEval - CORE + any ALT triggers", () => {
+test("NativeEval - CORE + any ALT triggers", () => {
     const fn = compileSingle(makeAsset([
         { type: "CORE", requirements: [{ addressA: "stage.x", addressB: "1", cmp: "==" }] },
         { type: "ALT", requirements: [{ addressA: "stage.a", addressB: "1", cmp: "==" }] },
         { type: "ALT", requirements: [{ addressA: "stage.b", addressB: "1", cmp: "==" }] },
     ]));
     // CORE passes + ALT1 passes → trigger
-    assertEquals(fn({ x: 1, a: 1, b: 0 }, {}), 1);
+    assertEqual(fn({ x: 1, a: 1, b: 0 }, {}), 1);
     // CORE passes + ALT2 passes → trigger
-    assertEquals(fn({ x: 1, a: 0, b: 1 }, {}), 1);
+    assertEqual(fn({ x: 1, a: 0, b: 1 }, {}), 1);
 });
 
-Deno.test("NativeEval - CORE + no ALT fails", () => {
+test("NativeEval - CORE + no ALT fails", () => {
     const fn = compileSingle(makeAsset([
         { type: "CORE", requirements: [{ addressA: "stage.x", addressB: "1", cmp: "==" }] },
         { type: "ALT", requirements: [{ addressA: "stage.a", addressB: "1", cmp: "==" }] },
         { type: "ALT", requirements: [{ addressA: "stage.b", addressB: "1", cmp: "==" }] },
     ]));
     // CORE passes but no ALT passes → no trigger
-    assertEquals(fn({ x: 1, a: 0, b: 0 }, {}), 0);
+    assertEqual(fn({ x: 1, a: 0, b: 0 }, {}), 0);
 });
 
-Deno.test("NativeEval - ALT group with multiple requirements", () => {
+test("NativeEval - ALT group with multiple requirements", () => {
     const fn = compileSingle(makeAsset([
         { type: "CORE", requirements: [{ addressA: "stage.x", addressB: "1", cmp: "==" }] },
         { type: "ALT", requirements: [
@@ -1184,15 +1184,15 @@ Deno.test("NativeEval - ALT group with multiple requirements", () => {
         ]},
     ]));
     // Both ALT reqs must pass
-    assertEquals(fn({ x: 1, a: 1, b: 1 }, {}), 1);
-    assertEquals(fn({ x: 1, a: 1, b: 0 }, {}), 0); // ALT req b fails
+    assertEqual(fn({ x: 1, a: 1, b: 1 }, {}), 1);
+    assertEqual(fn({ x: 1, a: 1, b: 0 }, {}), 0); // ALT req b fails
 });
 
 // =============================================================================
 // AND_NEXT chain ending in PAUSE_IF
 // =============================================================================
 
-Deno.test("NativeEval - AND_NEXT chain ending in PAUSE_IF", () => {
+test("NativeEval - AND_NEXT chain ending in PAUSE_IF", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.flag1", addressB: "1", cmp: "==", flag: "AND_NEXT" },
         { addressA: "stage.flag2", addressB: "1", cmp: "==", flag: "PAUSE_IF" },
@@ -1200,56 +1200,56 @@ Deno.test("NativeEval - AND_NEXT chain ending in PAUSE_IF", () => {
     ]));
     const storage: Record<string, unknown> = {};
     // Both flags true → paused
-    assertEquals(fn({ flag1: 1, flag2: 1, x: 1 }, storage), 0);
+    assertEqual(fn({ flag1: 1, flag2: 1, x: 1 }, storage), 0);
     // Only one flag → not paused, x=1 → trigger
-    assertEquals(fn({ flag1: 0, flag2: 1, x: 1 }, storage), 1);
+    assertEqual(fn({ flag1: 0, flag2: 1, x: 1 }, storage), 1);
 });
 
 // =============================================================================
 // Arithmetic in formulas
 // =============================================================================
 
-Deno.test("NativeEval - formula with addition", () => {
+test("NativeEval - formula with addition", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x + stage.y", addressB: "10", cmp: "==" },
     ]));
-    assertEquals(fn({ x: 3, y: 7 }, {}), 1);
-    assertEquals(fn({ x: 3, y: 6 }, {}), 0);
+    assertEqual(fn({ x: 3, y: 7 }, {}), 1);
+    assertEqual(fn({ x: 3, y: 6 }, {}), 0);
 });
 
-Deno.test("NativeEval - formula with multiplication", () => {
+test("NativeEval - formula with multiplication", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x * 2", addressB: "10", cmp: "==" },
     ]));
-    assertEquals(fn({ x: 5 }, {}), 1);
-    assertEquals(fn({ x: 4 }, {}), 0);
+    assertEqual(fn({ x: 5 }, {}), 1);
+    assertEqual(fn({ x: 4 }, {}), 0);
 });
 
 // =============================================================================
 // Nested property access
 // =============================================================================
 
-Deno.test("NativeEval - two-level property access", () => {
+test("NativeEval - two-level property access", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.player.health", addressB: "0", cmp: "==" },
     ]));
-    assertEquals(fn({ player: { health: 0 } }, {}), 1);
-    assertEquals(fn({ player: { health: 5 } }, {}), 0);
+    assertEqual(fn({ player: { health: 0 } }, {}), 1);
+    assertEqual(fn({ player: { health: 5 } }, {}), 0);
 });
 
-Deno.test("NativeEval - three-level property access", () => {
+test("NativeEval - three-level property access", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.world.player.hp", addressB: "100", cmp: ">=" },
     ]));
-    assertEquals(fn({ world: { player: { hp: 100 } } }, {}), 1);
-    assertEquals(fn({ world: { player: { hp: 99 } } }, {}), 0);
+    assertEqual(fn({ world: { player: { hp: 100 } } }, {}), 1);
+    assertEqual(fn({ world: { player: { hp: 99 } } }, {}), 0);
 });
 
 // =============================================================================
 // Complex multi-feature achievements
 // =============================================================================
 
-Deno.test("NativeEval - hit tracking + RESET_IF together", () => {
+test("NativeEval - hit tracking + RESET_IF together", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 3 },
         { addressA: "stage.dead", addressB: "1", cmp: "==", flag: "RESET_IF" },
@@ -1257,16 +1257,16 @@ Deno.test("NativeEval - hit tracking + RESET_IF together", () => {
     const storage: Record<string, unknown> = {};
     fn({ x: 1, dead: 0 }, storage); // hits=1
     fn({ x: 1, dead: 0 }, storage); // hits=2
-    assertEquals(storage["h0_0"], 2);
+    assertEqual(storage["h0_0"], 2);
     fn({ x: 1, dead: 1 }, storage); // RESET → hits=0
-    assertEquals(storage["h0_0"], 0);
+    assertEqual(storage["h0_0"], 0);
     fn({ x: 1, dead: 0 }, storage); // hits=1
     fn({ x: 1, dead: 0 }, storage); // hits=2
     fn({ x: 1, dead: 0 }, storage); // hits=3 → trigger
-    assertEquals(fn({ x: 1, dead: 0 }, storage), 1);
+    assertEqual(fn({ x: 1, dead: 0 }, storage), 1);
 });
 
-Deno.test("NativeEval - PAUSE_IF with RESET_IF", () => {
+test("NativeEval - PAUSE_IF with RESET_IF", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.paused", addressB: "1", cmp: "==", flag: "PAUSE_IF" },
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 2 },
@@ -1275,12 +1275,12 @@ Deno.test("NativeEval - PAUSE_IF with RESET_IF", () => {
     const storage: Record<string, unknown> = {};
     fn({ paused: 0, x: 1, dead: 0 }, storage); // hits=1
     fn({ paused: 1, x: 1, dead: 0 }, storage); // paused → no increment
-    assertEquals(storage["h0_1"], 1); // still 1
+    assertEqual(storage["h0_1"], 1); // still 1
     fn({ paused: 0, x: 1, dead: 0 }, storage); // hits=2 → trigger
-    assertEquals(fn({ paused: 0, x: 1, dead: 0 }, storage), 1);
+    assertEqual(fn({ paused: 0, x: 1, dead: 0 }, storage), 1);
 });
 
-Deno.test("NativeEval - multi-group with RESET_IF in CORE", () => {
+test("NativeEval - multi-group with RESET_IF in CORE", () => {
     const fn = compileSingle(makeAsset([
         { type: "CORE", requirements: [
             { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 2 },
@@ -1293,50 +1293,50 @@ Deno.test("NativeEval - multi-group with RESET_IF in CORE", () => {
     const storage: Record<string, unknown> = {};
     fn({ x: 1, dead: 0, path: 1 }, storage); // CORE: hits=1, ALT: pass
     fn({ x: 1, dead: 0, path: 1 }, storage); // CORE: hits=2 → met, ALT: pass → trigger
-    assertEquals(fn({ x: 1, dead: 0, path: 1 }, storage), 1);
+    assertEqual(fn({ x: 1, dead: 0, path: 1 }, storage), 1);
 });
 
 // =============================================================================
 // Edge cases
 // =============================================================================
 
-Deno.test("NativeEval - constant true (0 == 0)", () => {
+test("NativeEval - constant true (0 == 0)", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "0", addressB: "0", cmp: "==" },
     ]));
-    assertEquals(fn({}, {}), 1);
+    assertEqual(fn({}, {}), 1);
 });
 
-Deno.test("NativeEval - constant false (0 == 1)", () => {
+test("NativeEval - constant false (0 == 1)", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "0", addressB: "1", cmp: "==" },
     ]));
-    assertEquals(fn({}, {}), 0);
+    assertEqual(fn({}, {}), 0);
 });
 
-Deno.test("NativeEval - undefined property access", () => {
+test("NativeEval - undefined property access", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.missing", addressB: "0", cmp: "==" },
     ]));
     // undefined == 0 in AVM1 loose equality
-    assertEquals(fn({}, {}), 0);
+    assertEqual(fn({}, {}), 0);
 });
 
-Deno.test("NativeEval - multiple assets compiled together", () => {
+test("NativeEval - multiple assets compiled together", () => {
     const assets = [
         simpleAsset([{ addressA: "stage.a", addressB: "1", cmp: "==" }]),
         simpleAsset([{ addressA: "stage.b", addressB: "1", cmp: "==" }]),
         simpleAsset([{ addressA: "stage.c", addressB: "1", cmp: "==" }]),
     ];
     const { functions, compiledIndices } = compileAndExtract(assets);
-    assertEquals(functions.length, 3);
-    assertEquals(compiledIndices, [0, 1, 2]);
-    assertEquals(functions[0]({ a: 1 }, {}), 1);
-    assertEquals(functions[1]({ b: 1 }, {}), 1);
-    assertEquals(functions[2]({ c: 0 }, {}), 0);
+    assertEqual(functions.length, 3);
+    assertEqual(compiledIndices, [0, 1, 2]);
+    assertEqual(functions[0]({ a: 1 }, {}), 1);
+    assertEqual(functions[1]({ b: 1 }, {}), 1);
+    assertEqual(functions[2]({ c: 0 }, {}), 0);
 });
 
-Deno.test("NativeEval - function array index matches asset index", () => {
+test("NativeEval - function array index matches asset index", () => {
     // Regression: initArray LIFO ordering must not reverse the function mapping.
     // Each function should only trigger for its own asset's condition.
     const assets = [
@@ -1351,13 +1351,13 @@ Deno.test("NativeEval - function array index matches asset index", () => {
     for (let i = 0; i < 5; i++) {
         for (let x = 1; x <= 5; x++) {
             const expected = x === i + 1 ? 1 : 0;
-            assertEquals(functions[i]({ x }, {}), expected,
+            assertEqual(functions[i]({ x }, {}), expected,
                 `fn[${i}] with x=${x}: expected ${expected}`);
         }
     }
 });
 
-Deno.test("NativeEval - storage isolation between achievements", () => {
+test("NativeEval - storage isolation between achievements", () => {
     const assets = [
         simpleAsset([{ addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 2 }]),
         simpleAsset([{ addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 3 }]),
@@ -1366,30 +1366,30 @@ Deno.test("NativeEval - storage isolation between achievements", () => {
     const storage0: Record<string, unknown> = {};
     const storage1: Record<string, unknown> = {};
     functions[0]({ x: 1 }, storage0);
-    assertEquals(storage0["h0_0"], 1);
-    assertEquals(storage1["h0_0"], undefined);
+    assertEqual(storage0["h0_0"], 1);
+    assertEqual(storage1["h0_0"], undefined);
 });
 
 // =============================================================================
 // REMEMBER (cached values)
 // =============================================================================
 
-Deno.test("NativeEval - REMEMBER caches last value", () => {
+test("NativeEval - REMEMBER caches last value", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "{stage.x}", addressB: "5", cmp: "==" },
     ]));
     const storage: Record<string, unknown> = {};
     // First frame: x=5 → remembered, 5==5 → trigger
-    assertEquals(fn({ x: 5 }, storage), 1);
+    assertEqual(fn({ x: 5 }, storage), 1);
     // Second frame: x=undefined → remember returns cached 5
-    assertEquals(fn({}, storage), 1);
+    assertEqual(fn({}, storage), 1);
 });
 
 // =============================================================================
 // RESET_IF clears ALL groups' hits
 // =============================================================================
 
-Deno.test("NativeEval - RESET_IF in CORE clears ALT group hits too", () => {
+test("NativeEval - RESET_IF in CORE clears ALT group hits too", () => {
     const fn = compileSingle(makeAsset([
         { type: "CORE", requirements: [
             { addressA: "stage.x", addressB: "1", cmp: "==" },
@@ -1402,16 +1402,16 @@ Deno.test("NativeEval - RESET_IF in CORE clears ALT group hits too", () => {
     const storage: Record<string, unknown> = {};
     fn({ x: 1, dead: 0, a: 1 }, storage); // ALT hits=1
     fn({ x: 1, dead: 0, a: 1 }, storage); // ALT hits=2
-    assertEquals(storage["h1_0"], 2);
+    assertEqual(storage["h1_0"], 2);
     fn({ x: 1, dead: 1, a: 1 }, storage); // RESET → all hits cleared
-    assertEquals(storage["h1_0"], 0);
+    assertEqual(storage["h1_0"], 0);
 });
 
 // =============================================================================
 // Chained requirements with hit tracking on members
 // =============================================================================
 
-Deno.test("NativeEval - AND_NEXT chain member with maxHits tracks hits", () => {
+test("NativeEval - AND_NEXT chain member with maxHits tracks hits", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", flag: "AND_NEXT", maxHits: 5 },
         { addressA: "stage.y", addressB: "1", cmp: "==" },
@@ -1419,52 +1419,52 @@ Deno.test("NativeEval - AND_NEXT chain member with maxHits tracks hits", () => {
     const storage: Record<string, unknown> = {};
     // x=1 → chain member passes, partial chain true → increment member hits
     fn({ x: 1, y: 1 }, storage);
-    assertEquals(storage["h0_0"], 1);
+    assertEqual(storage["h0_0"], 1);
 });
 
 // =============================================================================
 // Literal number in addressB
 // =============================================================================
 
-Deno.test("NativeEval - large number comparison", () => {
+test("NativeEval - large number comparison", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "99999", cmp: ">=" },
     ]));
-    assertEquals(fn({ x: 100000 }, {}), 1);
-    assertEquals(fn({ x: 99998 }, {}), 0);
+    assertEqual(fn({ x: 100000 }, {}), 1);
+    assertEqual(fn({ x: 99998 }, {}), 0);
 });
 
-Deno.test("NativeEval - zero comparison", () => {
+test("NativeEval - zero comparison", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "0", cmp: ">" },
     ]));
-    assertEquals(fn({ x: 1 }, {}), 1);
-    assertEquals(fn({ x: 0 }, {}), 0);
+    assertEqual(fn({ x: 1 }, {}), 1);
+    assertEqual(fn({ x: 0 }, {}), 0);
 });
 
 // =============================================================================
 // Multiple PAUSE_IF requirements
 // =============================================================================
 
-Deno.test("NativeEval - multiple PAUSE_IF any one pauses", () => {
+test("NativeEval - multiple PAUSE_IF any one pauses", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.p1", addressB: "1", cmp: "==", flag: "PAUSE_IF" },
         { addressA: "stage.p2", addressB: "1", cmp: "==", flag: "PAUSE_IF" },
         { addressA: "stage.x", addressB: "1", cmp: "==" },
     ]));
     // p1 pauses
-    assertEquals(fn({ p1: 1, p2: 0, x: 1 }, {}), 0);
+    assertEqual(fn({ p1: 1, p2: 0, x: 1 }, {}), 0);
     // p2 pauses
-    assertEquals(fn({ p1: 0, p2: 1, x: 1 }, {}), 0);
+    assertEqual(fn({ p1: 0, p2: 1, x: 1 }, {}), 0);
     // neither pauses
-    assertEquals(fn({ p1: 0, p2: 0, x: 1 }, {}), 1);
+    assertEqual(fn({ p1: 0, p2: 0, x: 1 }, {}), 1);
 });
 
 // =============================================================================
 // ADD_HITS with multiple contributors
 // =============================================================================
 
-Deno.test("NativeEval - multiple ADD_HITS contributors", () => {
+test("NativeEval - multiple ADD_HITS contributors", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.a", addressB: "1", cmp: "==", flag: "ADD_HITS" },
         { addressA: "stage.b", addressB: "1", cmp: "==", flag: "ADD_HITS" },
@@ -1473,18 +1473,18 @@ Deno.test("NativeEval - multiple ADD_HITS contributors", () => {
     const storage: Record<string, unknown> = {};
     // Frame 1: all pass → terminal own=1, a=1, b=1, effective=1+1+1=3
     fn({ a: 1, b: 1, x: 1 }, storage);
-    assertEquals(storage["h0_0"], 1); // a
-    assertEquals(storage["h0_1"], 1); // b
-    assertEquals(storage["h0_2"], 1); // terminal
+    assertEqual(storage["h0_0"], 1); // a
+    assertEqual(storage["h0_1"], 1); // b
+    assertEqual(storage["h0_2"], 1); // terminal
     // Frame 2: effective = 2+2+2 = 6 >= 5 → trigger
-    assertEquals(fn({ a: 1, b: 1, x: 1 }, storage), 1);
+    assertEqual(fn({ a: 1, b: 1, x: 1 }, storage), 1);
 });
 
 // =============================================================================
 // Multi-group PAUSE_IF isolation
 // =============================================================================
 
-Deno.test("NativeEval - PAUSE_IF in ALT only pauses that ALT", () => {
+test("NativeEval - PAUSE_IF in ALT only pauses that ALT", () => {
     const fn = compileSingle(makeAsset([
         { type: "CORE", requirements: [
             { addressA: "stage.x", addressB: "1", cmp: "==" },
@@ -1499,16 +1499,16 @@ Deno.test("NativeEval - PAUSE_IF in ALT only pauses that ALT", () => {
     ]));
     const storage: Record<string, unknown> = {};
     // ALT1 paused but ALT2 passes → CORE + ALT2 = trigger
-    assertEquals(fn({ x: 1, paused: 1, a: 1, b: 1 }, storage), 1);
+    assertEqual(fn({ x: 1, paused: 1, a: 1, b: 1 }, storage), 1);
     // ALT1 paused, ALT2 fails → no ALT passes → no trigger
-    assertEquals(fn({ x: 1, paused: 1, a: 1, b: 0 }, storage), 0);
+    assertEqual(fn({ x: 1, paused: 1, a: 1, b: 0 }, storage), 0);
 });
 
 // =============================================================================
 // RESET_NEXT_IF with chains
 // =============================================================================
 
-Deno.test("NativeEval - AND_NEXT chain ending in RESET_NEXT_IF", () => {
+test("NativeEval - AND_NEXT chain ending in RESET_NEXT_IF", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.a", addressB: "1", cmp: "==", flag: "AND_NEXT" },
         { addressA: "stage.b", addressB: "1", cmp: "==", flag: "RESET_NEXT_IF" },
@@ -1517,13 +1517,13 @@ Deno.test("NativeEval - AND_NEXT chain ending in RESET_NEXT_IF", () => {
     const storage: Record<string, unknown> = {};
     fn({ a: 0, b: 0, x: 1 }, storage); // chain false → no reset, x hits=1
     fn({ a: 0, b: 0, x: 1 }, storage); // x hits=2
-    assertEquals(storage["h0_2"], 2);
+    assertEqual(storage["h0_2"], 2);
     // Chain fires (a AND b both true) → resets x hits
     fn({ a: 1, b: 1, x: 1 }, storage);
-    assertEquals(storage["h0_2"], 0);
+    assertEqual(storage["h0_2"], 0);
 });
 
-Deno.test("NativeEval - multiple RESET_NEXT_IF targeting different reqs", () => {
+test("NativeEval - multiple RESET_NEXT_IF targeting different reqs", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.r1", addressB: "1", cmp: "==", flag: "RESET_NEXT_IF" },
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 10 },
@@ -1533,40 +1533,40 @@ Deno.test("NativeEval - multiple RESET_NEXT_IF targeting different reqs", () => 
     const storage: Record<string, unknown> = {};
     fn({ r1: 0, x: 1, r2: 0, y: 1 }, storage); // x=1, y=1
     fn({ r1: 0, x: 1, r2: 0, y: 1 }, storage); // x=2, y=2
-    assertEquals(storage["h0_1"], 2);
-    assertEquals(storage["h0_3"], 2);
+    assertEqual(storage["h0_1"], 2);
+    assertEqual(storage["h0_3"], 2);
     // r1 fires → clears x only; r2 doesn't fire → y keeps counting
     fn({ r1: 1, x: 1, r2: 0, y: 1 }, storage);
-    assertEquals(storage["h0_1"], 0); // x cleared
-    assertEquals(storage["h0_3"], 3); // y still counting
+    assertEqual(storage["h0_1"], 0); // x cleared
+    assertEqual(storage["h0_3"], 3); // y still counting
     // Now r2 fires → clears y only
     fn({ r1: 0, x: 1, r2: 1, y: 1 }, storage);
-    assertEquals(storage["h0_1"], 1); // x counting again
-    assertEquals(storage["h0_3"], 0); // y cleared
+    assertEqual(storage["h0_1"], 1); // x counting again
+    assertEqual(storage["h0_3"], 0); // y cleared
 });
 
 // =============================================================================
 // Chained PAUSE_IF with hit tracking
 // =============================================================================
 
-Deno.test("NativeEval - OR_NEXT chain ending in PAUSE_IF", () => {
+test("NativeEval - OR_NEXT chain ending in PAUSE_IF", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.p1", addressB: "1", cmp: "==", flag: "OR_NEXT" },
         { addressA: "stage.p2", addressB: "1", cmp: "==", flag: "PAUSE_IF" },
         { addressA: "stage.x", addressB: "1", cmp: "==" },
     ]));
     // Either p1 or p2 → paused
-    assertEquals(fn({ p1: 1, p2: 0, x: 1 }, {}), 0);
-    assertEquals(fn({ p1: 0, p2: 1, x: 1 }, {}), 0);
+    assertEqual(fn({ p1: 1, p2: 0, x: 1 }, {}), 0);
+    assertEqual(fn({ p1: 0, p2: 1, x: 1 }, {}), 0);
     // Neither → not paused, x=1 → trigger
-    assertEquals(fn({ p1: 0, p2: 0, x: 1 }, {}), 1);
+    assertEqual(fn({ p1: 0, p2: 0, x: 1 }, {}), 1);
 });
 
 // =============================================================================
 // ADD_SOURCE / SUB_SOURCE with delta
 // =============================================================================
 
-Deno.test("NativeEval - ADD_SOURCE with delta on source formula", () => {
+test("NativeEval - ADD_SOURCE with delta on source formula", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.bonus", addressB: "0", cmp: "==", flag: "ADD_SOURCE", typeA: "DELTA" },
         { addressA: "stage.base", addressB: "15", cmp: ">=" },
@@ -1575,14 +1575,14 @@ Deno.test("NativeEval - ADD_SOURCE with delta on source formula", () => {
     // Frame 1: delta init → source contributes 0
     fn({ bonus: 5, base: 10 }, storage);
     // Frame 2: delta = prev(5), base=10 → effective = 10 + 5 = 15 >= 15 → trigger
-    assertEquals(fn({ bonus: 8, base: 10 }, storage), 1);
+    assertEqual(fn({ bonus: 8, base: 10 }, storage), 1);
 });
 
 // =============================================================================
 // MEASURED with ADD_HITS/SUB_HITS
 // =============================================================================
 
-Deno.test("NativeEval - MEASURED hit-count with ADD_HITS contributor", () => {
+test("NativeEval - MEASURED hit-count with ADD_HITS contributor", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.bonus", addressB: "1", cmp: "==", flag: "ADD_HITS" },
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 10, flag: "MEASURED" },
@@ -1590,18 +1590,18 @@ Deno.test("NativeEval - MEASURED hit-count with ADD_HITS contributor", () => {
     const storage: Record<string, unknown> = {};
     // Frame 1: bonus=1 (add_hits=1), x=1 (own=1), effective=2
     fn({ bonus: 1, x: 1 }, storage);
-    assertEquals(storage["_mCur"], 2); // effective hits in measured
-    assertEquals(storage["_mTgt"], 10);
+    assertEqual(storage["_mCur"], 2); // effective hits in measured
+    assertEqual(storage["_mTgt"], 10);
     // Frame 2: bonus=1 (add_hits=2), x=1 (own=2), effective=4
     fn({ bonus: 1, x: 1 }, storage);
-    assertEquals(storage["_mCur"], 4);
+    assertEqual(storage["_mCur"], 4);
 });
 
 // =============================================================================
 // TRIGGER with hit-tracked requirements
 // =============================================================================
 
-Deno.test("NativeEval - TRIGGER primed with hit-tracked non-trigger req", () => {
+test("NativeEval - TRIGGER primed with hit-tracked non-trigger req", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 2 },
         { addressA: "stage.boss", addressB: "1", cmp: "==", flag: "TRIGGER" },
@@ -1609,19 +1609,19 @@ Deno.test("NativeEval - TRIGGER primed with hit-tracked non-trigger req", () => 
     const storage: Record<string, unknown> = {};
     // Frame 1: x hits=1 (not met), boss=0 → not primed (non-trigger not met)
     fn({ x: 1, boss: 0 }, storage);
-    assertEquals(storage["_primed"], 0);
+    assertEqual(storage["_primed"], 0);
     // Frame 2: x hits=2 (met via locked-true), boss=0 → primed
     fn({ x: 1, boss: 0 }, storage);
-    assertEquals(storage["_primed"], 1);
+    assertEqual(storage["_primed"], 1);
     // Frame 3: x locked-true, boss=1 → trigger
-    assertEquals(fn({ x: 0, boss: 1 }, storage), 1);
+    assertEqual(fn({ x: 0, boss: 1 }, storage), 1);
 });
 
 // =============================================================================
 // RESET_IF clears ADD_HITS/SUB_HITS contributor hits
 // =============================================================================
 
-Deno.test("NativeEval - RESET_IF clears ADD_HITS contributor hits", () => {
+test("NativeEval - RESET_IF clears ADD_HITS contributor hits", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.bonus", addressB: "1", cmp: "==", flag: "ADD_HITS" },
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 10 },
@@ -1630,19 +1630,19 @@ Deno.test("NativeEval - RESET_IF clears ADD_HITS contributor hits", () => {
     const storage: Record<string, unknown> = {};
     fn({ bonus: 1, x: 1, dead: 0 }, storage); // bonus=1, x=1
     fn({ bonus: 1, x: 1, dead: 0 }, storage); // bonus=2, x=2
-    assertEquals(storage["h0_0"], 2); // ADD_HITS contributor
-    assertEquals(storage["h0_1"], 2); // terminal
+    assertEqual(storage["h0_0"], 2); // ADD_HITS contributor
+    assertEqual(storage["h0_1"], 2); // terminal
     // RESET fires → clears both
     fn({ bonus: 1, x: 1, dead: 1 }, storage);
-    assertEquals(storage["h0_0"], 0);
-    assertEquals(storage["h0_1"], 0);
+    assertEqual(storage["h0_0"], 0);
+    assertEqual(storage["h0_1"], 0);
 });
 
 // =============================================================================
 // Multi-group with PAUSE_IF in CORE
 // =============================================================================
 
-Deno.test("NativeEval - PAUSE_IF in CORE pauses entire achievement", () => {
+test("NativeEval - PAUSE_IF in CORE pauses entire achievement", () => {
     const fn = compileSingle(makeAsset([
         { type: "CORE", requirements: [
             { addressA: "stage.paused", addressB: "1", cmp: "==", flag: "PAUSE_IF" },
@@ -1654,79 +1654,79 @@ Deno.test("NativeEval - PAUSE_IF in CORE pauses entire achievement", () => {
     ]));
     const storage: Record<string, unknown> = {};
     // CORE paused → CORE fails → overall fails even if ALT passes
-    assertEquals(fn({ paused: 1, x: 1, a: 1 }, storage), 0);
+    assertEqual(fn({ paused: 1, x: 1, a: 1 }, storage), 0);
     // CORE not paused → CORE passes + ALT passes → trigger
-    assertEquals(fn({ paused: 0, x: 1, a: 1 }, storage), 1);
+    assertEqual(fn({ paused: 0, x: 1, a: 1 }, storage), 1);
 });
 
 // =============================================================================
 // Chain member locked-true
 // =============================================================================
 
-Deno.test("NativeEval - chain member at maxHits is locked-true", () => {
+test("NativeEval - chain member at maxHits is locked-true", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", flag: "AND_NEXT", maxHits: 1 },
         { addressA: "stage.y", addressB: "1", cmp: "==" },
     ]));
     const storage: Record<string, unknown> = {};
     // Frame 1: x=1 → member hits=1 (now locked), chain passes, y=1 → trigger
-    assertEquals(fn({ x: 1, y: 1 }, storage), 1);
-    assertEquals(storage["h0_0"], 1);
+    assertEqual(fn({ x: 1, y: 1 }, storage), 1);
+    assertEqual(storage["h0_0"], 1);
     // Frame 2: x=0 but member is locked-true (hits=1>=1), y=1 → still triggers
-    assertEquals(fn({ x: 0, y: 1 }, storage), 1);
-    assertEquals(storage["h0_0"], 1); // capped, not incremented
+    assertEqual(fn({ x: 0, y: 1 }, storage), 1);
+    assertEqual(storage["h0_0"], 1); // capped, not incremented
 });
 
 // =============================================================================
 // Delta on both A and B sides simultaneously
 // =============================================================================
 
-Deno.test("NativeEval - delta on both A and B sides", () => {
+test("NativeEval - delta on both A and B sides", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "stage.y", cmp: "==", typeA: "DELTA", typeB: "DELTA" },
     ]));
     const storage: Record<string, unknown> = {};
     // Frame 1: init both deltas (stores x=10, y=20)
-    assertEquals(fn({ x: 10, y: 20 }, storage), 0);
+    assertEqual(fn({ x: 10, y: 20 }, storage), 0);
     // Frame 2: prevA=10, prevB=20 → 10 == 20? No (stores x=15, y=25)
-    assertEquals(fn({ x: 15, y: 25 }, storage), 0);
+    assertEqual(fn({ x: 15, y: 25 }, storage), 0);
     // Frame 3: prevA=15, prevB=25 → 15 == 25? No (stores x=20, y=15)
-    assertEquals(fn({ x: 20, y: 15 }, storage), 0);
+    assertEqual(fn({ x: 20, y: 15 }, storage), 0);
     // Frame 4: prevA=20, prevB=15 → 20 == 15? No (stores x=7, y=7)
-    assertEquals(fn({ x: 7, y: 7 }, storage), 0);
+    assertEqual(fn({ x: 7, y: 7 }, storage), 0);
     // Frame 5: prevA=7, prevB=7 → 7 == 7? Yes
-    assertEquals(fn({ x: 99, y: 99 }, storage), 1);
+    assertEqual(fn({ x: 99, y: 99 }, storage), 1);
 });
 
 // =============================================================================
 // Achievement with only RESET_IF / PAUSE_IF (no normal reqs)
 // =============================================================================
 
-Deno.test("NativeEval - only PAUSE_IF requirements returns 0", () => {
+test("NativeEval - only PAUSE_IF requirements returns 0", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.p", addressB: "1", cmp: "==", flag: "PAUSE_IF" },
     ]));
     // No normal requirements → allMet stays true, but paused → 0
-    assertEquals(fn({ p: 1 }, {}), 0);
+    assertEqual(fn({ p: 1 }, {}), 0);
     // Not paused → allMet true, triggers (vacuous truth)
-    assertEquals(fn({ p: 0 }, {}), 1);
+    assertEqual(fn({ p: 0 }, {}), 1);
 });
 
-Deno.test("NativeEval - only RESET_IF requirements returns 0 when fired", () => {
+test("NativeEval - only RESET_IF requirements returns 0 when fired", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.r", addressB: "1", cmp: "==", flag: "RESET_IF" },
     ]));
     // Reset fires → return 0
-    assertEquals(fn({ r: 1 }, {}), 0);
+    assertEqual(fn({ r: 1 }, {}), 0);
     // Reset doesn't fire → allMet true (vacuous), triggers
-    assertEquals(fn({ r: 0 }, {}), 1);
+    assertEqual(fn({ r: 0 }, {}), 1);
 });
 
 // =============================================================================
 // TRIGGER with RESET_IF — reset clears primed state
 // =============================================================================
 
-Deno.test("NativeEval - TRIGGER primed then RESET_IF clears everything", () => {
+test("NativeEval - TRIGGER primed then RESET_IF clears everything", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 2 },
         { addressA: "stage.boss", addressB: "1", cmp: "==", flag: "TRIGGER" },
@@ -1737,21 +1737,21 @@ Deno.test("NativeEval - TRIGGER primed then RESET_IF clears everything", () => {
     fn({ x: 1, boss: 0, dead: 0 }, storage);
     // x hits=2 → locked, boss=0 → primed
     fn({ x: 1, boss: 0, dead: 0 }, storage);
-    assertEquals(storage["_primed"], 1);
-    assertEquals(storage["h0_0"], 2);
+    assertEqual(storage["_primed"], 1);
+    assertEqual(storage["h0_0"], 2);
     // RESET fires → clears all hits, returns 0
-    assertEquals(fn({ x: 1, boss: 0, dead: 1 }, storage), 0);
-    assertEquals(storage["h0_0"], 0);
+    assertEqual(fn({ x: 1, boss: 0, dead: 1 }, storage), 0);
+    assertEqual(storage["h0_0"], 0);
     // After reset: x hits back to 0, not primed anymore
     fn({ x: 1, boss: 0, dead: 0 }, storage);
-    assertEquals(storage["h0_0"], 1);
+    assertEqual(storage["h0_0"], 1);
 });
 
 // =============================================================================
 // Multi-frame state accumulation sequences
 // =============================================================================
 
-Deno.test("NativeEval - 10-frame hit tracking sequence", () => {
+test("NativeEval - 10-frame hit tracking sequence", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 5 },
         { addressA: "stage.y", addressB: "1", cmp: "==", maxHits: 3 },
@@ -1768,14 +1768,14 @@ Deno.test("NativeEval - 10-frame hit tracking sequence", () => {
         { x: 1, y: 0 }, // x=5(met), y=3(locked) → trigger!
     ];
     for (let i = 0; i < frames.length - 1; i++) {
-        assertEquals(fn(frames[i], storage), 0, `frame ${i} should not trigger`);
+        assertEqual(fn(frames[i], storage), 0, `frame ${i} should not trigger`);
     }
-    assertEquals(fn(frames[frames.length - 1], storage), 1, "final frame should trigger");
-    assertEquals(storage["h0_0"], 5);
-    assertEquals(storage["h0_1"], 3);
+    assertEqual(fn(frames[frames.length - 1], storage), 1, "final frame should trigger");
+    assertEqual(storage["h0_0"], 5);
+    assertEqual(storage["h0_1"], 3);
 });
 
-Deno.test("NativeEval - multi-frame PAUSE_IF with hit accumulation", () => {
+test("NativeEval - multi-frame PAUSE_IF with hit accumulation", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.paused", addressB: "1", cmp: "==", flag: "PAUSE_IF" },
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 3 },
@@ -1785,12 +1785,12 @@ Deno.test("NativeEval - multi-frame PAUSE_IF with hit accumulation", () => {
     fn({ paused: 1, x: 1 }, storage); // paused → no increment
     fn({ paused: 1, x: 1 }, storage); // still paused
     fn({ paused: 0, x: 1 }, storage); // hits=2
-    assertEquals(storage["h0_1"], 2); // only 2, not 4
+    assertEqual(storage["h0_1"], 2); // only 2, not 4
     fn({ paused: 0, x: 1 }, storage); // hits=3 → trigger
-    assertEquals(fn({ paused: 0, x: 1 }, storage), 1);
+    assertEqual(fn({ paused: 0, x: 1 }, storage), 1);
 });
 
-Deno.test("NativeEval - multi-frame RESET_IF interrupts progress", () => {
+test("NativeEval - multi-frame RESET_IF interrupts progress", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 3 },
         { addressA: "stage.dead", addressB: "1", cmp: "==", flag: "RESET_IF" },
@@ -1805,14 +1805,14 @@ Deno.test("NativeEval - multi-frame RESET_IF interrupts progress", () => {
     fn({ x: 1, dead: 0 }, storage); // hits=1
     fn({ x: 1, dead: 0 }, storage); // hits=2
     fn({ x: 1, dead: 0 }, storage); // hits=3 → trigger
-    assertEquals(fn({ x: 1, dead: 0 }, storage), 1);
+    assertEqual(fn({ x: 1, dead: 0 }, storage), 1);
 });
 
 // =============================================================================
 // MEASURED value mode with source accumulator
 // =============================================================================
 
-Deno.test("NativeEval - MEASURED value mode with ADD_SOURCE", () => {
+test("NativeEval - MEASURED value mode with ADD_SOURCE", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.bonus", addressB: "0", cmp: "==", flag: "ADD_SOURCE" },
         { addressA: "stage.score", addressB: "100", cmp: ">=", flag: "MEASURED" },
@@ -1822,14 +1822,14 @@ Deno.test("NativeEval - MEASURED value mode with ADD_SOURCE", () => {
     // MEASURED stores the formula A result (before source), not the effective
     fn({ bonus: 30, score: 80 }, storage);
     // _mCur should reflect formula A (score=80), _mTgt = 100
-    assertEquals(storage["_mTgt"], 100);
+    assertEqual(storage["_mTgt"], 100);
 });
 
 // =============================================================================
 // RESET_NEXT_IF threshold (with maxHits)
 // =============================================================================
 
-Deno.test("NativeEval - RESET_NEXT_IF with threshold fires after hits", () => {
+test("NativeEval - RESET_NEXT_IF with threshold fires after hits", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.r", addressB: "1", cmp: "==", flag: "RESET_NEXT_IF", maxHits: 2 },
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 10 },
@@ -1837,16 +1837,16 @@ Deno.test("NativeEval - RESET_NEXT_IF with threshold fires after hits", () => {
     const storage: Record<string, unknown> = {};
     fn({ r: 0, x: 1 }, storage); // x=1, rnif hits=0
     fn({ r: 1, x: 1 }, storage); // x=2, rnif hits=1 (not at threshold yet)
-    assertEquals(storage["h0_1"], 2); // x still counting
+    assertEqual(storage["h0_1"], 2); // x still counting
     fn({ r: 1, x: 1 }, storage); // x=3, rnif hits=2 → fires → clears x
-    assertEquals(storage["h0_1"], 0); // x cleared
+    assertEqual(storage["h0_1"], 0); // x cleared
 });
 
 // =============================================================================
 // Complex multi-group scenarios
 // =============================================================================
 
-Deno.test("NativeEval - CORE + two ALT groups with different hit tracking", () => {
+test("NativeEval - CORE + two ALT groups with different hit tracking", () => {
     const fn = compileSingle(makeAsset([
         { type: "CORE", requirements: [
             { addressA: "stage.level", addressB: "5", cmp: ">=" },
@@ -1861,12 +1861,12 @@ Deno.test("NativeEval - CORE + two ALT groups with different hit tracking", () =
     const storage: Record<string, unknown> = {};
     // Build up ALT1 hits while on path 1
     fn({ level: 5, path: 1 }, storage); // ALT1 hits=1, ALT2 hits=0
-    assertEquals(storage["h1_0"], 1);
+    assertEqual(storage["h1_0"], 1);
     fn({ level: 5, path: 1 }, storage); // ALT1 hits=2(met) → CORE+ALT1 → trigger
-    assertEquals(fn({ level: 5, path: 1 }, storage), 1);
+    assertEqual(fn({ level: 5, path: 1 }, storage), 1);
 });
 
-Deno.test("NativeEval - CORE fails with passing ALT still returns 0", () => {
+test("NativeEval - CORE fails with passing ALT still returns 0", () => {
     const fn = compileSingle(makeAsset([
         { type: "CORE", requirements: [
             { addressA: "stage.x", addressB: "1", cmp: "==" },
@@ -1877,14 +1877,14 @@ Deno.test("NativeEval - CORE fails with passing ALT still returns 0", () => {
         ]},
     ]));
     // CORE partially fails (y=0), ALT passes → no trigger (CORE must fully pass)
-    assertEquals(fn({ x: 1, y: 0, a: 1 }, {}), 0);
+    assertEqual(fn({ x: 1, y: 0, a: 1 }, {}), 0);
 });
 
 // =============================================================================
 // ADD_HITS / SUB_HITS contributor with maxHits cap
 // =============================================================================
 
-Deno.test("NativeEval - ADD_HITS contributor respects own maxHits cap", () => {
+test("NativeEval - ADD_HITS contributor respects own maxHits cap", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.bonus", addressB: "1", cmp: "==", flag: "ADD_HITS", maxHits: 2 },
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 5 },
@@ -1893,27 +1893,27 @@ Deno.test("NativeEval - ADD_HITS contributor respects own maxHits cap", () => {
     fn({ bonus: 1, x: 1 }, storage); // bonus=1, x=1, effective=2
     fn({ bonus: 1, x: 1 }, storage); // bonus=2(capped), x=2, effective=4
     fn({ bonus: 1, x: 1 }, storage); // bonus=2(capped), x=3, effective=5 → trigger
-    assertEquals(fn({ bonus: 1, x: 1 }, storage), 1);
-    assertEquals(storage["h0_0"], 2); // contributor capped at 2
+    assertEqual(fn({ bonus: 1, x: 1 }, storage), 1);
+    assertEqual(storage["h0_0"], 2); // contributor capped at 2
 });
 
 // =============================================================================
 // Edge: requirement comparing two stage properties
 // =============================================================================
 
-Deno.test("NativeEval - both sides are stage properties", () => {
+test("NativeEval - both sides are stage properties", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.health", addressB: "stage.maxHealth", cmp: "==" },
     ]));
-    assertEquals(fn({ health: 100, maxHealth: 100 }, {}), 1);
-    assertEquals(fn({ health: 50, maxHealth: 100 }, {}), 0);
+    assertEqual(fn({ health: 100, maxHealth: 100 }, {}), 1);
+    assertEqual(fn({ health: 50, maxHealth: 100 }, {}), 0);
 });
 
 // =============================================================================
 // PAUSE_IF threshold then unpauses after RESET_IF clears pause hits
 // =============================================================================
 
-Deno.test("NativeEval - RESET_IF clears hit-tracked requirement hits", () => {
+test("NativeEval - RESET_IF clears hit-tracked requirement hits", () => {
     // Note: RESET_IF cannot fire while PAUSE_IF has paused the group, because
     // the paused path skips normal evaluation (including RESET_IF). This test
     // verifies RESET_IF clears hits for hit-tracked requirements.
@@ -1925,23 +1925,23 @@ Deno.test("NativeEval - RESET_IF clears hit-tracked requirement hits", () => {
     const storage: Record<string, unknown> = {};
     fn({ x: 1, y: 1, dead: 0 }, storage); // x=1, y=1
     fn({ x: 1, y: 1, dead: 0 }, storage); // x=2, y=2
-    assertEquals(storage["h0_0"], 2);
-    assertEquals(storage["h0_1"], 2);
+    assertEqual(storage["h0_0"], 2);
+    assertEqual(storage["h0_1"], 2);
     // RESET fires → both cleared
     fn({ x: 1, y: 1, dead: 1 }, storage);
-    assertEquals(storage["h0_0"], 0);
-    assertEquals(storage["h0_1"], 0);
+    assertEqual(storage["h0_0"], 0);
+    assertEqual(storage["h0_1"], 0);
     // Resume accumulating
     fn({ x: 1, y: 1, dead: 0 }, storage);
-    assertEquals(storage["h0_0"], 1);
-    assertEquals(storage["h0_1"], 1);
+    assertEqual(storage["h0_0"], 1);
+    assertEqual(storage["h0_1"], 1);
 });
 
 // =============================================================================
 // Chain with RESET_IF terminal
 // =============================================================================
 
-Deno.test("NativeEval - AND_NEXT chain ending in RESET_IF", () => {
+test("NativeEval - AND_NEXT chain ending in RESET_IF", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.a", addressB: "1", cmp: "==", flag: "AND_NEXT" },
         { addressA: "stage.b", addressB: "1", cmp: "==", flag: "RESET_IF" },
@@ -1950,20 +1950,20 @@ Deno.test("NativeEval - AND_NEXT chain ending in RESET_IF", () => {
     const storage: Record<string, unknown> = {};
     fn({ a: 0, b: 0, x: 1 }, storage); // chain false → no reset, x=1
     fn({ a: 0, b: 0, x: 1 }, storage); // x=2
-    assertEquals(storage["h0_2"], 2);
+    assertEqual(storage["h0_2"], 2);
     // Chain fires → reset
     fn({ a: 1, b: 1, x: 1 }, storage);
-    assertEquals(storage["h0_2"], 0); // cleared
+    assertEqual(storage["h0_2"], 0); // cleared
     // Chain doesn't fire (a=0) → x accumulates again
     fn({ a: 0, b: 1, x: 1 }, storage);
-    assertEquals(storage["h0_2"], 1);
+    assertEqual(storage["h0_2"], 1);
 });
 
 // =============================================================================
 // SUB_HITS with no terminal increment (penalty only)
 // =============================================================================
 
-Deno.test("NativeEval - SUB_HITS can prevent trigger indefinitely", () => {
+test("NativeEval - SUB_HITS can prevent trigger indefinitely", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.penalty", addressB: "1", cmp: "==", flag: "SUB_HITS" },
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 3 },
@@ -1976,14 +1976,14 @@ Deno.test("NativeEval - SUB_HITS can prevent trigger indefinitely", () => {
     fn({ penalty: 1, x: 1 }, storage); // own=3, sub=2, eff=1
     fn({ penalty: 1, x: 1 }, storage); // own=3, sub=3, eff=0
     // Effective is 0 — never triggers despite own being at max
-    assertEquals(fn({ penalty: 0, x: 1 }, storage), 0); // own=3, sub=3, eff=0
+    assertEqual(fn({ penalty: 0, x: 1 }, storage), 0); // own=3, sub=3, eff=0
 });
 
 // =============================================================================
 // Hit increment cap verification
 // =============================================================================
 
-Deno.test("NativeEval - PAUSE_IF threshold hits don't exceed maxHits", () => {
+test("NativeEval - PAUSE_IF threshold hits don't exceed maxHits", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.flag", addressB: "1", cmp: "==", flag: "PAUSE_IF", maxHits: 2 },
         { addressA: "stage.x", addressB: "1", cmp: "==" },
@@ -1993,10 +1993,10 @@ Deno.test("NativeEval - PAUSE_IF threshold hits don't exceed maxHits", () => {
     fn({ flag: 1, x: 1 }, storage); // hits=2 → paused
     fn({ flag: 1, x: 1 }, storage); // still paused, hits should stay at 2
     fn({ flag: 1, x: 1 }, storage); // still paused, hits should stay at 2
-    assertEquals(storage["h0_0"], 2); // capped
+    assertEqual(storage["h0_0"], 2); // capped
 });
 
-Deno.test("NativeEval - RESET_IF threshold hits don't exceed maxHits", () => {
+test("NativeEval - RESET_IF threshold hits don't exceed maxHits", () => {
     // After RESET_IF fires, all hits are cleared. So it can only reach maxHits once
     // per cycle. But verify the cap is respected within a cycle.
     const fn = compileSingle(simpleAsset([
@@ -2006,17 +2006,17 @@ Deno.test("NativeEval - RESET_IF threshold hits don't exceed maxHits", () => {
     const storage: Record<string, unknown> = {};
     fn({ x: 1, r: 1 }, storage); // x=1, r_hits=1
     fn({ x: 1, r: 1 }, storage); // x=2, r_hits=2
-    assertEquals(storage["h0_1"], 2);
+    assertEqual(storage["h0_1"], 2);
     fn({ x: 1, r: 1 }, storage); // r_hits=3 → fires → all cleared
-    assertEquals(storage["h0_0"], 0);
-    assertEquals(storage["h0_1"], 0);
+    assertEqual(storage["h0_0"], 0);
+    assertEqual(storage["h0_1"], 0);
     // Verify cycle restarts cleanly
     fn({ x: 1, r: 1 }, storage); // x=1, r_hits=1
-    assertEquals(storage["h0_0"], 1);
-    assertEquals(storage["h0_1"], 1);
+    assertEqual(storage["h0_0"], 1);
+    assertEqual(storage["h0_1"], 1);
 });
 
-Deno.test("NativeEval - RESET_NEXT_IF threshold hits don't exceed maxHits", () => {
+test("NativeEval - RESET_NEXT_IF threshold hits don't exceed maxHits", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.r", addressB: "1", cmp: "==", flag: "RESET_NEXT_IF", maxHits: 2 },
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 10 },
@@ -2024,13 +2024,13 @@ Deno.test("NativeEval - RESET_NEXT_IF threshold hits don't exceed maxHits", () =
     const storage: Record<string, unknown> = {};
     fn({ r: 1, x: 1 }, storage); // r_hits=1, x=1
     fn({ r: 1, x: 1 }, storage); // r_hits=2 → fires → clears x
-    assertEquals(storage["h0_1"], 0);
+    assertEqual(storage["h0_1"], 0);
     // r_hits stay at 2 (not cleared by RESET_NEXT_IF, only target is cleared)
     fn({ r: 1, x: 1 }, storage); // r_hits should not exceed 2
-    assertEquals(storage["h0_0"], 2); // capped at maxHits
+    assertEqual(storage["h0_0"], 2); // capped at maxHits
 });
 
-Deno.test("NativeEval - ADD_HITS contributor uncapped hits increment every frame", () => {
+test("NativeEval - ADD_HITS contributor uncapped hits increment every frame", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.bonus", addressB: "1", cmp: "==", flag: "ADD_HITS" },
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 100 },
@@ -2040,15 +2040,15 @@ Deno.test("NativeEval - ADD_HITS contributor uncapped hits increment every frame
     for (let i = 0; i < 10; i++) {
         fn({ bonus: 1, x: 1 }, storage);
     }
-    assertEquals(storage["h0_0"], 10); // uncapped
-    assertEquals(storage["h0_1"], 10); // terminal own hits
+    assertEqual(storage["h0_0"], 10); // uncapped
+    assertEqual(storage["h0_1"], 10); // terminal own hits
 });
 
 // =============================================================================
 // TRIGGER satisfaction tracking precision
 // =============================================================================
 
-Deno.test("NativeEval - TRIGGER with multiple non-trigger reqs tracks correctly", () => {
+test("NativeEval - TRIGGER with multiple non-trigger reqs tracks correctly", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.a", addressB: "1", cmp: "==" },
         { addressA: "stage.b", addressB: "1", cmp: "==" },
@@ -2057,15 +2057,15 @@ Deno.test("NativeEval - TRIGGER with multiple non-trigger reqs tracks correctly"
     const storage: Record<string, unknown> = {};
     // Only a met → not all non-trigger met → not primed
     fn({ a: 1, b: 0, c: 0 }, storage);
-    assertEquals(storage["_primed"], 0);
+    assertEqual(storage["_primed"], 0);
     // Both a and b met, c not → primed
     fn({ a: 1, b: 1, c: 0 }, storage);
-    assertEquals(storage["_primed"], 1);
+    assertEqual(storage["_primed"], 1);
     // All met → trigger
-    assertEquals(fn({ a: 1, b: 1, c: 1 }, storage), 1);
+    assertEqual(fn({ a: 1, b: 1, c: 1 }, storage), 1);
 });
 
-Deno.test("NativeEval - TRIGGER with multiple trigger reqs", () => {
+test("NativeEval - TRIGGER with multiple trigger reqs", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.a", addressB: "1", cmp: "==" },
         { addressA: "stage.t1", addressB: "1", cmp: "==", flag: "TRIGGER" },
@@ -2074,43 +2074,43 @@ Deno.test("NativeEval - TRIGGER with multiple trigger reqs", () => {
     const storage: Record<string, unknown> = {};
     // a met, t1 not, t2 not → primed (all non-trigger met, not all trigger met)
     fn({ a: 1, t1: 0, t2: 0 }, storage);
-    assertEquals(storage["_primed"], 1);
+    assertEqual(storage["_primed"], 1);
     // a met, t1 met, t2 not → still primed (not ALL trigger met)
     fn({ a: 1, t1: 1, t2: 0 }, storage);
-    assertEquals(storage["_primed"], 1);
-    assertEquals(fn({ a: 1, t1: 1, t2: 0 }, storage), 0);
+    assertEqual(storage["_primed"], 1);
+    assertEqual(fn({ a: 1, t1: 1, t2: 0 }, storage), 0);
     // All met → trigger
-    assertEquals(fn({ a: 1, t1: 1, t2: 1 }, storage), 1);
+    assertEqual(fn({ a: 1, t1: 1, t2: 1 }, storage), 1);
 });
 
 // =============================================================================
 // Source accumulator edge cases
 // =============================================================================
 
-Deno.test("NativeEval - multiple ADD_SOURCE before one consumer", () => {
+test("NativeEval - multiple ADD_SOURCE before one consumer", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.s1", addressB: "0", cmp: "==", flag: "ADD_SOURCE" },
         { addressA: "stage.s2", addressB: "0", cmp: "==", flag: "ADD_SOURCE" },
         { addressA: "stage.base", addressB: "20", cmp: ">=" },
     ]));
     // base=10, s1=5, s2=7 → effective = 10 + 5 + 7 = 22 >= 20
-    assertEquals(fn({ s1: 5, s2: 7, base: 10 }, {}), 1);
+    assertEqual(fn({ s1: 5, s2: 7, base: 10 }, {}), 1);
     // base=10, s1=3, s2=4 → effective = 10 + 3 + 4 = 17 < 20
-    assertEquals(fn({ s1: 3, s2: 4, base: 10 }, {}), 0);
+    assertEqual(fn({ s1: 3, s2: 4, base: 10 }, {}), 0);
 });
 
-Deno.test("NativeEval - SUB_SOURCE makes effective value negative", () => {
+test("NativeEval - SUB_SOURCE makes effective value negative", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.penalty", addressB: "0", cmp: "==", flag: "SUB_SOURCE" },
         { addressA: "stage.base", addressB: "0", cmp: ">" },
     ]));
     // base=5, penalty=10 → effective = 5 - 10 = -5, -5 > 0? No
-    assertEquals(fn({ penalty: 10, base: 5 }, {}), 0);
+    assertEqual(fn({ penalty: 10, base: 5 }, {}), 0);
     // base=15, penalty=10 → effective = 15 - 10 = 5, 5 > 0? Yes
-    assertEquals(fn({ penalty: 10, base: 15 }, {}), 1);
+    assertEqual(fn({ penalty: 10, base: 15 }, {}), 1);
 });
 
-Deno.test("NativeEval - source accumulator resets between requirements", () => {
+test("NativeEval - source accumulator resets between requirements", () => {
     // After the first consumer reads the accumulator, it resets to 0.
     // A second standalone requirement should NOT get the source bonus.
     const fn = compileSingle(simpleAsset([
@@ -2119,16 +2119,16 @@ Deno.test("NativeEval - source accumulator resets between requirements", () => {
         { addressA: "stage.y", addressB: "10", cmp: ">=" },
     ]));
     // x=5+bonus(5)=10 → pass. y=5 → 5 >= 10? No (accumulator was reset)
-    assertEquals(fn({ bonus: 5, x: 5, y: 5 }, {}), 0);
+    assertEqual(fn({ bonus: 5, x: 5, y: 5 }, {}), 0);
     // x=5+bonus(5)=10 → pass. y=10 → 10 >= 10? Yes
-    assertEquals(fn({ bonus: 5, x: 5, y: 10 }, {}), 1);
+    assertEqual(fn({ bonus: 5, x: 5, y: 10 }, {}), 1);
 });
 
 // =============================================================================
 // Delta initialized flag persistence across many frames
 // =============================================================================
 
-Deno.test("NativeEval - delta works correctly over 10 frames", () => {
+test("NativeEval - delta works correctly over 10 frames", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "42", cmp: "==", typeA: "DELTA" },
     ]));
@@ -2146,7 +2146,7 @@ Deno.test("NativeEval - delta works correctly over 10 frames", () => {
     // Frame 8: prev=42, 42==42? Yes (stores 1)
     // Frame 9: prev=1, 1==42? No (stores 42)
     for (let i = 0; i < values.length; i++) {
-        assertEquals(fn({ x: values[i] }, storage), expected[i],
+        assertEqual(fn({ x: values[i] }, storage), expected[i],
             `frame ${i}: x=${values[i]}, expected ${expected[i]}`);
     }
 });
@@ -2155,71 +2155,71 @@ Deno.test("NativeEval - delta works correctly over 10 frames", () => {
 // Long chains (4+ members)
 // =============================================================================
 
-Deno.test("NativeEval - 4-member AND chain all pass", () => {
+test("NativeEval - 4-member AND chain all pass", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.a", addressB: "1", cmp: "==", flag: "AND_NEXT" },
         { addressA: "stage.b", addressB: "1", cmp: "==", flag: "AND_NEXT" },
         { addressA: "stage.c", addressB: "1", cmp: "==", flag: "AND_NEXT" },
         { addressA: "stage.d", addressB: "1", cmp: "==" },
     ]));
-    assertEquals(fn({ a: 1, b: 1, c: 1, d: 1 }, {}), 1);
-    assertEquals(fn({ a: 1, b: 1, c: 0, d: 1 }, {}), 0); // one fails
+    assertEqual(fn({ a: 1, b: 1, c: 1, d: 1 }, {}), 1);
+    assertEqual(fn({ a: 1, b: 1, c: 0, d: 1 }, {}), 0); // one fails
 });
 
-Deno.test("NativeEval - 4-member OR chain any pass", () => {
+test("NativeEval - 4-member OR chain any pass", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.a", addressB: "1", cmp: "==", flag: "OR_NEXT" },
         { addressA: "stage.b", addressB: "1", cmp: "==", flag: "OR_NEXT" },
         { addressA: "stage.c", addressB: "1", cmp: "==", flag: "OR_NEXT" },
         { addressA: "stage.d", addressB: "1", cmp: "==" },
     ]));
-    assertEquals(fn({ a: 0, b: 0, c: 0, d: 1 }, {}), 1); // last passes
-    assertEquals(fn({ a: 1, b: 0, c: 0, d: 0 }, {}), 1); // first passes
-    assertEquals(fn({ a: 0, b: 0, c: 0, d: 0 }, {}), 0); // none pass
+    assertEqual(fn({ a: 0, b: 0, c: 0, d: 1 }, {}), 1); // last passes
+    assertEqual(fn({ a: 1, b: 0, c: 0, d: 0 }, {}), 1); // first passes
+    assertEqual(fn({ a: 0, b: 0, c: 0, d: 0 }, {}), 0); // none pass
 });
 
 // =============================================================================
 // Chain followed by standalone requirement
 // =============================================================================
 
-Deno.test("NativeEval - chain then standalone both must pass", () => {
+test("NativeEval - chain then standalone both must pass", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.a", addressB: "1", cmp: "==", flag: "AND_NEXT" },
         { addressA: "stage.b", addressB: "1", cmp: "==" },
         { addressA: "stage.c", addressB: "1", cmp: "==" },
     ]));
     // Chain passes but standalone fails
-    assertEquals(fn({ a: 1, b: 1, c: 0 }, {}), 0);
+    assertEqual(fn({ a: 1, b: 1, c: 0 }, {}), 0);
     // Chain fails but standalone passes
-    assertEquals(fn({ a: 0, b: 1, c: 1 }, {}), 0);
+    assertEqual(fn({ a: 0, b: 1, c: 1 }, {}), 0);
     // Both pass
-    assertEquals(fn({ a: 1, b: 1, c: 1 }, {}), 1);
+    assertEqual(fn({ a: 1, b: 1, c: 1 }, {}), 1);
 });
 
 // =============================================================================
 // Re-trigger after trigger (storage cleared externally)
 // =============================================================================
 
-Deno.test("NativeEval - can re-trigger after storage is cleared", () => {
+test("NativeEval - can re-trigger after storage is cleared", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 2 },
     ]));
     const storage: Record<string, unknown> = {};
     fn({ x: 1 }, storage); // hits=1
-    assertEquals(fn({ x: 1 }, storage), 1); // hits=2 → trigger
+    assertEqual(fn({ x: 1 }, storage), 1); // hits=2 → trigger
 
     // Simulate firmware clearing storage after trigger
     for (const key of Object.keys(storage)) delete storage[key];
 
     fn({ x: 1 }, storage); // hits=1
-    assertEquals(fn({ x: 1 }, storage), 1); // hits=2 → trigger again
+    assertEqual(fn({ x: 1 }, storage), 1); // hits=2 → trigger again
 });
 
 // =============================================================================
 // All requirements failing but delta still updates
 // =============================================================================
 
-Deno.test("NativeEval - all reqs fail but delta values still tracked", () => {
+test("NativeEval - all reqs fail but delta values still tracked", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "999", cmp: "==", typeA: "DELTA" },
         { addressA: "stage.y", addressB: "999", cmp: "==" },
@@ -2229,31 +2229,31 @@ Deno.test("NativeEval - all reqs fail but delta values still tracked", () => {
     fn({ x: 2, y: 0 }, storage); // prev=1, 1==999? No, y fails
     // Even though all fail, delta stored values should update
     fn({ x: 3, y: 0 }, storage); // prev=2, delta tracking continues
-    assertEquals(storage["dA0_0"], 3); // current value stored for next frame
-    assertEquals(storage["dAi0_0"], true); // initialized flag set
+    assertEqual(storage["dA0_0"], 3); // current value stored for next frame
+    assertEqual(storage["dAi0_0"], true); // initialized flag set
 });
 
 // =============================================================================
 // MEASURED with no hits (value mode) triggers correctly
 // =============================================================================
 
-Deno.test("NativeEval - MEASURED value mode triggers when condition met", () => {
+test("NativeEval - MEASURED value mode triggers when condition met", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.score", addressB: "100", cmp: ">=", flag: "MEASURED" },
     ]));
     const storage: Record<string, unknown> = {};
-    assertEquals(fn({ score: 50 }, storage), 0);
-    assertEquals(storage["_mCur"], 50);
-    assertEquals(storage["_mTgt"], 100);
-    assertEquals(fn({ score: 100 }, storage), 1);
-    assertEquals(storage["_mCur"], 100);
+    assertEqual(fn({ score: 50 }, storage), 0);
+    assertEqual(storage["_mCur"], 50);
+    assertEqual(storage["_mTgt"], 100);
+    assertEqual(fn({ score: 100 }, storage), 1);
+    assertEqual(storage["_mCur"], 100);
 });
 
 // =============================================================================
 // Multi-group hit tracking isolation
 // =============================================================================
 
-Deno.test("NativeEval - hit tracking in different groups uses separate keys", () => {
+test("NativeEval - hit tracking in different groups uses separate keys", () => {
     const fn = compileSingle(makeAsset([
         { type: "CORE", requirements: [
             { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 3 },
@@ -2264,36 +2264,36 @@ Deno.test("NativeEval - hit tracking in different groups uses separate keys", ()
     ]));
     const storage: Record<string, unknown> = {};
     fn({ x: 1, y: 1 }, storage);
-    assertEquals(storage["h0_0"], 1); // CORE group 0, req 0
-    assertEquals(storage["h1_0"], 1); // ALT group 1, req 0
+    assertEqual(storage["h0_0"], 1); // CORE group 0, req 0
+    assertEqual(storage["h1_0"], 1); // ALT group 1, req 0
     fn({ x: 1, y: 0 }, storage);
-    assertEquals(storage["h0_0"], 2); // incremented
-    assertEquals(storage["h1_0"], 1); // not incremented (y=0)
+    assertEqual(storage["h0_0"], 2); // incremented
+    assertEqual(storage["h1_0"], 1); // not incremented (y=0)
 });
 
 // =============================================================================
 // Chain with delta on a member
 // =============================================================================
 
-Deno.test("NativeEval - AND_NEXT chain with delta member", () => {
+test("NativeEval - AND_NEXT chain with delta member", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "5", cmp: "==", flag: "AND_NEXT", typeA: "DELTA" },
         { addressA: "stage.y", addressB: "1", cmp: "==" },
     ]));
     const storage: Record<string, unknown> = {};
     // Frame 1: delta init for x → member not satisfied, chain fails
-    assertEquals(fn({ x: 5, y: 1 }, storage), 0);
+    assertEqual(fn({ x: 5, y: 1 }, storage), 0);
     // Frame 2: prevX=5, 5==5? Yes, y=1 → chain passes → trigger
-    assertEquals(fn({ x: 10, y: 1 }, storage), 1);
+    assertEqual(fn({ x: 10, y: 1 }, storage), 1);
     // Frame 3: prevX=10, 10==5? No → chain fails
-    assertEquals(fn({ x: 15, y: 1 }, storage), 0);
+    assertEqual(fn({ x: 15, y: 1 }, storage), 0);
 });
 
 // =============================================================================
 // Requirement with maxHits=1 (single-shot)
 // =============================================================================
 
-Deno.test("NativeEval - maxHits=1 locks after single pass", () => {
+test("NativeEval - maxHits=1 locks after single pass", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 1 },
         { addressA: "stage.y", addressB: "1", cmp: "==" },
@@ -2301,38 +2301,38 @@ Deno.test("NativeEval - maxHits=1 locks after single pass", () => {
     const storage: Record<string, unknown> = {};
     // Frame 1: x passes → hits=1 (locked), y fails
     fn({ x: 1, y: 0 }, storage);
-    assertEquals(storage["h0_0"], 1);
+    assertEqual(storage["h0_0"], 1);
     // Frame 2: x=0 but locked-true, y=1 → trigger
-    assertEquals(fn({ x: 0, y: 1 }, storage), 1);
+    assertEqual(fn({ x: 0, y: 1 }, storage), 1);
     // Frame 3: still locked, y=1 → trigger again
-    assertEquals(fn({ x: 0, y: 1 }, storage), 1);
+    assertEqual(fn({ x: 0, y: 1 }, storage), 1);
 });
 
 // =============================================================================
 // MEASURED hit-count with locked-true and subsequent trigger
 // =============================================================================
 
-Deno.test("NativeEval - MEASURED hit-count reaches target and triggers", () => {
+test("NativeEval - MEASURED hit-count reaches target and triggers", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.x", addressB: "1", cmp: "==", maxHits: 3, flag: "MEASURED" },
     ]));
     const storage: Record<string, unknown> = {};
     fn({ x: 1 }, storage);
-    assertEquals(storage["_mCur"], 1);
-    assertEquals(storage["_mTgt"], 3);
+    assertEqual(storage["_mCur"], 1);
+    assertEqual(storage["_mTgt"], 3);
     fn({ x: 1 }, storage);
-    assertEquals(storage["_mCur"], 2);
+    assertEqual(storage["_mCur"], 2);
     // Frame 3: hits=3 → trigger
-    assertEquals(fn({ x: 1 }, storage), 1);
-    assertEquals(storage["_mCur"], 3);
-    assertEquals(storage["_mTgt"], 3);
+    assertEqual(fn({ x: 1 }, storage), 1);
+    assertEqual(storage["_mCur"], 3);
+    assertEqual(storage["_mTgt"], 3);
 });
 
 // =============================================================================
 // Interaction: PAUSE_IF + AND_NEXT chain + hit tracking
 // =============================================================================
 
-Deno.test("NativeEval - complex: PAUSE_IF + chain + hits", () => {
+test("NativeEval - complex: PAUSE_IF + chain + hits", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "stage.paused", addressB: "1", cmp: "==", flag: "PAUSE_IF" },
         { addressA: "stage.a", addressB: "1", cmp: "==", flag: "AND_NEXT" },
@@ -2341,18 +2341,18 @@ Deno.test("NativeEval - complex: PAUSE_IF + chain + hits", () => {
     const storage: Record<string, unknown> = {};
     // Not paused, chain passes → hits=1
     fn({ paused: 0, a: 1, b: 1 }, storage);
-    assertEquals(storage["h0_2"], 1);
+    assertEqual(storage["h0_2"], 1);
     // Paused → no increment
     fn({ paused: 1, a: 1, b: 1 }, storage);
-    assertEquals(storage["h0_2"], 1);
+    assertEqual(storage["h0_2"], 1);
     // Unpaused, chain passes → hits=2
     fn({ paused: 0, a: 1, b: 1 }, storage);
-    assertEquals(storage["h0_2"], 2);
+    assertEqual(storage["h0_2"], 2);
     // Chain fails (a=0) → no increment
     fn({ paused: 0, a: 0, b: 1 }, storage);
-    assertEquals(storage["h0_2"], 2);
+    assertEqual(storage["h0_2"], 2);
     // Chain passes → hits=3 → trigger
-    assertEquals(fn({ paused: 0, a: 1, b: 1 }, storage), 1);
+    assertEqual(fn({ paused: 0, a: 1, b: 1 }, storage), 1);
 });
 
 // ============================================================================
@@ -2363,77 +2363,77 @@ Deno.test("NativeEval - complex: PAUSE_IF + chain + hits", () => {
 function compileRP(formula: string): VMFunction {
     const assets = [{ type: "RICH_PRESENCE", formula, groups: [] }];
     const { rpFunctions } = compileAndExtract(assets);
-    assertEquals(rpFunctions.length, 1);
+    assertEqual(rpFunctions.length, 1);
     return rpFunctions[0];
 }
 
-Deno.test("RP - string literal", () => {
+test("RP - string literal", () => {
     const fn = compileRP('"Hello World"');
-    assertEquals(fn({}, {}), "Hello World");
+    assertEqual(fn({}, {}), "Hello World");
 });
 
-Deno.test("RP - string concatenation", () => {
+test("RP - string concatenation", () => {
     const fn = compileRP('"Hello " + "World"');
-    assertEquals(fn({}, {}), "Hello World");
+    assertEqual(fn({}, {}), "Hello World");
 });
 
-Deno.test("RP - property access as string", () => {
+test("RP - property access as string", () => {
     const fn = compileRP('"Level: " + stage.level');
-    assertEquals(fn({ level: 5 }, {}), "Level: 5");
+    assertEqual(fn({ level: 5 }, {}), "Level: 5");
 });
 
-Deno.test("RP - numeric property access", () => {
+test("RP - numeric property access", () => {
     const fn = compileRP("stage.score");
-    assertEquals(fn({ score: 42 }, {}), 42);
+    assertEqual(fn({ score: 42 }, {}), 42);
 });
 
-Deno.test("RP - string property access", () => {
+test("RP - string property access", () => {
     const fn = compileRP("stage.name");
-    assertEquals(fn({ name: "Player1" }, {}), "Player1");
+    assertEqual(fn({ name: "Player1" }, {}), "Player1");
 });
 
-Deno.test("RP - nested property access", () => {
+test("RP - nested property access", () => {
     const fn = compileRP('"HP: " + stage.player.health');
-    assertEquals(fn({ player: { health: 100 } }, {}), "HP: 100");
+    assertEqual(fn({ player: { health: 100 } }, {}), "HP: 100");
 });
 
-Deno.test("RP - arithmetic in string context", () => {
+test("RP - arithmetic in string context", () => {
     const fn = compileRP('"Score: " + (stage.a + stage.b)');
-    assertEquals(fn({ a: 10, b: 20 }, {}), "Score: 30");
+    assertEqual(fn({ a: 10, b: 20 }, {}), "Score: 30");
 });
 
-Deno.test("RP - multi-part concatenation", () => {
+test("RP - multi-part concatenation", () => {
     const fn = compileRP('"HP: " + stage.hp + "/" + stage.maxHp');
     // String concat is left-to-right: "HP: " + 50 = "HP: 50", + "/" = "HP: 50/", + 100 = "HP: 50/100"
-    assertEquals(fn({ hp: 50, maxHp: 100 }, {}), "HP: 50/100");
+    assertEqual(fn({ hp: 50, maxHp: 100 }, {}), "HP: 50/100");
 });
 
-Deno.test("RP - ternary expression", () => {
+test("RP - ternary expression", () => {
     const fn = compileRP('stage.alive ? "Alive" : "Dead"');
-    assertEquals(fn({ alive: 1 }, {}), "Alive");
-    assertEquals(fn({ alive: 0 }, {}), "Dead");
+    assertEqual(fn({ alive: 1 }, {}), "Alive");
+    assertEqual(fn({ alive: 0 }, {}), "Dead");
 });
 
-Deno.test("RP - pure numeric formula", () => {
+test("RP - pure numeric formula", () => {
     const fn = compileRP("stage.x * 2 + 1");
-    assertEquals(fn({ x: 5 }, {}), 11);
+    assertEqual(fn({ x: 5 }, {}), 11);
 });
 
-Deno.test("RP - REMEMBER caches last non-empty", () => {
+test("RP - REMEMBER caches last non-empty", () => {
     const fn = compileRP("{stage.status}");
     const storage: Record<string, unknown> = {};
 
     // First call: status is present
-    assertEquals(fn({ status: "Playing" }, storage), "Playing");
+    assertEqual(fn({ status: "Playing" }, storage), "Playing");
 
     // Second call: status is undefined → returns cached "Playing"
-    assertEquals(fn({}, storage), "Playing");
+    assertEqual(fn({}, storage), "Playing");
 
     // Third call: status updates
-    assertEquals(fn({ status: "Menu" }, storage), "Menu");
+    assertEqual(fn({ status: "Menu" }, storage), "Menu");
 });
 
-Deno.test("RP - mixed achievements and RP in same compilation", () => {
+test("RP - mixed achievements and RP in same compilation", () => {
     const assets = [
         simpleAsset([{ addressA: "stage.x", addressB: "10", cmp: "==" }]),
         { type: "RICH_PRESENCE", formula: '"Level " + stage.level', groups: [] },
@@ -2442,78 +2442,78 @@ Deno.test("RP - mixed achievements and RP in same compilation", () => {
     const { functions, compiledIndices, rpFunctions, rpCompiledIndices } = compileAndExtract(assets);
 
     // Two achievements, one RP
-    assertEquals(functions.length, 2);
-    assertEquals(compiledIndices, [0, 2]);
-    assertEquals(rpFunctions.length, 1);
-    assertEquals(rpCompiledIndices, [1]);
+    assertEqual(functions.length, 2);
+    assertEqual(compiledIndices, [0, 2]);
+    assertEqual(rpFunctions.length, 1);
+    assertEqual(rpCompiledIndices, [1]);
 
     // Achievements work
-    assertEquals(functions[0]({ x: 10 }, {}), 1);
-    assertEquals(functions[0]({ x: 5 }, {}), 0);
+    assertEqual(functions[0]({ x: 10 }, {}), 1);
+    assertEqual(functions[0]({ x: 5 }, {}), 0);
 
     // RP works
-    assertEquals(rpFunctions[0]({ level: 3 }, {}), "Level 3");
+    assertEqual(rpFunctions[0]({ level: 3 }, {}), "Level 3");
 });
 
-Deno.test("RP - empty formula returns empty string", () => {
+test("RP - empty formula returns empty string", () => {
     const fn = compileRP('""');
-    assertEquals(fn({}, {}), "");
+    assertEqual(fn({}, {}), "");
 });
 
-Deno.test("RP - comparison produces boolean result", () => {
+test("RP - comparison produces boolean result", () => {
     const fn = compileRP("stage.hp > 0");
     // AVM1 greater returns true/false
-    assertEquals(fn({ hp: 50 }, {}), true);
-    assertEquals(fn({ hp: 0 }, {}), false);
+    assertEqual(fn({ hp: 50 }, {}), true);
+    assertEqual(fn({ hp: 0 }, {}), false);
 });
 
 // =============================================================================
 // len() function
 // =============================================================================
 
-Deno.test("RP - len() returns array length", () => {
+test("RP - len() returns array length", () => {
     const fn = compileRP("len(stage.items)");
-    assertEquals(fn({ items: [1, 2, 3] }, {}), 3);
-    assertEquals(fn({ items: [] }, {}), 0);
+    assertEqual(fn({ items: [1, 2, 3] }, {}), 3);
+    assertEqual(fn({ items: [] }, {}), 0);
 });
 
-Deno.test("RP - len() in string context", () => {
+test("RP - len() in string context", () => {
     const fn = compileRP('"Count: " + len(stage.items)');
-    assertEquals(fn({ items: [10, 20, 30, 40] }, {}), "Count: 4");
+    assertEqual(fn({ items: [10, 20, 30, 40] }, {}), "Count: 4");
 });
 
-Deno.test("NativeEval - len() in achievement condition", () => {
+test("NativeEval - len() in achievement condition", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "len(stage.enemies)", addressB: "3", cmp: ">=" },
     ]));
-    assertEquals(fn({ enemies: [1, 2, 3] }, {}), 1);
-    assertEquals(fn({ enemies: [1, 2] }, {}), 0);
-    assertEquals(fn({ enemies: [] }, {}), 0);
+    assertEqual(fn({ enemies: [1, 2, 3] }, {}), 1);
+    assertEqual(fn({ enemies: [1, 2] }, {}), 0);
+    assertEqual(fn({ enemies: [] }, {}), 0);
 });
 
-Deno.test("NativeEval - len() on non-array returns 1", () => {
+test("NativeEval - len() on non-array returns 1", () => {
     const fn = compileRP("len(stage.player)");
-    assertEquals(fn({ player: { hp: 100, mp: 50 } }, {}), 1);
+    assertEqual(fn({ player: { hp: 100, mp: 50 } }, {}), 1);
 });
 
-Deno.test("RP - len() on non-array in comparison", () => {
+test("RP - len() on non-array in comparison", () => {
     const fn = compileSingle(simpleAsset([
         { addressA: "len(stage.player)", addressB: "1", cmp: "==" },
     ]));
-    assertEquals(fn({ player: { hp: 100 } }, {}), 1);
+    assertEqual(fn({ player: { hp: 100 } }, {}), 1);
 });
 
-Deno.test("NativeEval - len() on number returns 1", () => {
+test("NativeEval - len() on number returns 1", () => {
     const fn = compileRP("len(stage.score)");
-    assertEquals(fn({ score: 42 }, {}), 1);
+    assertEqual(fn({ score: 42 }, {}), 1);
 });
 
-Deno.test("NativeEval - len() on string returns 1", () => {
+test("NativeEval - len() on string returns 1", () => {
     const fn = compileRP("len(stage.name)");
-    assertEquals(fn({ name: "hello" }, {}), 1);
+    assertEqual(fn({ name: "hello" }, {}), 1);
 });
 
-Deno.test("NativeEval - len() on null/undefined returns 1", () => {
+test("NativeEval - len() on null/undefined returns 1", () => {
     const fn = compileRP("len(stage.missing)");
-    assertEquals(fn({}, {}), 1);
+    assertEqual(fn({}, {}), 1);
 });

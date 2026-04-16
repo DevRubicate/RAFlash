@@ -6,7 +6,7 @@
  * Also tests error cases for invalid child counts.
  */
 
-import { assertEquals, assertThrows } from "https://deno.land/std/assert/mod.ts";
+import { test, assertEqual, assertThrows } from "../../tests/framework.ts";
 import { Builder } from "../src/formula/Builder.ts";
 import { Node, N } from "../src/formula/Node.ts";
 import { NODE_TYPE } from "../src/formula/NODE_TYPE.ts";
@@ -46,44 +46,44 @@ import { ExecutableBlockUnit } from "../src/formula/unit/ExecutableBlockUnit.ts"
 // Leaf nodes
 // =============================================================================
 
-Deno.test("Builder.convert - VALUE node produces ValueUnit with correct value", () => {
+test("Builder.convert - VALUE node produces ValueUnit with correct value", () => {
     const node = new Node(NODE_TYPE.VALUE, 42);
     const unit = Builder.convert(node);
-    assertEquals(unit instanceof ValueUnit, true);
-    assertEquals(unit.value, 42);
-    assertEquals(unit.children.length, 0);
+    assertEqual(unit instanceof ValueUnit, true);
+    assertEqual(unit.value, 42);
+    assertEqual(unit.children.length, 0);
 });
 
-Deno.test("Builder.convert - STRING node produces StringUnit", () => {
+test("Builder.convert - STRING node produces StringUnit", () => {
     const node = new Node(NODE_TYPE.STRING, "hello");
     const unit = Builder.convert(node);
-    assertEquals(unit instanceof StringUnit, true);
-    assertEquals(unit.value, "hello");
+    assertEqual(unit instanceof StringUnit, true);
+    assertEqual(unit.value, "hello");
 });
 
-Deno.test("Builder.convert - NULL node produces NullUnit", () => {
+test("Builder.convert - NULL node produces NullUnit", () => {
     const node = new Node(NODE_TYPE.NULL);
     const unit = Builder.convert(node);
-    assertEquals(unit instanceof NullUnit, true);
+    assertEqual(unit instanceof NullUnit, true);
 });
 
-Deno.test("Builder.convert - IDENTIFIER node produces IdentifierUnit", () => {
+test("Builder.convert - IDENTIFIER node produces IdentifierUnit", () => {
     const node = new Node(NODE_TYPE.IDENTIFIER, "stage");
     const unit = Builder.convert(node);
-    assertEquals(unit instanceof IdentifierUnit, true);
-    assertEquals(unit.value, "stage");
+    assertEqual(unit instanceof IdentifierUnit, true);
+    assertEqual(unit.value, "stage");
 });
 
-Deno.test("Builder.convert - IDENTIFIER with alias child", () => {
+test("Builder.convert - IDENTIFIER with alias child", () => {
     const alias = new Node(NODE_TYPE.VALUE, 5);
     const node = new Node(NODE_TYPE.IDENTIFIER, "x");
     node.addChild(alias);
 
     const unit = Builder.convert(node);
-    assertEquals(unit instanceof IdentifierUnit, true);
-    assertEquals(unit.children.length, 1);
-    assertEquals(unit.children[0] instanceof ValueUnit, true);
-    assertEquals(unit.children[0].parent, unit);
+    assertEqual(unit instanceof IdentifierUnit, true);
+    assertEqual(unit.children.length, 1);
+    assertEqual(unit.children[0] instanceof ValueUnit, true);
+    assertEqual(unit.children[0].parent, unit);
 });
 
 // =============================================================================
@@ -115,28 +115,28 @@ const binaryTests: Array<{
 ];
 
 for (const { type, unitClass, name } of binaryTests) {
-    Deno.test(`Builder.convert - ${type} produces ${name} with 2 children`, () => {
+    test(`Builder.convert - ${type} produces ${name} with 2 children`, () => {
         const left = new Node(NODE_TYPE.VALUE, 1);
         const right = new Node(NODE_TYPE.VALUE, 2);
         const node = new Node(type);
         node.addChild(left, right);
 
         const unit = Builder.convert(node);
-        assertEquals(unit instanceof unitClass, true);
-        assertEquals(unit.children.length, 2);
-        assertEquals(unit.children[0] instanceof ValueUnit, true);
-        assertEquals(unit.children[1] instanceof ValueUnit, true);
+        assertEqual(unit instanceof unitClass, true);
+        assertEqual(unit.children.length, 2);
+        assertEqual(unit.children[0] instanceof ValueUnit, true);
+        assertEqual(unit.children[1] instanceof ValueUnit, true);
     });
 
-    Deno.test(`Builder.convert - ${type} sets parent references`, () => {
+    test(`Builder.convert - ${type} sets parent references`, () => {
         const left = new Node(NODE_TYPE.VALUE, 1);
         const right = new Node(NODE_TYPE.VALUE, 2);
         const node = new Node(type);
         node.addChild(left, right);
 
         const unit = Builder.convert(node);
-        assertEquals(unit.children[0].parent, unit);
-        assertEquals(unit.children[1].parent, unit);
+        assertEqual(unit.children[0].parent, unit);
+        assertEqual(unit.children[1].parent, unit);
     });
 }
 
@@ -165,13 +165,13 @@ const binaryErrorTypes = [
 ];
 
 for (const type of binaryErrorTypes) {
-    Deno.test(`Builder.convert - ${type} throws on 1 child`, () => {
+    test(`Builder.convert - ${type} throws on 1 child`, () => {
         const node = new Node(type);
         node.addChild(new Node(NODE_TYPE.VALUE, 1));
         assertThrows(() => Builder.convert(node), Error, "Unexpected number of children");
     });
 
-    Deno.test(`Builder.convert - ${type} throws on 3 children`, () => {
+    test(`Builder.convert - ${type} throws on 3 children`, () => {
         const node = new Node(type);
         node.addChild(
             new Node(NODE_TYPE.VALUE, 1),
@@ -186,37 +186,37 @@ for (const type of binaryErrorTypes) {
 // Unary: NOT
 // =============================================================================
 
-Deno.test("Builder.convert - NOT produces NotUnit", () => {
+test("Builder.convert - NOT produces NotUnit", () => {
     const child = new Node(NODE_TYPE.VALUE, 1);
     const node = new Node(NODE_TYPE.NOT);
     node.addChild(child);
 
     const unit = Builder.convert(node);
-    assertEquals(unit instanceof NotUnit, true);
-    assertEquals(unit.children.length, 1);
+    assertEqual(unit instanceof NotUnit, true);
+    assertEqual(unit.children.length, 1);
 });
 
 // =============================================================================
 // READ_GLOBAL
 // =============================================================================
 
-Deno.test("Builder.convert - READ_GLOBAL with 1 child", () => {
+test("Builder.convert - READ_GLOBAL with 1 child", () => {
     const child = new Node(NODE_TYPE.IDENTIFIER, "stage");
     const node = new Node(NODE_TYPE.READ_GLOBAL);
     node.addChild(child);
 
     const unit = Builder.convert(node);
-    assertEquals(unit instanceof ReadGlobalUnit, true);
-    assertEquals(unit.children.length, 1);
-    assertEquals(unit.children[0].parent, unit);
+    assertEqual(unit instanceof ReadGlobalUnit, true);
+    assertEqual(unit.children.length, 1);
+    assertEqual(unit.children[0].parent, unit);
 });
 
-Deno.test("Builder.convert - READ_GLOBAL throws on 0 children", () => {
+test("Builder.convert - READ_GLOBAL throws on 0 children", () => {
     const node = new Node(NODE_TYPE.READ_GLOBAL);
     assertThrows(() => Builder.convert(node), Error, "Unexpected number of children");
 });
 
-Deno.test("Builder.convert - READ_GLOBAL throws on 2 children", () => {
+test("Builder.convert - READ_GLOBAL throws on 2 children", () => {
     const node = new Node(NODE_TYPE.READ_GLOBAL);
     node.addChild(new Node(NODE_TYPE.IDENTIFIER, "a"), new Node(NODE_TYPE.IDENTIFIER, "b"));
     assertThrows(() => Builder.convert(node), Error, "Unexpected number of children");
@@ -226,7 +226,7 @@ Deno.test("Builder.convert - READ_GLOBAL throws on 2 children", () => {
 // TERNARY
 // =============================================================================
 
-Deno.test("Builder.convert - TERNARY produces TernaryUnit with 3 children", () => {
+test("Builder.convert - TERNARY produces TernaryUnit with 3 children", () => {
     const cond = new Node(NODE_TYPE.VALUE, 1);
     const then = new Node(NODE_TYPE.VALUE, 2);
     const els = new Node(NODE_TYPE.VALUE, 3);
@@ -234,14 +234,14 @@ Deno.test("Builder.convert - TERNARY produces TernaryUnit with 3 children", () =
     node.addChild(cond, then, els);
 
     const unit = Builder.convert(node);
-    assertEquals(unit instanceof TernaryUnit, true);
-    assertEquals(unit.children.length, 3);
-    assertEquals(unit.children[0].parent, unit);
-    assertEquals(unit.children[1].parent, unit);
-    assertEquals(unit.children[2].parent, unit);
+    assertEqual(unit instanceof TernaryUnit, true);
+    assertEqual(unit.children.length, 3);
+    assertEqual(unit.children[0].parent, unit);
+    assertEqual(unit.children[1].parent, unit);
+    assertEqual(unit.children[2].parent, unit);
 });
 
-Deno.test("Builder.convert - TERNARY throws on 2 children", () => {
+test("Builder.convert - TERNARY throws on 2 children", () => {
     const node = new Node(NODE_TYPE.TERNARY);
     node.addChild(new Node(NODE_TYPE.VALUE, 1), new Node(NODE_TYPE.VALUE, 2));
     assertThrows(() => Builder.convert(node), Error, "Unexpected number of children");
@@ -251,18 +251,18 @@ Deno.test("Builder.convert - TERNARY throws on 2 children", () => {
 // REMEMBERED
 // =============================================================================
 
-Deno.test("Builder.convert - REMEMBERED produces RememberedUnit", () => {
+test("Builder.convert - REMEMBERED produces RememberedUnit", () => {
     const inner = new Node(NODE_TYPE.VALUE, 5);
     const node = new Node(NODE_TYPE.REMEMBERED);
     node.addChild(inner);
 
     const unit = Builder.convert(node);
-    assertEquals(unit instanceof RememberedUnit, true);
-    assertEquals(unit.children.length, 1);
-    assertEquals(unit.children[0].parent, unit);
+    assertEqual(unit instanceof RememberedUnit, true);
+    assertEqual(unit.children.length, 1);
+    assertEqual(unit.children[0].parent, unit);
 });
 
-Deno.test("Builder.convert - REMEMBERED throws on 0 children", () => {
+test("Builder.convert - REMEMBERED throws on 0 children", () => {
     const node = new Node(NODE_TYPE.REMEMBERED);
     assertThrows(() => Builder.convert(node), Error, "Unexpected number of children");
 });
@@ -271,18 +271,18 @@ Deno.test("Builder.convert - REMEMBERED throws on 0 children", () => {
 // Container nodes: ROOT, ARRAY, EXECUTABLE_BLOCK
 // =============================================================================
 
-Deno.test("Builder.convert - ROOT wraps child", () => {
+test("Builder.convert - ROOT wraps child", () => {
     const child = new Node(NODE_TYPE.VALUE, 1);
     const node = new Node(NODE_TYPE.ROOT);
     node.addChild(child);
 
     const unit = Builder.convert(node);
-    assertEquals(unit instanceof RootUnit, true);
-    assertEquals(unit.children.length, 1);
-    assertEquals(unit.children[0].parent, unit);
+    assertEqual(unit instanceof RootUnit, true);
+    assertEqual(unit.children.length, 1);
+    assertEqual(unit.children[0].parent, unit);
 });
 
-Deno.test("Builder.convert - ARRAY with multiple children", () => {
+test("Builder.convert - ARRAY with multiple children", () => {
     const node = new Node(NODE_TYPE.ARRAY);
     node.addChild(
         new Node(NODE_TYPE.VALUE, 1),
@@ -291,42 +291,42 @@ Deno.test("Builder.convert - ARRAY with multiple children", () => {
     );
 
     const unit = Builder.convert(node);
-    assertEquals(unit instanceof ArrayUnit, true);
-    assertEquals(unit.children.length, 3);
+    assertEqual(unit instanceof ArrayUnit, true);
+    assertEqual(unit.children.length, 3);
     for (const child of unit.children) {
-        assertEquals(child.parent, unit);
+        assertEqual(child.parent, unit);
     }
 });
 
-Deno.test("Builder.convert - EXECUTABLE_BLOCK with children", () => {
+test("Builder.convert - EXECUTABLE_BLOCK with children", () => {
     const node = new Node(NODE_TYPE.EXECUTABLE_BLOCK);
     node.addChild(new Node(NODE_TYPE.VALUE, 1), new Node(NODE_TYPE.VALUE, 2));
 
     const unit = Builder.convert(node);
-    assertEquals(unit instanceof ExecutableBlockUnit, true);
-    assertEquals(unit.children.length, 2);
+    assertEqual(unit instanceof ExecutableBlockUnit, true);
+    assertEqual(unit.children.length, 2);
 });
 
 // =============================================================================
 // VOID
 // =============================================================================
 
-Deno.test("Builder.convert - VOID wraps child", () => {
+test("Builder.convert - VOID wraps child", () => {
     const child = new Node(NODE_TYPE.VALUE, 1);
     const node = new Node(NODE_TYPE.VOID);
     node.addChild(child);
 
     const unit = Builder.convert(node);
-    assertEquals(unit instanceof VoidUnit, true);
-    assertEquals(unit.children.length, 1);
-    assertEquals(unit.children[0].parent, unit);
+    assertEqual(unit instanceof VoidUnit, true);
+    assertEqual(unit.children.length, 1);
+    assertEqual(unit.children[0].parent, unit);
 });
 
 // =============================================================================
 // IDENTIFIER error case
 // =============================================================================
 
-Deno.test("Builder.convert - IDENTIFIER throws on 2+ children", () => {
+test("Builder.convert - IDENTIFIER throws on 2+ children", () => {
     const node = new Node(NODE_TYPE.IDENTIFIER, "x");
     node.addChild(new Node(NODE_TYPE.VALUE, 1), new Node(NODE_TYPE.VALUE, 2));
     assertThrows(() => Builder.convert(node), Error, "Unexpected number of children");
@@ -336,7 +336,7 @@ Deno.test("Builder.convert - IDENTIFIER throws on 2+ children", () => {
 // Invalid node type
 // =============================================================================
 
-Deno.test("Builder.convert - throws on unknown node type", () => {
+test("Builder.convert - throws on unknown node type", () => {
     const node = new Node("INVALID_TYPE" as NODE_TYPE);
     assertThrows(() => Builder.convert(node), Error, "Invalid node type");
 });
@@ -345,30 +345,30 @@ Deno.test("Builder.convert - throws on unknown node type", () => {
 // Builder.build() and output()
 // =============================================================================
 
-Deno.test("Builder.build() populates result and log", () => {
+test("Builder.build() populates result and log", () => {
     const root = new Node(NODE_TYPE.ROOT);
     root.addChild(new Node(NODE_TYPE.VALUE, 42));
 
     const builder = new Builder(root);
     builder.build();
 
-    assertEquals(builder.result instanceof RootUnit, true);
-    assertEquals(builder.log.length > 0, true);
-    assertEquals(builder.log[0], "RootUnit");
-    assertEquals(builder.log[1], "  ValueUnit");
+    assertEqual(builder.result instanceof RootUnit, true);
+    assertEqual(builder.log.length > 0, true);
+    assertEqual(builder.log[0], "RootUnit");
+    assertEqual(builder.log[1], "  ValueUnit");
 });
 
-Deno.test("Builder.output() returns result after build", () => {
+test("Builder.output() returns result after build", () => {
     const root = new Node(NODE_TYPE.ROOT);
     root.addChild(new Node(NODE_TYPE.VALUE, 1));
 
     const builder = new Builder(root);
     builder.build();
     const result = builder.output();
-    assertEquals(result instanceof RootUnit, true);
+    assertEqual(result instanceof RootUnit, true);
 });
 
-Deno.test("Builder.output() throws before build", () => {
+test("Builder.output() throws before build", () => {
     const root = new Node(NODE_TYPE.ROOT);
     root.addChild(new Node(NODE_TYPE.VALUE, 1));
 
@@ -380,7 +380,7 @@ Deno.test("Builder.output() throws before build", () => {
 // Recursive conversion - nested expression tree
 // =============================================================================
 
-Deno.test("Builder.convert - nested expression: (1 + 2) * 3", () => {
+test("Builder.convert - nested expression: (1 + 2) * 3", () => {
     // Build: MULTIPLICATION(ADDITION(VALUE(1), VALUE(2)), VALUE(3))
     const add = new Node(NODE_TYPE.ADDITION);
     add.addChild(new Node(NODE_TYPE.VALUE, 1), new Node(NODE_TYPE.VALUE, 2));
@@ -389,13 +389,13 @@ Deno.test("Builder.convert - nested expression: (1 + 2) * 3", () => {
     mul.addChild(add, new Node(NODE_TYPE.VALUE, 3));
 
     const unit = Builder.convert(mul);
-    assertEquals(unit instanceof MultiplicationUnit, true);
-    assertEquals(unit.children[0] instanceof AdditionUnit, true);
-    assertEquals(unit.children[1] instanceof ValueUnit, true);
+    assertEqual(unit instanceof MultiplicationUnit, true);
+    assertEqual(unit.children[0] instanceof AdditionUnit, true);
+    assertEqual(unit.children[1] instanceof ValueUnit, true);
 
     const addUnit = unit.children[0];
-    assertEquals(addUnit.children[0] instanceof ValueUnit, true);
-    assertEquals((addUnit.children[0] as ValueUnit).value, 1);
-    assertEquals(addUnit.children[1] instanceof ValueUnit, true);
-    assertEquals((addUnit.children[1] as ValueUnit).value, 2);
+    assertEqual(addUnit.children[0] instanceof ValueUnit, true);
+    assertEqual((addUnit.children[0] as ValueUnit).value, 1);
+    assertEqual(addUnit.children[1] instanceof ValueUnit, true);
+    assertEqual((addUnit.children[1] as ValueUnit).value, 2);
 });

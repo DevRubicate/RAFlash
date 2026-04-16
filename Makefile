@@ -7,7 +7,7 @@ DENO=deno
 MTASC_HEADER=800:575:60
 
 # Dummy target to force rebuild
-.PHONY: all check clean run assets test test-avm1 test-engine test-display test-avm2 avm1-build avm1-bootstrap-build avm1-wrapper-build avm2-build compile dist release stage FORCE
+.PHONY: all check clean run assets test test-avm1 test-engine test-display test-avm2 test-integration avm1-build avm1-bootstrap-build avm1-wrapper-build avm2-build compile dist release stage FORCE
 
 # Default target - full build including standalone executable
 all: compile
@@ -118,34 +118,43 @@ release: dist
 
 # === Testing ===
 
-# Run all tests (fail fast)
-test: test-avm1 test-engine test-display test-avm2
+DENO_TEST_PERMISSIONS=--allow-net --allow-run --allow-read --allow-write --allow-env
 
-# AS2/AVM1 tests (Flash Player + XMLSocket)
+# SWF compilation targets (prerequisites for test runner)
 TEST_AVM1_SWF=.tests/AVM1Tests.swf
 TEST_AVM1_MAIN=AVM1Firmware/tests/TestRunner.as
-
-test-avm1: $(TEST_AVM1_SWF)
-	@$(DENO) run --allow-net --allow-run --allow-read AVM1Firmware/tests/test-server.ts $(TEST_AVM1_SWF)
+TEST_AVM2_SWF=.tests/AVM2Tests.swf
+TEST_INTEGRATION_GAME_SWF=.tests/IntegrationGame.swf
+TEST_INTEGRATION_GAME_MAIN=AVM1Firmware/tests/IntegrationGame.as
 
 $(TEST_AVM1_SWF): FORCE
 	@mkdir -p $(dir $@)
 	@$(MTASC) -cp AVM1Firmware -cp AVM1Firmware/tests -swf $@ -main $(TEST_AVM1_MAIN) -header $(MTASC_HEADER)
 
-# RAEngine tests (Deno)
-test-engine:
-	@$(DENO) test --allow-net --allow-read --allow-write --allow-env RAEngine/tests/
-
-# RADisplay tests (vitest)
-test-display:
-	@cd RADisplay && npm test --silent
-
-# AVM2Firmware tests (Haxe → Flash Player)
-TEST_AVM2_SWF=.tests/AVM2Tests.swf
-
-test-avm2: $(TEST_AVM2_SWF)
-	@$(DENO) run --allow-net --allow-run --allow-read AVM2Firmware/tests/test-server.ts $(TEST_AVM2_SWF)
-
 $(TEST_AVM2_SWF): FORCE
 	@mkdir -p $(dir $@)
 	@$(HAXE) -cp AVM2Firmware -cp AVM2Firmware/tests -main TestRunner -swf $@ -swf-version 16 -D swf-header=800:575:60:0
+
+$(TEST_INTEGRATION_GAME_SWF): FORCE
+	@mkdir -p $(dir $@)
+	@$(MTASC) -cp AVM1Firmware/tests -swf $@ -main $(TEST_INTEGRATION_GAME_MAIN) -header $(MTASC_HEADER)
+
+# Run all tests through unified runner
+test: $(TEST_AVM1_SWF) $(TEST_AVM2_SWF) avm1-build $(TEST_INTEGRATION_GAME_SWF)
+	@$(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts
+
+# Individual suite targets
+test-avm1: $(TEST_AVM1_SWF)
+	@$(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts avm1
+
+test-avm2: $(TEST_AVM2_SWF)
+	@$(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts avm2
+
+test-engine:
+	@$(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts engine
+
+test-display:
+	@$(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts display
+
+test-integration: avm1-build $(TEST_INTEGRATION_GAME_SWF)
+	@$(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts integration

@@ -6,7 +6,7 @@
  *   - Profile name sanitization
  */
 
-import { assertEquals } from "https://deno.land/std/assert/mod.ts";
+import { test, assertEqual } from "../../tests/framework.ts";
 import { UserProfile } from "../src/UserProfile.ts";
 
 // =============================================================================
@@ -21,48 +21,48 @@ function sanitize(name: string): string {
     return name.replace(/[/\\:*?"<>|]/g, "").trim();
 }
 
-Deno.test("sanitize - normal name unchanged", () => {
-    assertEquals(sanitize("Player1"), "Player1");
+test("sanitize - normal name unchanged", () => {
+    assertEqual(sanitize("Player1"), "Player1");
 });
 
-Deno.test("sanitize - strips forward slashes", () => {
-    assertEquals(sanitize("../../../etc/passwd"), "......etcpasswd");
+test("sanitize - strips forward slashes", () => {
+    assertEqual(sanitize("../../../etc/passwd"), "......etcpasswd");
 });
 
-Deno.test("sanitize - strips backslashes", () => {
-    assertEquals(sanitize("..\\..\\..\\Windows\\System32"), "......WindowsSystem32");
+test("sanitize - strips backslashes", () => {
+    assertEqual(sanitize("..\\..\\..\\Windows\\System32"), "......WindowsSystem32");
 });
 
-Deno.test("sanitize - strips colons", () => {
-    assertEquals(sanitize("C:evil"), "Cevil");
+test("sanitize - strips colons", () => {
+    assertEqual(sanitize("C:evil"), "Cevil");
 });
 
-Deno.test("sanitize - strips Windows special chars", () => {
-    assertEquals(sanitize('name*with?"bad<chars>'), "namewithbadchars");
+test("sanitize - strips Windows special chars", () => {
+    assertEqual(sanitize('name*with?"bad<chars>'), "namewithbadchars");
 });
 
-Deno.test("sanitize - strips pipe", () => {
-    assertEquals(sanitize("name|pipe"), "namepipe");
+test("sanitize - strips pipe", () => {
+    assertEqual(sanitize("name|pipe"), "namepipe");
 });
 
-Deno.test("sanitize - trims whitespace", () => {
-    assertEquals(sanitize("  name  "), "name");
+test("sanitize - trims whitespace", () => {
+    assertEqual(sanitize("  name  "), "name");
 });
 
-Deno.test("sanitize - empty after stripping returns empty", () => {
-    assertEquals(sanitize("/\\:*?\"<>|"), "");
+test("sanitize - empty after stripping returns empty", () => {
+    assertEqual(sanitize("/\\:*?\"<>|"), "");
 });
 
-Deno.test("sanitize - preserves unicode characters", () => {
-    assertEquals(sanitize("プレイヤー"), "プレイヤー");
+test("sanitize - preserves unicode characters", () => {
+    assertEqual(sanitize("プレイヤー"), "プレイヤー");
 });
 
-Deno.test("sanitize - preserves spaces in middle", () => {
-    assertEquals(sanitize("Player Name"), "Player Name");
+test("sanitize - preserves spaces in middle", () => {
+    assertEqual(sanitize("Player Name"), "Player Name");
 });
 
-Deno.test("sanitize - path traversal with spaces", () => {
-    assertEquals(sanitize("  ../admin  "), "..admin");
+test("sanitize - path traversal with spaces", () => {
+    assertEqual(sanitize("  ../admin  "), "..admin");
 });
 
 // =============================================================================
@@ -83,36 +83,36 @@ function cleanup() {
     UserProfile.reset();
 }
 
-Deno.test("UserProfile.recordUnlock - zero ID is valid", () => {
+test("UserProfile.recordUnlock - zero ID is valid", () => {
     setupProfile();
     UserProfile.recordUnlock("game1", 0);
-    assertEquals(UserProfile.data!.games["game1"].unlocked, [0]);
+    assertEqual(UserProfile.data!.games["game1"].unlocked, [0]);
     cleanup();
 });
 
-Deno.test("UserProfile.recordUnlock - large negative ID", () => {
+test("UserProfile.recordUnlock - large negative ID", () => {
     setupProfile();
     UserProfile.recordUnlock("game1", -999);
-    assertEquals(UserProfile.data!.games["game1"].unlocked, [-999]);
+    assertEqual(UserProfile.data!.games["game1"].unlocked, [-999]);
     cleanup();
 });
 
-Deno.test("UserProfile.recordUnlock - many unlocks for same game", () => {
+test("UserProfile.recordUnlock - many unlocks for same game", () => {
     setupProfile();
     for (let i = 0; i < 100; i++) {
         UserProfile.recordUnlock("game1", i);
     }
-    assertEquals(UserProfile.data!.games["game1"].unlocked.length, 100);
-    assertEquals(UserProfile.data!.games["game1"].unlocked[0], 0);
-    assertEquals(UserProfile.data!.games["game1"].unlocked[99], 99);
+    assertEqual(UserProfile.data!.games["game1"].unlocked.length, 100);
+    assertEqual(UserProfile.data!.games["game1"].unlocked[0], 0);
+    assertEqual(UserProfile.data!.games["game1"].unlocked[99], 99);
     cleanup();
 });
 
-Deno.test("UserProfile.recordUnlock - duplicate across multiple calls doesn't add", () => {
+test("UserProfile.recordUnlock - duplicate across multiple calls doesn't add", () => {
     setupProfile();
     UserProfile.recordUnlock("game1", 5);
     UserProfile.recordUnlock("game1", 5);
     UserProfile.recordUnlock("game1", 5);
-    assertEquals(UserProfile.data!.games["game1"].unlocked, [5]);
+    assertEqual(UserProfile.data!.games["game1"].unlocked, [5]);
     cleanup();
 });

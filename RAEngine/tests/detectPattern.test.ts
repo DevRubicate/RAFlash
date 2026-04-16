@@ -8,7 +8,7 @@
  * as a test helper and validated against known bytecodes from the compiler.
  */
 
-import { assertEquals } from "https://deno.land/std/assert/mod.ts";
+import { test, assertEqual } from "../../tests/framework.ts";
 import { Lexer } from "../src/formula/Lexer.ts";
 import { Parser } from "../src/formula/Parser.ts";
 import { Builder } from "../src/formula/Builder.ts";
@@ -72,96 +72,96 @@ function detectPattern(bytecode: unknown[]): unknown[] | null {
 // Pattern 0: Literal number
 // =============================================================================
 
-Deno.test("detectPattern - literal number 42", () => {
+test("detectPattern - literal number 42", () => {
     const bytecode = compile("42");
-    assertEquals(detectPattern(bytecode), [0, 42]);
+    assertEqual(detectPattern(bytecode), [0, 42]);
 });
 
-Deno.test("detectPattern - literal number 0", () => {
+test("detectPattern - literal number 0", () => {
     const bytecode = compile("0");
-    assertEquals(detectPattern(bytecode), [0, 0]);
+    assertEqual(detectPattern(bytecode), [0, 0]);
 });
 
 // =============================================================================
 // Pattern 1: Literal string
 // =============================================================================
 
-Deno.test("detectPattern - literal string", () => {
+test("detectPattern - literal string", () => {
     const bytecode = compile('"hello"');
-    assertEquals(detectPattern(bytecode), [1, "hello"]);
+    assertEqual(detectPattern(bytecode), [1, "hello"]);
 });
 
-Deno.test("detectPattern - empty string", () => {
+test("detectPattern - empty string", () => {
     const bytecode = compile('""');
-    assertEquals(detectPattern(bytecode), [1, ""]);
+    assertEqual(detectPattern(bytecode), [1, ""]);
 });
 
 // =============================================================================
 // Pattern 2: Literal null
 // =============================================================================
 
-Deno.test("detectPattern - literal null", () => {
+test("detectPattern - literal null", () => {
     const bytecode = compile("null");
-    assertEquals(detectPattern(bytecode), [2]);
+    assertEqual(detectPattern(bytecode), [2]);
 });
 
 // =============================================================================
 // Pattern 3: 1-deep property (stage.x)
 // =============================================================================
 
-Deno.test("detectPattern - 1-deep property stage.x", () => {
+test("detectPattern - 1-deep property stage.x", () => {
     const bytecode = compile("stage.x");
-    assertEquals(detectPattern(bytecode), [3, "x"]);
+    assertEqual(detectPattern(bytecode), [3, "x"]);
 });
 
-Deno.test("detectPattern - 1-deep property stage.player", () => {
+test("detectPattern - 1-deep property stage.player", () => {
     const bytecode = compile("stage.player");
-    assertEquals(detectPattern(bytecode), [3, "player"]);
+    assertEqual(detectPattern(bytecode), [3, "player"]);
 });
 
-Deno.test("detectPattern - 1-deep implicit this (.health)", () => {
+test("detectPattern - 1-deep implicit this (.health)", () => {
     const bytecode = compile(".health");
-    assertEquals(detectPattern(bytecode), [3, "health"]);
+    assertEqual(detectPattern(bytecode), [3, "health"]);
 });
 
 // =============================================================================
 // Pattern 4: 2-deep property (stage.player.health)
 // =============================================================================
 
-Deno.test("detectPattern - 2-deep property stage.player.health", () => {
+test("detectPattern - 2-deep property stage.player.health", () => {
     const bytecode = compile("stage.player.health");
-    assertEquals(detectPattern(bytecode), [4, "player", "health"]);
+    assertEqual(detectPattern(bytecode), [4, "player", "health"]);
 });
 
 // =============================================================================
 // Pattern 5: 3-deep property (stage.a.b.c)
 // =============================================================================
 
-Deno.test("detectPattern - 3-deep property stage.a.b.c", () => {
+test("detectPattern - 3-deep property stage.a.b.c", () => {
     const bytecode = compile("stage.a.b.c");
-    assertEquals(detectPattern(bytecode), [5, "a", "b", "c"]);
+    assertEqual(detectPattern(bytecode), [5, "a", "b", "c"]);
 });
 
 // =============================================================================
 // No pattern match (returns null)
 // =============================================================================
 
-Deno.test("detectPattern - arithmetic returns null", () => {
+test("detectPattern - arithmetic returns null", () => {
     const bytecode = compile("1 + 2");
-    assertEquals(detectPattern(bytecode), null);
+    assertEqual(detectPattern(bytecode), null);
 });
 
-Deno.test("detectPattern - comparison returns null", () => {
+test("detectPattern - comparison returns null", () => {
     const bytecode = compile("stage.player.health == 0");
-    assertEquals(detectPattern(bytecode), null);
+    assertEqual(detectPattern(bytecode), null);
 });
 
-Deno.test("detectPattern - negation returns null", () => {
+test("detectPattern - negation returns null", () => {
     const bytecode = compile("!stage.player.dead");
-    assertEquals(detectPattern(bytecode), null);
+    assertEqual(detectPattern(bytecode), null);
 });
 
-Deno.test("detectPattern - remembered value returns null", () => {
+test("detectPattern - remembered value returns null", () => {
     const bytecode = compile("{stage.x}");
-    assertEquals(detectPattern(bytecode), null);
+    assertEqual(detectPattern(bytecode), null);
 });

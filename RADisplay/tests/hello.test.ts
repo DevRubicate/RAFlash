@@ -4,16 +4,16 @@
  * Basic tests to verify the test infrastructure works.
  */
 
-import { expect, test } from 'vitest';
+import { test, assertEqual } from '../../tests/framework.ts';
 
 test("hello world - basic assertion", () => {
-    expect(true).toBe(true);
+    assertEqual(true, true);
 });
 
 test("hello world - math works", () => {
-    expect(1 + 1).toBe(2);
+    assertEqual(1 + 1, 2);
 });
 
 test("hello world - strings", () => {
-    expect("hello").toBe("hello");
+    assertEqual("hello", "hello");
 });

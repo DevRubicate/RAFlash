@@ -5,7 +5,7 @@
  * Each test verifies that a DSL expression compiles to the expected bytecode sequence.
  */
 
-import { assertEquals } from "https://deno.land/std/assert/mod.ts";
+import { test, assertEqual } from "../../tests/framework.ts";
 import { Lexer } from "../src/formula/Lexer.ts";
 import { Parser } from "../src/formula/Parser.ts";
 import { Builder } from "../src/formula/Builder.ts";
@@ -23,58 +23,58 @@ function compile(input: string): string[] {
 // Literals
 // =============================================================================
 
-Deno.test("Compile - number literal", () => {
-    assertEquals(compile("42"), ["VERSION_1", "VALUE", "42"]);
+test("Compile - number literal", () => {
+    assertEqual(compile("42"), ["VERSION_1", "VALUE", "42"]);
 });
 
-Deno.test("Compile - string literal", () => {
-    assertEquals(compile('"hello"'), ["VERSION_1", "STRING", "hello"]);
+test("Compile - string literal", () => {
+    assertEqual(compile('"hello"'), ["VERSION_1", "STRING", "hello"]);
 });
 
-Deno.test("Compile - null literal", () => {
-    assertEquals(compile("null"), ["VERSION_1", "NULL"]);
+test("Compile - null literal", () => {
+    assertEqual(compile("null"), ["VERSION_1", "NULL"]);
 });
 
-Deno.test("Compile - identifier becomes READ_GLOBAL", () => {
-    assertEquals(compile("stage"), ["VERSION_1", "IDENTIFIER", "stage", "READ_GLOBAL"]);
+test("Compile - identifier becomes READ_GLOBAL", () => {
+    assertEqual(compile("stage"), ["VERSION_1", "IDENTIFIER", "stage", "READ_GLOBAL"]);
 });
 
 // =============================================================================
 // Arithmetic Operators
 // =============================================================================
 
-Deno.test("Compile - addition", () => {
-    assertEquals(compile("1 + 2"), [
+test("Compile - addition", () => {
+    assertEqual(compile("1 + 2"), [
         "VERSION_1", "VALUE", "1", "VALUE", "2", "ADD",
     ]);
 });
 
-Deno.test("Compile - subtraction", () => {
-    assertEquals(compile("5 - 3"), [
+test("Compile - subtraction", () => {
+    assertEqual(compile("5 - 3"), [
         "VERSION_1", "VALUE", "5", "VALUE", "3", "SUB",
     ]);
 });
 
-Deno.test("Compile - multiplication", () => {
-    assertEquals(compile("2 * 3"), [
+test("Compile - multiplication", () => {
+    assertEqual(compile("2 * 3"), [
         "VERSION_1", "VALUE", "2", "VALUE", "3", "MUL",
     ]);
 });
 
-Deno.test("Compile - division", () => {
-    assertEquals(compile("10 / 2"), [
+test("Compile - division", () => {
+    assertEqual(compile("10 / 2"), [
         "VERSION_1", "VALUE", "10", "VALUE", "2", "DIV",
     ]);
 });
 
-Deno.test("Compile - modulo", () => {
-    assertEquals(compile("10 % 3"), [
+test("Compile - modulo", () => {
+    assertEqual(compile("10 % 3"), [
         "VERSION_1", "VALUE", "10", "VALUE", "3", "MOD",
     ]);
 });
 
-Deno.test("Compile - exponent", () => {
-    assertEquals(compile("2 ** 8"), [
+test("Compile - exponent", () => {
+    assertEqual(compile("2 ** 8"), [
         "VERSION_1", "VALUE", "2", "VALUE", "8", "POW",
     ]);
 });
@@ -83,89 +83,89 @@ Deno.test("Compile - exponent", () => {
 // Operator Precedence
 // =============================================================================
 
-Deno.test("Compile - multiplication before addition (1 + 2 * 3)", () => {
+test("Compile - multiplication before addition (1 + 2 * 3)", () => {
     // Should be: 1 + (2 * 3), not (1 + 2) * 3
-    assertEquals(compile("1 + 2 * 3"), [
+    assertEqual(compile("1 + 2 * 3"), [
         "VERSION_1", "VALUE", "1", "VALUE", "2", "VALUE", "3", "MUL", "ADD",
     ]);
 });
 
-Deno.test("Compile - division before subtraction (10 - 6 / 2)", () => {
-    assertEquals(compile("10 - 6 / 2"), [
+test("Compile - division before subtraction (10 - 6 / 2)", () => {
+    assertEqual(compile("10 - 6 / 2"), [
         "VERSION_1", "VALUE", "10", "VALUE", "6", "VALUE", "2", "DIV", "SUB",
     ]);
 });
 
-Deno.test("Compile - exponent before multiplication (2 * 3 ** 2)", () => {
+test("Compile - exponent before multiplication (2 * 3 ** 2)", () => {
     // Should be: 2 * (3 ** 2)
-    assertEquals(compile("2 * 3 ** 2"), [
+    assertEqual(compile("2 * 3 ** 2"), [
         "VERSION_1", "VALUE", "2", "VALUE", "3", "VALUE", "2", "POW", "MUL",
     ]);
 });
 
-Deno.test("Compile - parentheses override precedence ((1 + 2) * 3)", () => {
-    assertEquals(compile("(1 + 2) * 3"), [
+test("Compile - parentheses override precedence ((1 + 2) * 3)", () => {
+    assertEqual(compile("(1 + 2) * 3"), [
         "VERSION_1", "VALUE", "1", "VALUE", "2", "ADD", "VALUE", "3", "MUL",
     ]);
 });
 
-Deno.test("Compile - left associativity of addition (1 + 2 + 3)", () => {
+test("Compile - left associativity of addition (1 + 2 + 3)", () => {
     // (1 + 2) + 3
-    assertEquals(compile("1 + 2 + 3"), [
+    assertEqual(compile("1 + 2 + 3"), [
         "VERSION_1", "VALUE", "1", "VALUE", "2", "ADD", "VALUE", "3", "ADD",
     ]);
 });
 
-Deno.test("Compile - right associativity of exponent (2 ** 3 ** 2)", () => {
+test("Compile - right associativity of exponent (2 ** 3 ** 2)", () => {
     // 2 ** (3 ** 2), NOT (2 ** 3) ** 2
-    assertEquals(compile("2 ** 3 ** 2"), [
+    assertEqual(compile("2 ** 3 ** 2"), [
         "VERSION_1", "VALUE", "2", "VALUE", "3", "VALUE", "2", "POW", "POW",
     ]);
 });
 
-Deno.test("Compile - boolean operators have lowest precedence", () => {
+test("Compile - boolean operators have lowest precedence", () => {
     // a + 1 > 0 && b == 2  →  ((a + 1) > 0) && (b == 2)
     const result = compile("1 + 1 > 0 && 2 == 2");
     // Check that AND comes last
-    assertEquals(result[result.length - 1], "AND");
+    assertEqual(result[result.length - 1], "AND");
 });
 
 // =============================================================================
 // Comparison Operators
 // =============================================================================
 
-Deno.test("Compile - equal", () => {
-    assertEquals(compile("1 == 2"), [
+test("Compile - equal", () => {
+    assertEqual(compile("1 == 2"), [
         "VERSION_1", "VALUE", "1", "VALUE", "2", "EQUAL",
     ]);
 });
 
-Deno.test("Compile - not equal", () => {
-    assertEquals(compile("1 != 2"), [
+test("Compile - not equal", () => {
+    assertEqual(compile("1 != 2"), [
         "VERSION_1", "VALUE", "1", "VALUE", "2", "NOT_EQUAL",
     ]);
 });
 
-Deno.test("Compile - greater than", () => {
-    assertEquals(compile("5 > 3"), [
+test("Compile - greater than", () => {
+    assertEqual(compile("5 > 3"), [
         "VERSION_1", "VALUE", "5", "VALUE", "3", "GREATER",
     ]);
 });
 
-Deno.test("Compile - greater than or equal", () => {
-    assertEquals(compile("5 >= 3"), [
+test("Compile - greater than or equal", () => {
+    assertEqual(compile("5 >= 3"), [
         "VERSION_1", "VALUE", "5", "VALUE", "3", "GREATER_EQUAL",
     ]);
 });
 
-Deno.test("Compile - less than", () => {
-    assertEquals(compile("3 < 5"), [
+test("Compile - less than", () => {
+    assertEqual(compile("3 < 5"), [
         "VERSION_1", "VALUE", "3", "VALUE", "5", "LESSER",
     ]);
 });
 
-Deno.test("Compile - less than or equal", () => {
-    assertEquals(compile("3 <= 5"), [
+test("Compile - less than or equal", () => {
+    assertEqual(compile("3 <= 5"), [
         "VERSION_1", "VALUE", "3", "VALUE", "5", "LESSER_EQUAL",
     ]);
 });
@@ -174,32 +174,32 @@ Deno.test("Compile - less than or equal", () => {
 // Logical Operators
 // =============================================================================
 
-Deno.test("Compile - AND", () => {
-    assertEquals(compile("1 && 1"), [
+test("Compile - AND", () => {
+    assertEqual(compile("1 && 1"), [
         "VERSION_1", "VALUE", "1", "VALUE", "1", "AND",
     ]);
 });
 
-Deno.test("Compile - OR", () => {
-    assertEquals(compile("0 || 1"), [
+test("Compile - OR", () => {
+    assertEqual(compile("0 || 1"), [
         "VERSION_1", "VALUE", "0", "VALUE", "1", "OR",
     ]);
 });
 
-Deno.test("Compile - XOR", () => {
-    assertEquals(compile("1 ^ 0"), [
+test("Compile - XOR", () => {
+    assertEqual(compile("1 ^ 0"), [
         "VERSION_1", "VALUE", "1", "VALUE", "0", "XOR",
     ]);
 });
 
-Deno.test("Compile - NOT", () => {
-    assertEquals(compile("!1"), [
+test("Compile - NOT", () => {
+    assertEqual(compile("!1"), [
         "VERSION_1", "VALUE", "1", "NOT",
     ]);
 });
 
-Deno.test("Compile - double NOT", () => {
-    assertEquals(compile("!!1"), [
+test("Compile - double NOT", () => {
+    assertEqual(compile("!!1"), [
         "VERSION_1", "VALUE", "1", "NOT", "NOT",
     ]);
 });
@@ -208,10 +208,10 @@ Deno.test("Compile - double NOT", () => {
 // Property Access (OBJECT_ACCESS)
 // =============================================================================
 
-Deno.test("Compile - simple property access (stage.x)", () => {
+test("Compile - simple property access (stage.x)", () => {
     const result = compile("stage.x");
     // stage → READ_GLOBAL, then OBJECT_ACCESS with filter (key == "x")
-    assertEquals(result, [
+    assertEqual(result, [
         "VERSION_1",
         "IDENTIFIER", "stage", "READ_GLOBAL",
         "OBJECT_ACCESS", "6",
@@ -221,112 +221,112 @@ Deno.test("Compile - simple property access (stage.x)", () => {
     ]);
 });
 
-Deno.test("Compile - chained property access (stage.player.health)", () => {
+test("Compile - chained property access (stage.player.health)", () => {
     const result = compile("stage.player.health");
     // Two OBJECT_ACCESS instructions
     const objectAccessCount = result.filter(s => s === "OBJECT_ACCESS").length;
-    assertEquals(objectAccessCount, 2);
+    assertEqual(objectAccessCount, 2);
 });
 
-Deno.test("Compile - implicit this (.health)", () => {
+test("Compile - implicit this (.health)", () => {
     const result = compile(".health");
     // Should start with READ_GLOBAL(this)
-    assertEquals(result[1], "IDENTIFIER");
-    assertEquals(result[2], "this");
-    assertEquals(result[3], "READ_GLOBAL");
-    assertEquals(result[4], "OBJECT_ACCESS");
+    assertEqual(result[1], "IDENTIFIER");
+    assertEqual(result[2], "this");
+    assertEqual(result[3], "READ_GLOBAL");
+    assertEqual(result[4], "OBJECT_ACCESS");
 });
 
 // =============================================================================
 // Array Access (ARRAY_ACCESS)
 // =============================================================================
 
-Deno.test("Compile - array index access (stage.items[0])", () => {
+test("Compile - array index access (stage.items[0])", () => {
     const result = compile("stage.items[0]");
-    assertEquals(result.includes("ARRAY_ACCESS"), true);
+    assertEqual(result.includes("ARRAY_ACCESS"), true);
 });
 
-Deno.test("Compile - array access with expression (a[1 + 2])", () => {
+test("Compile - array access with expression (a[1 + 2])", () => {
     const result = compile("stage.items[1 + 2]");
-    assertEquals(result.includes("ARRAY_ACCESS"), true);
-    assertEquals(result.includes("ADD"), true);
+    assertEqual(result.includes("ARRAY_ACCESS"), true);
+    assertEqual(result.includes("ADD"), true);
 });
 
 // =============================================================================
 // Remembered Values
 // =============================================================================
 
-Deno.test("Compile - remembered value {stage.x}", () => {
+test("Compile - remembered value {stage.x}", () => {
     const result = compile("{stage.x}");
-    assertEquals(result.includes("REMEMBER"), true);
+    assertEqual(result.includes("REMEMBER"), true);
     // REMEMBER has a length prefix and inner bytecode
     const remIdx = result.indexOf("REMEMBER");
     const innerLen = parseInt(result[remIdx + 1], 10);
-    assertEquals(innerLen > 0, true);
+    assertEqual(innerLen > 0, true);
 });
 
 // =============================================================================
 // Ternary Operator
 // =============================================================================
 
-Deno.test("Compile - simple ternary", () => {
+test("Compile - simple ternary", () => {
     const result = compile('1 ? "a" : "b"');
-    assertEquals(result.includes("TERNARY"), true);
+    assertEqual(result.includes("TERNARY"), true);
     const ternaryIdx = result.indexOf("TERNARY");
     // Then-branch length
     const thenLen = parseInt(result[ternaryIdx + 1], 10);
-    assertEquals(thenLen > 0, true);
+    assertEqual(thenLen > 0, true);
     // Else-branch length
     const elseLen = parseInt(result[ternaryIdx + 2 + thenLen], 10);
-    assertEquals(elseLen > 0, true);
+    assertEqual(elseLen > 0, true);
 });
 
-Deno.test("Compile - ternary with comparison condition", () => {
+test("Compile - ternary with comparison condition", () => {
     const result = compile('1 == 0 ? "yes" : "no"');
     const equalIdx = result.indexOf("EQUAL");
     const ternaryIdx = result.indexOf("TERNARY");
-    assertEquals(equalIdx < ternaryIdx, true);
+    assertEqual(equalIdx < ternaryIdx, true);
 });
 
 // =============================================================================
 // Realistic Game Formulas
 // =============================================================================
 
-Deno.test("Compile - health check (stage.player.health == 0)", () => {
+test("Compile - health check (stage.player.health == 0)", () => {
     const result = compile("stage.player.health == 0");
-    assertEquals(result[0], "VERSION_1");
-    assertEquals(result.includes("EQUAL"), true);
-    assertEquals(result.filter(s => s === "OBJECT_ACCESS").length, 2);
+    assertEqual(result[0], "VERSION_1");
+    assertEqual(result.includes("EQUAL"), true);
+    assertEqual(result.filter(s => s === "OBJECT_ACCESS").length, 2);
 });
 
-Deno.test("Compile - coin threshold (stage.level.coins >= 10)", () => {
+test("Compile - coin threshold (stage.level.coins >= 10)", () => {
     const result = compile("stage.level.coins >= 10");
-    assertEquals(result.includes("GREATER_EQUAL"), true);
+    assertEqual(result.includes("GREATER_EQUAL"), true);
 });
 
-Deno.test("Compile - negation (!stage.player.dead)", () => {
+test("Compile - negation (!stage.player.dead)", () => {
     const result = compile("!stage.player.dead");
-    assertEquals(result.includes("NOT"), true);
-    assertEquals(result.filter(s => s === "OBJECT_ACCESS").length, 2);
+    assertEqual(result.includes("NOT"), true);
+    assertEqual(result.filter(s => s === "OBJECT_ACCESS").length, 2);
 });
 
-Deno.test("Compile - arithmetic on game state (stage.player.x + 100)", () => {
+test("Compile - arithmetic on game state (stage.player.x + 100)", () => {
     const result = compile("stage.player.x + 100");
-    assertEquals(result.includes("ADD"), true);
-    assertEquals(result.includes("OBJECT_ACCESS"), true);
+    assertEqual(result.includes("ADD"), true);
+    assertEqual(result.includes("OBJECT_ACCESS"), true);
 });
 
-Deno.test("Compile - null comparison (stage.player.health != null)", () => {
+test("Compile - null comparison (stage.player.health != null)", () => {
     const result = compile("stage.player.health != null");
-    assertEquals(result.includes("NOT_EQUAL"), true);
-    assertEquals(result.includes("NULL"), true);
+    assertEqual(result.includes("NOT_EQUAL"), true);
+    assertEqual(result.includes("NULL"), true);
 });
 
-Deno.test("Compile - compound condition with AND", () => {
+test("Compile - compound condition with AND", () => {
     const result = compile("stage.player.health > 0 && stage.level.coins >= 10");
-    assertEquals(result.includes("AND"), true);
-    assertEquals(result.includes("GREATER"), true);
-    assertEquals(result.includes("GREATER_EQUAL"), true);
+    assertEqual(result.includes("AND"), true);
+    assertEqual(result.includes("GREATER"), true);
+    assertEqual(result.includes("GREATER_EQUAL"), true);
 });
 
 // =============================================================================
@@ -337,35 +337,35 @@ Deno.test("Compile - compound condition with AND", () => {
 // VERSION_1 header
 // =============================================================================
 
-Deno.test("Compile - always starts with VERSION_1", () => {
-    assertEquals(compile("1")[0], "VERSION_1");
-    assertEquals(compile("stage.x")[0], "VERSION_1");
-    assertEquals(compile('"hello"')[0], "VERSION_1");
+test("Compile - always starts with VERSION_1", () => {
+    assertEqual(compile("1")[0], "VERSION_1");
+    assertEqual(compile("stage.x")[0], "VERSION_1");
+    assertEqual(compile('"hello"')[0], "VERSION_1");
 });
 
 // =============================================================================
 // Empty / edge cases
 // =============================================================================
 
-Deno.test("Compile - bare identifier returns READ_GLOBAL(this)", () => {
+test("Compile - bare identifier returns READ_GLOBAL(this)", () => {
     // Empty expressions default to `this`
     const result = compile("this");
-    assertEquals(result, ["VERSION_1", "IDENTIFIER", "this", "READ_GLOBAL"]);
+    assertEqual(result, ["VERSION_1", "IDENTIFIER", "this", "READ_GLOBAL"]);
 });
 
-Deno.test("Compile - hex number in expression", () => {
+test("Compile - hex number in expression", () => {
     const result = compile("0xFF + 1");
-    assertEquals(result, ["VERSION_1", "VALUE", "0xFF", "VALUE", "1", "ADD"]);
+    assertEqual(result, ["VERSION_1", "VALUE", "0xFF", "VALUE", "1", "ADD"]);
 });
 
-Deno.test("Compile - deeply nested parentheses", () => {
+test("Compile - deeply nested parentheses", () => {
     const result = compile("((((1))))");
-    assertEquals(result, ["VERSION_1", "VALUE", "1"]);
+    assertEqual(result, ["VERSION_1", "VALUE", "1"]);
 });
 
-Deno.test("Compile - string comparison", () => {
+test("Compile - string comparison", () => {
     const result = compile('"hello" == "world"');
-    assertEquals(result, [
+    assertEqual(result, [
         "VERSION_1", "STRING", "hello", "STRING", "world", "EQUAL",
     ]);
 });

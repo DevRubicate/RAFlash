@@ -5,7 +5,7 @@
  * branching, defineFunction2, and builder chaining.
  */
 
-import { assertEquals } from "https://deno.land/std/assert/mod.ts";
+import { test, assertEqual } from "../../tests/framework.ts";
 import {
     AVM1Builder,
     aString, aInt, aDouble, aNull, aUndefined, aBool, aRegister,
@@ -26,94 +26,94 @@ function readSI16(buf: Uint8Array, offset: number): number {
 // Push values
 // =============================================================================
 
-Deno.test("AVM1Builder push - string value", () => {
+test("AVM1Builder push - string value", () => {
     const bytes = new AVM1Builder().push(aString("hi")).toBytes();
-    assertEquals(bytes[0], 0x96); // ActionPush opcode
+    assertEqual(bytes[0], 0x96); // ActionPush opcode
     const payloadLen = readUI16(bytes, 1);
-    assertEquals(bytes[3], 0x00); // string type tag
+    assertEqual(bytes[3], 0x00); // string type tag
     // "hi" = 0x68, 0x69, then null terminator
-    assertEquals(bytes[4], 0x68);
-    assertEquals(bytes[5], 0x69);
-    assertEquals(bytes[6], 0x00);
-    assertEquals(payloadLen, 4); // type tag + 2 chars + null
+    assertEqual(bytes[4], 0x68);
+    assertEqual(bytes[5], 0x69);
+    assertEqual(bytes[6], 0x00);
+    assertEqual(payloadLen, 4); // type tag + 2 chars + null
 });
 
-Deno.test("AVM1Builder push - integer value", () => {
+test("AVM1Builder push - integer value", () => {
     const bytes = new AVM1Builder().push(aInt(42)).toBytes();
-    assertEquals(bytes[0], 0x96);
-    assertEquals(bytes[3], 0x07); // integer type tag
+    assertEqual(bytes[0], 0x96);
+    assertEqual(bytes[3], 0x07); // integer type tag
     // 42 as I32 LE
-    assertEquals(bytes[4], 42);
-    assertEquals(bytes[5], 0);
-    assertEquals(bytes[6], 0);
-    assertEquals(bytes[7], 0);
+    assertEqual(bytes[4], 42);
+    assertEqual(bytes[5], 0);
+    assertEqual(bytes[6], 0);
+    assertEqual(bytes[7], 0);
 });
 
-Deno.test("AVM1Builder push - negative integer", () => {
+test("AVM1Builder push - negative integer", () => {
     const bytes = new AVM1Builder().push(aInt(-1)).toBytes();
-    assertEquals(bytes[3], 0x07);
+    assertEqual(bytes[3], 0x07);
     // -1 as I32 LE = 0xFF 0xFF 0xFF 0xFF
-    assertEquals(bytes[4], 0xFF);
-    assertEquals(bytes[5], 0xFF);
-    assertEquals(bytes[6], 0xFF);
-    assertEquals(bytes[7], 0xFF);
+    assertEqual(bytes[4], 0xFF);
+    assertEqual(bytes[5], 0xFF);
+    assertEqual(bytes[6], 0xFF);
+    assertEqual(bytes[7], 0xFF);
 });
 
-Deno.test("AVM1Builder push - double value", () => {
+test("AVM1Builder push - double value", () => {
     const bytes = new AVM1Builder().push(aDouble(0)).toBytes();
-    assertEquals(bytes[3], 0x06); // double type tag
+    assertEqual(bytes[3], 0x06); // double type tag
     // 0.0 as SWF-swapped double: all zeros
     for (let i = 4; i < 12; i++) {
-        assertEquals(bytes[i], 0);
+        assertEqual(bytes[i], 0);
     }
 });
 
-Deno.test("AVM1Builder push - null", () => {
+test("AVM1Builder push - null", () => {
     const bytes = new AVM1Builder().push(aNull()).toBytes();
-    assertEquals(bytes[3], 0x02);
-    assertEquals(readUI16(bytes, 1), 1); // payload is just the type tag
+    assertEqual(bytes[3], 0x02);
+    assertEqual(readUI16(bytes, 1), 1); // payload is just the type tag
 });
 
-Deno.test("AVM1Builder push - undefined", () => {
+test("AVM1Builder push - undefined", () => {
     const bytes = new AVM1Builder().push(aUndefined()).toBytes();
-    assertEquals(bytes[3], 0x03);
-    assertEquals(readUI16(bytes, 1), 1);
+    assertEqual(bytes[3], 0x03);
+    assertEqual(readUI16(bytes, 1), 1);
 });
 
-Deno.test("AVM1Builder push - boolean true", () => {
+test("AVM1Builder push - boolean true", () => {
     const bytes = new AVM1Builder().push(aBool(true)).toBytes();
-    assertEquals(bytes[3], 0x05);
-    assertEquals(bytes[4], 1);
+    assertEqual(bytes[3], 0x05);
+    assertEqual(bytes[4], 1);
 });
 
-Deno.test("AVM1Builder push - boolean false", () => {
+test("AVM1Builder push - boolean false", () => {
     const bytes = new AVM1Builder().push(aBool(false)).toBytes();
-    assertEquals(bytes[3], 0x05);
-    assertEquals(bytes[4], 0);
+    assertEqual(bytes[3], 0x05);
+    assertEqual(bytes[4], 0);
 });
 
-Deno.test("AVM1Builder push - register", () => {
+test("AVM1Builder push - register", () => {
     const bytes = new AVM1Builder().push(aRegister(3)).toBytes();
-    assertEquals(bytes[3], 0x04);
-    assertEquals(bytes[4], 3);
+    assertEqual(bytes[3], 0x04);
+    assertEqual(bytes[4], 3);
 });
 
-Deno.test("AVM1Builder push - multiple values in single push", () => {
+test("AVM1Builder push - multiple values in single push", () => {
     const bytes = new AVM1Builder().push(aNull(), aInt(1)).toBytes();
-    assertEquals(bytes[0], 0x96); // single ActionPush
+    assertEqual(bytes[0], 0x96); // single ActionPush
     const payloadLen = readUI16(bytes, 1);
     // null(1 byte) + int(1+4 bytes) = 6
-    assertEquals(payloadLen, 6);
-    assertEquals(bytes[3], 0x02); // null tag
-    assertEquals(bytes[4], 0x07); // int tag
-    assertEquals(bytes[5], 1);    // value
+    assertEqual(payloadLen, 6);
+    assertEqual(bytes[3], 0x02); // null tag
+    assertEqual(bytes[4], 0x07); // int tag
+    assertEqual(bytes[5], 1);    // value
 });
 
 // =============================================================================
 // Single-byte opcodes
 // =============================================================================
 
-Deno.test("AVM1Builder - single-byte opcodes produce correct bytes", () => {
+test("AVM1Builder - single-byte opcodes produce correct bytes", () => {
     const b = new AVM1Builder();
     b.pop().getVariable().setVariable().getMember().setMember();
     b.callMethod().returnOp().initArray();
@@ -131,9 +131,9 @@ Deno.test("AVM1Builder - single-byte opcodes produce correct bytes", () => {
         0x50, 0x51, 0x55, 0x4A, 0x18,
         0x62,
     ];
-    assertEquals(bytes.length, expected.length);
+    assertEqual(bytes.length, expected.length);
     for (let i = 0; i < expected.length; i++) {
-        assertEquals(bytes[i], expected[i], `Mismatch at byte ${i}`);
+        assertEqual(bytes[i], expected[i], `Mismatch at byte ${i}`);
     }
 });
 
@@ -141,17 +141,17 @@ Deno.test("AVM1Builder - single-byte opcodes produce correct bytes", () => {
 // Chaining
 // =============================================================================
 
-Deno.test("AVM1Builder - methods return this for chaining", () => {
+test("AVM1Builder - methods return this for chaining", () => {
     const b = new AVM1Builder();
     const result = b.push(aInt(1)).pop().add2().end();
-    assertEquals(result, b);
+    assertEqual(result, b);
 });
 
 // =============================================================================
 // Branching
 // =============================================================================
 
-Deno.test("AVM1Builder jumpTo - emits ActionJump with correct offset", () => {
+test("AVM1Builder jumpTo - emits ActionJump with correct offset", () => {
     const b = new AVM1Builder();
     // Position 0: some opcode
     b.pop(); // 1 byte, position now 1
@@ -160,13 +160,13 @@ Deno.test("AVM1Builder jumpTo - emits ActionJump with correct offset", () => {
     b.jumpTo(target); // jump backward to position 1
 
     const bytes = b.toBytes();
-    assertEquals(bytes[2], 0x99); // ActionJump opcode at position 2
-    assertEquals(readUI16(bytes, 3), 2); // data length
+    assertEqual(bytes[2], 0x99); // ActionJump opcode at position 2
+    assertEqual(readUI16(bytes, 3), 2); // data length
     // Offset = target - (instrStart + 5) = 1 - (2 + 5) = -6
-    assertEquals(readSI16(bytes, 5), -6);
+    assertEqual(readSI16(bytes, 5), -6);
 });
 
-Deno.test("AVM1Builder jumpIfTo - emits ActionIf with correct offset", () => {
+test("AVM1Builder jumpIfTo - emits ActionIf with correct offset", () => {
     const b = new AVM1Builder();
     b.pop(); // position 1
     const target = b.position;
@@ -174,11 +174,11 @@ Deno.test("AVM1Builder jumpIfTo - emits ActionIf with correct offset", () => {
     b.jumpIfTo(target);
 
     const bytes = b.toBytes();
-    assertEquals(bytes[2], 0x9D); // ActionIf opcode
-    assertEquals(readSI16(bytes, 5), -6);
+    assertEqual(bytes[2], 0x9D); // ActionIf opcode
+    assertEqual(readSI16(bytes, 5), -6);
 });
 
-Deno.test("AVM1Builder jumpForward + patchJumpHere", () => {
+test("AVM1Builder jumpForward + patchJumpHere", () => {
     const b = new AVM1Builder();
     const patch = b.jumpForward(); // 5 bytes: opcode(1) + len(2) + placeholder(2)
     b.pop(); // 1 byte at position 5
@@ -186,40 +186,40 @@ Deno.test("AVM1Builder jumpForward + patchJumpHere", () => {
     b.patchJumpHere(patch);
 
     const bytes = b.toBytes();
-    assertEquals(bytes[0], 0x99); // ActionJump
+    assertEqual(bytes[0], 0x99); // ActionJump
     // Offset should jump over 2 pops = 2 bytes
     // offset = currentPos(7) - (patchPos(3) + 2) = 7 - 5 = 2
-    assertEquals(readSI16(bytes, 3), 2);
+    assertEqual(readSI16(bytes, 3), 2);
 });
 
-Deno.test("AVM1Builder jumpIfForward + patchJumpHere", () => {
+test("AVM1Builder jumpIfForward + patchJumpHere", () => {
     const b = new AVM1Builder();
     const patch = b.jumpIfForward();
     b.pop();
     b.patchJumpHere(patch);
 
     const bytes = b.toBytes();
-    assertEquals(bytes[0], 0x9D); // ActionIf
+    assertEqual(bytes[0], 0x9D); // ActionIf
     // Jump over 1 pop = 1 byte
-    assertEquals(readSI16(bytes, 3), 1);
+    assertEqual(readSI16(bytes, 3), 1);
 });
 
 // =============================================================================
 // storeRegister
 // =============================================================================
 
-Deno.test("AVM1Builder storeRegister - correct opcode and register number", () => {
+test("AVM1Builder storeRegister - correct opcode and register number", () => {
     const bytes = new AVM1Builder().storeRegister(5).toBytes();
-    assertEquals(bytes[0], 0x87);
-    assertEquals(readUI16(bytes, 1), 1); // data length
-    assertEquals(bytes[3], 5);
+    assertEqual(bytes[0], 0x87);
+    assertEqual(readUI16(bytes, 1), 1); // data length
+    assertEqual(bytes[3], 5);
 });
 
 // =============================================================================
 // defineFunction2
 // =============================================================================
 
-Deno.test("AVM1Builder defineFunction2 - minimal function", () => {
+test("AVM1Builder defineFunction2 - minimal function", () => {
     const body = new AVM1Builder().push(aInt(42)).returnOp().toBytes();
     const b = new AVM1Builder();
     b.defineFunction2({
@@ -228,7 +228,7 @@ Deno.test("AVM1Builder defineFunction2 - minimal function", () => {
     });
 
     const bytes = b.toBytes();
-    assertEquals(bytes[0], 0x8E); // DefineFunction2 opcode
+    assertEqual(bytes[0], 0x8E); // DefineFunction2 opcode
 
     // After opcode: UI16 metadata length
     const metaLen = readUI16(bytes, 1);
@@ -240,30 +240,30 @@ Deno.test("AVM1Builder defineFunction2 - minimal function", () => {
     // - Flags: UI16 (0)
     // - CodeSize: UI16 (body.length)
     const expectedMetaLen = 1 + 2 + 1 + 2 + 2; // = 8
-    assertEquals(metaLen, expectedMetaLen);
+    assertEqual(metaLen, expectedMetaLen);
 
     // Name = empty string (just null terminator)
-    assertEquals(bytes[3], 0x00);
+    assertEqual(bytes[3], 0x00);
 
     // NumParams = 0
-    assertEquals(readUI16(bytes, 4), 0);
+    assertEqual(readUI16(bytes, 4), 0);
 
     // RegisterCount = 4
-    assertEquals(bytes[6], 4);
+    assertEqual(bytes[6], 4);
 
     // Flags = 0
-    assertEquals(readUI16(bytes, 7), 0);
+    assertEqual(readUI16(bytes, 7), 0);
 
     // CodeSize = body.length
-    assertEquals(readUI16(bytes, 9), body.length);
+    assertEqual(readUI16(bytes, 9), body.length);
 
     // Body bytes follow metadata
     for (let i = 0; i < body.length; i++) {
-        assertEquals(bytes[3 + metaLen + i], body[i]);
+        assertEqual(bytes[3 + metaLen + i], body[i]);
     }
 });
 
-Deno.test("AVM1Builder defineFunction2 - named function with params", () => {
+test("AVM1Builder defineFunction2 - named function with params", () => {
     const body = new AVM1Builder().returnOp().toBytes();
     const b = new AVM1Builder();
     b.defineFunction2({
@@ -275,62 +275,62 @@ Deno.test("AVM1Builder defineFunction2 - named function with params", () => {
     });
 
     const bytes = b.toBytes();
-    assertEquals(bytes[0], 0x8E);
+    assertEqual(bytes[0], 0x8E);
 
     // Name: "fn" + null = 3 bytes
-    assertEquals(bytes[3], 0x66); // 'f'
-    assertEquals(bytes[4], 0x6E); // 'n'
-    assertEquals(bytes[5], 0x00); // null
+    assertEqual(bytes[3], 0x66); // 'f'
+    assertEqual(bytes[4], 0x6E); // 'n'
+    assertEqual(bytes[5], 0x00); // null
 
     // NumParams = 1
-    assertEquals(readUI16(bytes, 6), 1);
+    assertEqual(readUI16(bytes, 6), 1);
 
     // RegisterCount = 2
-    assertEquals(bytes[8], 2);
+    assertEqual(bytes[8], 2);
 
     // Flags = 0x04
-    assertEquals(readUI16(bytes, 9), 0x04);
+    assertEqual(readUI16(bytes, 9), 0x04);
 
     // Param: register 1, name "x" + null
-    assertEquals(bytes[11], 1);    // register
-    assertEquals(bytes[12], 0x78); // 'x'
-    assertEquals(bytes[13], 0x00); // null
+    assertEqual(bytes[11], 1);    // register
+    assertEqual(bytes[12], 0x78); // 'x'
+    assertEqual(bytes[13], 0x00); // null
 });
 
 // =============================================================================
 // rawBytes and end
 // =============================================================================
 
-Deno.test("AVM1Builder rawBytes - appends bytes verbatim", () => {
+test("AVM1Builder rawBytes - appends bytes verbatim", () => {
     const raw = new Uint8Array([0xAA, 0xBB, 0xCC]);
     const bytes = new AVM1Builder().rawBytes(raw).toBytes();
-    assertEquals(bytes[0], 0xAA);
-    assertEquals(bytes[1], 0xBB);
-    assertEquals(bytes[2], 0xCC);
+    assertEqual(bytes[0], 0xAA);
+    assertEqual(bytes[1], 0xBB);
+    assertEqual(bytes[2], 0xCC);
 });
 
-Deno.test("AVM1Builder end - emits ActionEndFlag (0x00)", () => {
+test("AVM1Builder end - emits ActionEndFlag (0x00)", () => {
     const bytes = new AVM1Builder().end().toBytes();
-    assertEquals(bytes[0], 0x00);
-    assertEquals(bytes.length, 1);
+    assertEqual(bytes[0], 0x00);
+    assertEqual(bytes.length, 1);
 });
 
 // =============================================================================
 // position and length
 // =============================================================================
 
-Deno.test("AVM1Builder position tracks buffer length", () => {
+test("AVM1Builder position tracks buffer length", () => {
     const b = new AVM1Builder();
-    assertEquals(b.position, 0);
+    assertEqual(b.position, 0);
     b.pop(); // 1 byte
-    assertEquals(b.position, 1);
+    assertEqual(b.position, 1);
     b.pop();
-    assertEquals(b.position, 2);
+    assertEqual(b.position, 2);
 });
 
-Deno.test("AVM1Builder length matches position", () => {
+test("AVM1Builder length matches position", () => {
     const b = new AVM1Builder();
     b.pop().pop().pop();
-    assertEquals(b.length, 3);
-    assertEquals(b.length, b.position);
+    assertEqual(b.length, 3);
+    assertEqual(b.length, b.position);
 });

@@ -222,20 +222,33 @@ async function runTestServer(swfPath: string): Promise<number> {
     const fpPath = `${Deno.cwd()}/vendor/adobe/fp-32.0.0.380.exe`;
     const httpUrl = `http://localhost:${PORT}/AVM1Tests.swf`;
 
+    // Launch Flash Player hidden and capture its PID for reliable cleanup.
+    let flashPid: number | null = null;
     let flashProcess: Deno.ChildProcess;
     if (Deno.build.os === "windows") {
-        // Launch minimized to avoid stealing focus during tests
-        const command = new Deno.Command("cmd", {
-            args: ["/c", "start", "/min", "", fpPath, httpUrl],
+        const command = new Deno.Command("powershell", {
+            args: ["-NoProfile", "-Command",
+                `$p = Start-Process -FilePath '${fpPath}' -ArgumentList '${httpUrl}' -WindowStyle Hidden -PassThru; Write-Output $p.Id`],
             cwd: Deno.cwd(),
+            stdout: "piped",
         });
         flashProcess = command.spawn();
+        const output = await new Response(flashProcess.stdout).text();
+        const parsed = parseInt(output.trim());
+        if (!isNaN(parsed)) flashPid = parsed;
     } else {
         const command = new Deno.Command(fpPath, {
             args: [httpUrl],
             cwd: Deno.cwd(),
         });
         flashProcess = command.spawn();
+    }
+
+    function killFlash(): void {
+        if (Deno.build.os === "windows" && flashPid) {
+            try { new Deno.Command("taskkill", { args: ["/F", "/PID", String(flashPid)] }).outputSync(); } catch { /* ok */ }
+        }
+        try { flashProcess.kill(); } catch { /* ok */ }
     }
 
     try {
@@ -249,16 +262,8 @@ async function runTestServer(swfPath: string): Promise<number> {
         }
     } finally {
         clearTimeout(timeoutId);
-        try {
-            listener.close();
-        } catch {
-            // Already closed
-        }
-        try {
-            flashProcess.kill();
-        } catch {
-            // Process may have already exited
-        }
+        try { listener.close(); } catch { /* ok */ }
+        killFlash();
     }
 
     return exitCode;
