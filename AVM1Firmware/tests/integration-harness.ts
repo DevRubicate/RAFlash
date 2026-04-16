@@ -32,6 +32,24 @@ function makeRequirement(formula: string, cmp: string, value: string) {
     };
 }
 
+function makeRequirementWithFlag(formula: string, cmp: string, value: string, flag: string, maxHits = 0) {
+    const id = nextReqId++;
+    return {
+        id, flag, typeA: "Mem", addressA: formula,
+        compiledA: Formula.compile(formula), cmp, typeB: "Value",
+        addressB: value, compiledB: Formula.compile(value), maxHits, hits: 0,
+    };
+}
+
+function makeDeltaRequirement(formula: string, cmp: string, value: string) {
+    const id = nextReqId++;
+    return {
+        id, flag: "", typeA: "DELTA", addressA: formula,
+        compiledA: Formula.compile(formula), cmp, typeB: "Value",
+        addressB: value, compiledB: Formula.compile(value), maxHits: 0, hits: 0,
+    };
+}
+
 function makeAchievement(id: number, name: string, formula: string, cmp: string, value: string) {
     return {
         id, type: "ACHIEVEMENT", name, description: `Integration test: ${name}`,
@@ -41,9 +59,19 @@ function makeAchievement(id: number, name: string, formula: string, cmp: string,
     };
 }
 
+function makeMultiReqAchievement(id: number, name: string, requirements: ReturnType<typeof makeRequirement>[]) {
+    return {
+        id, type: "ACHIEVEMENT", name, description: `Integration test: ${name}`,
+        points: 10, progressionType: "STANDARD", category: "", badgeImage: "",
+        state: "ACTIVE", published: false, modified: false,
+        groups: [{ id: 1, type: "CORE", requirements }],
+    };
+}
+
 function buildAppData() {
     return {
         assets: [
+            // --- Original achievements (IDs 1-7) ---
             makeAchievement(1, "50 Gold", "stage.gold", ">=", "50"),
             makeAchievement(2, "200 Gold", "stage.gold", ">=", "200"),
             makeAchievement(3, "500 Gold", "stage.gold", ">=", "500"),
@@ -51,6 +79,57 @@ function buildAppData() {
             makeAchievement(5, "Poisoned", "stage.flags.poisoned", "==", "1"),
             makeAchievement(6, "Level 2", "stage.level", ">=", "2"),
             makeAchievement(7, "Player Died", "stage.player.alive", "==", "0"),
+
+            // --- Arithmetic formula achievements (IDs 8-10) ---
+            // score is always gold*2, so score >= 100 triggers at frame 5 (gold=50)
+            makeAchievement(8, "Score 100", "stage.score", ">=", "100"),
+            // gold + level >= 202 triggers at frame 20 (gold=200, level=1)
+            makeAchievement(9, "Gold Plus Level", "stage.gold + stage.level", ">=", "201"),
+            // player.speed >= 15 triggers when level=2 (speed = 10 + (level-1)*5 = 15)
+            makeAchievement(10, "Speed Boost", "stage.player.speed", ">=", "15"),
+
+            // --- Multi-requirement achievements (IDs 11-13) ---
+            // Both conditions must be true: gold >= 250 AND poisoned
+            makeMultiReqAchievement(11, "Poisoned Rich", [
+                makeRequirement("stage.gold", ">=", "250"),
+                makeRequirement("stage.flags.poisoned", "==", "1"),
+            ]),
+            // Three conditions: bat dead AND goblin dead AND gold >= 200
+            makeMultiReqAchievement(12, "Double Kill Rich", [
+                makeRequirement("stage.enemies[1].health", "==", "0"),
+                makeRequirement("stage.enemies[0].health", "==", "0"),
+                makeRequirement("stage.gold", ">=", "200"),
+            ]),
+            // Player alive AND mana >= 60 (mana starts 50, +1/frame, so frame 10+)
+            // AND gold >= 100 (frame 10), triggers at frame 10
+            makeMultiReqAchievement(13, "Mana and Gold", [
+                makeRequirement("stage.player.alive", "==", "1"),
+                makeRequirement("stage.player.mana", ">=", "60"),
+                makeRequirement("stage.gold", ">=", "100"),
+            ]),
+
+            // --- Deep nested property achievements (IDs 14-15) ---
+            makeAchievement(14, "Zone1 Boss Defeated", "stage.world.zone1.boss.defeated", "==", "1"),
+            makeAchievement(15, "Zone2 Boss Defeated", "stage.world.zone2.boss.defeated", "==", "1"),
+
+            // --- Hit count achievements (IDs 16-17) ---
+            // Requires gold >= 50 to be true for 3 frames (hit target = 3)
+            makeMultiReqAchievement(16, "Sustained Gold", [
+                makeRequirementWithFlag("stage.gold", ">=", "50", "", 3),
+            ]),
+            // Reset If: gold >= 300 resets hits. Normal: gold >= 100 needs 5 hits.
+            // Gold reaches 100 at frame 10, reaches 300 at frame 30.
+            // Between frame 10 and 30 there are 20 frames of hits, so 5 hits is reached by frame 14.
+            makeMultiReqAchievement(17, "Gold Before Reset", [
+                makeRequirementWithFlag("stage.gold", ">=", "100", "", 5),
+                makeRequirementWithFlag("stage.gold", ">=", "300", "RESET_IF", 0),
+            ]),
+
+            // --- Computed value achievements (IDs 18-19) ---
+            // aliveEnemies drops to 2 when bat dies (frame 5)
+            makeAchievement(18, "First Kill", "stage.aliveEnemies", "==", "2"),
+            // aliveEnemies drops to 1 when goblin dies (frame 15)
+            makeAchievement(19, "Two Kills", "stage.aliveEnemies", "==", "1"),
         ],
         codeNotes: [],
         gameConfig: {
@@ -376,18 +455,31 @@ async function runTestProtocol(
     pass("Game loads successfully");
 
     // Phase 2: Achievement triggers
-    const allTriggered = await waitFor(() => triggeredAchievements.length >= 7, "All 7 achievements trigger", 10000);
-    if (allTriggered) pass("All 7 achievements triggered");
+    const TOTAL_ACHIEVEMENTS = 19;
+    const allTriggered = await waitFor(
+        () => triggeredAchievements.length >= TOTAL_ACHIEVEMENTS,
+        `All ${TOTAL_ACHIEVEMENTS} achievements trigger`, 15000,
+    );
+    if (allTriggered) pass(`All ${TOTAL_ACHIEVEMENTS} achievements triggered`);
 
-    for (const expected of [
+    // Verify each achievement triggered individually
+    const expectedAchievements = [
         { id: 1, name: "50 Gold" }, { id: 2, name: "200 Gold" }, { id: 3, name: "500 Gold" },
         { id: 4, name: "Bat Slayer" }, { id: 5, name: "Poisoned" }, { id: 6, name: "Level 2" },
-        { id: 7, name: "Player Died" },
-    ]) {
+        { id: 7, name: "Player Died" }, { id: 8, name: "Score 100" },
+        { id: 9, name: "Gold Plus Level" }, { id: 10, name: "Speed Boost" },
+        { id: 11, name: "Poisoned Rich" }, { id: 12, name: "Double Kill Rich" },
+        { id: 13, name: "Mana and Gold" },
+        { id: 14, name: "Zone1 Boss Defeated" }, { id: 15, name: "Zone2 Boss Defeated" },
+        { id: 16, name: "Sustained Gold" }, { id: 17, name: "Gold Before Reset" },
+        { id: 18, name: "First Kill" }, { id: 19, name: "Two Kills" },
+    ];
+    for (const expected of expectedAchievements) {
         assert(`Achievement "${expected.name}" triggered`, triggeredAchievements.includes(expected.id),
             `Achievement id=${expected.id} not found in triggered list: [${triggeredAchievements.join(", ")}]`);
     }
 
+    // Ordering checks
     const gold50Index = triggeredAchievements.indexOf(1);
     const gold200Index = triggeredAchievements.indexOf(2);
     const gold500Index = triggeredAchievements.indexOf(3);
@@ -404,7 +496,46 @@ async function runTestProtocol(
             `Bat Slayer@${batIndex}, Player Died@${diedIndex}`);
     }
 
-    // Phase 3: DSL Evaluation
+    // Score 100 should trigger early (at frame 5, same as 50 Gold) - before 200 Gold
+    const score100Index = triggeredAchievements.indexOf(8);
+    if (score100Index >= 0 && gold200Index >= 0) {
+        assert("Score 100 triggers before 200 Gold", score100Index < gold200Index,
+            `Score100@${score100Index}, 200Gold@${gold200Index}`);
+    }
+
+    // First Kill (bat dies frame 5) before Two Kills (goblin dies frame 15)
+    const firstKillIndex = triggeredAchievements.indexOf(18);
+    const twoKillsIndex = triggeredAchievements.indexOf(19);
+    if (firstKillIndex >= 0 && twoKillsIndex >= 0) {
+        assert("First Kill triggers before Two Kills", firstKillIndex < twoKillsIndex,
+            `FirstKill@${firstKillIndex}, TwoKills@${twoKillsIndex}`);
+    }
+
+    // Zone1 Boss (frame 15) triggers before Zone2 Boss (frame 35)
+    const zone1Index = triggeredAchievements.indexOf(14);
+    const zone2Index = triggeredAchievements.indexOf(15);
+    if (zone1Index >= 0 && zone2Index >= 0) {
+        assert("Zone1 Boss triggers before Zone2 Boss", zone1Index < zone2Index,
+            `Zone1@${zone1Index}, Zone2@${zone2Index}`);
+    }
+
+    // Sustained Gold (hit count 3) should trigger shortly after 50 Gold
+    const sustainedIndex = triggeredAchievements.indexOf(16);
+    if (gold50Index >= 0 && sustainedIndex >= 0) {
+        assert("Sustained Gold triggers after 50 Gold", sustainedIndex > gold50Index,
+            `SustainedGold@${sustainedIndex}, 50Gold@${gold50Index}`);
+    }
+
+    // Gold Before Reset should trigger before gold reaches 300 (frame 30)
+    const goldBeforeResetIndex = triggeredAchievements.indexOf(17);
+    const gold200Idx = triggeredAchievements.indexOf(2);
+    if (goldBeforeResetIndex >= 0 && gold200Idx >= 0) {
+        assert("Gold Before Reset triggers before 200 Gold or near it",
+            goldBeforeResetIndex <= gold200Idx + 2,
+            `GoldBeforeReset@${goldBeforeResetIndex}, 200Gold@${gold200Idx}`);
+    }
+
+    // Phase 3: DSL Evaluation - Basic property reads
     const goldResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.gold") });
     if (goldResult?.success) {
         const value = extractValue(goldResult.result);
@@ -442,6 +573,180 @@ async function runTestProtocol(
         assert("evaluate stage.frameNum returns positive number", typeof value === "number" && value > 0, `Expected positive number, got ${JSON.stringify(value)}`);
     } else fail("evaluate stage.frameNum", `Request failed: ${JSON.stringify(frameResult)}`);
 
+    // Phase 3b: DSL Evaluation - Arithmetic operations
+    const scoreResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.score") });
+    const goldResult2 = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.gold") });
+    if (scoreResult?.success && goldResult2?.success) {
+        const scoreVal = extractValue(scoreResult.result) as number;
+        const goldVal = extractValue(goldResult2.result) as number;
+        assert("score == gold * 2 (computed property)", scoreVal === goldVal * 2,
+            `Expected score(${scoreVal}) == gold(${goldVal}) * 2`);
+    } else fail("evaluate score vs gold*2", "Request failed");
+
+    const arithmeticResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.gold + stage.level") });
+    if (arithmeticResult?.success) {
+        const value = extractValue(arithmeticResult.result);
+        assert("evaluate stage.gold + stage.level returns number", typeof value === "number" && value > 500,
+            `Expected number > 500, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage.gold + stage.level", `Request failed: ${JSON.stringify(arithmeticResult)}`);
+
+    const subResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.gold - 100") });
+    if (subResult?.success) {
+        const value = extractValue(subResult.result);
+        const goldNow = extractValue(goldResult2.result) as number;
+        assert("evaluate stage.gold - 100 returns gold minus 100", typeof value === "number",
+            `Expected number, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage.gold - 100", `Request failed: ${JSON.stringify(subResult)}`);
+
+    const mulResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.multiplier * stage.level") });
+    if (mulResult?.success) {
+        const value = extractValue(mulResult.result);
+        assert("evaluate stage.multiplier * stage.level returns number >= 5",
+            typeof value === "number" && value >= 5,
+            `Expected number >= 5, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage.multiplier * stage.level", `Request failed: ${JSON.stringify(mulResult)}`);
+
+    // Phase 3c: DSL Evaluation - Comparison operators
+    const cmpGtResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.gold > 100") });
+    if (cmpGtResult?.success) {
+        const value = extractValue(cmpGtResult.result);
+        assert("evaluate stage.gold > 100 returns truthy", value === true || value === 1,
+            `Expected truthy, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage.gold > 100", `Request failed: ${JSON.stringify(cmpGtResult)}`);
+
+    const cmpEqResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.player.health == 0") });
+    if (cmpEqResult?.success) {
+        const value = extractValue(cmpEqResult.result);
+        assert("evaluate stage.player.health == 0 returns truthy", value === true || value === 1,
+            `Expected truthy, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage.player.health == 0", `Request failed: ${JSON.stringify(cmpEqResult)}`);
+
+    const cmpNeqResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.gold != 0") });
+    if (cmpNeqResult?.success) {
+        const value = extractValue(cmpNeqResult.result);
+        assert("evaluate stage.gold != 0 returns truthy", value === true || value === 1,
+            `Expected truthy, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage.gold != 0", `Request failed: ${JSON.stringify(cmpNeqResult)}`);
+
+    // Phase 3d: DSL Evaluation - Boolean operators
+    const negResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("!stage.player.alive") });
+    if (negResult?.success) {
+        const value = extractValue(negResult.result);
+        assert("evaluate !stage.player.alive returns truthy (player is dead)", value === true || value === 1,
+            `Expected truthy, got ${JSON.stringify(value)}`);
+    } else fail("evaluate !stage.player.alive", `Request failed: ${JSON.stringify(negResult)}`);
+
+    const andResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.flags.poisoned && stage.flags.shielded") });
+    if (andResult?.success) {
+        const value = extractValue(andResult.result);
+        assert("evaluate poisoned && shielded returns truthy (both true)", value === true || value === 1,
+            `Expected truthy, got ${JSON.stringify(value)}`);
+    } else fail("evaluate poisoned && shielded", `Request failed: ${JSON.stringify(andResult)}`);
+
+    const orResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.player.alive || stage.flags.poisoned") });
+    if (orResult?.success) {
+        const value = extractValue(orResult.result);
+        assert("evaluate alive || poisoned returns truthy (poisoned is true)", value === true || value === 1,
+            `Expected truthy, got ${JSON.stringify(value)}`);
+    } else fail("evaluate alive || poisoned", `Request failed: ${JSON.stringify(orResult)}`);
+
+    // Phase 3e: DSL Evaluation - Ternary expressions
+    const ternaryResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.player.alive ? stage.player.health : -1") });
+    if (ternaryResult?.success) {
+        const value = extractValue(ternaryResult.result);
+        assert("evaluate ternary (dead player) returns -1", value === -1,
+            `Expected -1, got ${JSON.stringify(value)}`);
+    } else fail("evaluate ternary expression", `Request failed: ${JSON.stringify(ternaryResult)}`);
+
+    const ternaryResult2 = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.flags.poisoned ? 999 : 0") });
+    if (ternaryResult2?.success) {
+        const value = extractValue(ternaryResult2.result);
+        assert("evaluate ternary (poisoned=true) returns 999", value === 999,
+            `Expected 999, got ${JSON.stringify(value)}`);
+    } else fail("evaluate ternary poisoned", `Request failed: ${JSON.stringify(ternaryResult2)}`);
+
+    // Phase 3f: DSL Evaluation - Deep nested access
+    const deepResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.world.zone1.boss.defeated") });
+    if (deepResult?.success) {
+        const value = extractValue(deepResult.result);
+        assert("evaluate stage.world.zone1.boss.defeated returns truthy", value === true || value === 1,
+            `Expected truthy, got ${JSON.stringify(value)}`);
+    } else fail("evaluate deep nested boss.defeated", `Request failed: ${JSON.stringify(deepResult)}`);
+
+    const deepResult2 = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.world.zone2.difficulty") });
+    if (deepResult2?.success) {
+        const value = extractValue(deepResult2.result);
+        assert("evaluate stage.world.zone2.difficulty returns 2", value === 2,
+            `Expected 2, got ${JSON.stringify(value)}`);
+    } else fail("evaluate deep nested difficulty", `Request failed: ${JSON.stringify(deepResult2)}`);
+
+    // Phase 3g: DSL Evaluation - Array indexing variants
+    const enemy0Result = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.enemies[0].health") });
+    if (enemy0Result?.success) {
+        const value = extractValue(enemy0Result.result);
+        assert("evaluate stage.enemies[0].health (goblin) returns 0", value === 0,
+            `Expected 0, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage.enemies[0].health", `Request failed: ${JSON.stringify(enemy0Result)}`);
+
+    const enemy2Result = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.enemies[2].health") });
+    if (enemy2Result?.success) {
+        const value = extractValue(enemy2Result.result);
+        assert("evaluate stage.enemies[2].health (dragon) returns 200", value === 200,
+            `Expected 200, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage.enemies[2].health", `Request failed: ${JSON.stringify(enemy2Result)}`);
+
+    // Phase 3h: DSL Evaluation - Player properties
+    const manaResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.player.mana") });
+    if (manaResult?.success) {
+        const value = extractValue(manaResult.result);
+        assert("evaluate stage.player.mana returns number <= 100", typeof value === "number" && value <= 100,
+            `Expected number <= 100, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage.player.mana", `Request failed: ${JSON.stringify(manaResult)}`);
+
+    const speedResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.player.speed") });
+    if (speedResult?.success) {
+        const value = extractValue(speedResult.result);
+        assert("evaluate stage.player.speed returns >= 15", typeof value === "number" && value >= 15,
+            `Expected >= 15, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage.player.speed", `Request failed: ${JSON.stringify(speedResult)}`);
+
+    // Phase 3i: DSL Evaluation - Scalar properties
+    const aliveEnemiesResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.aliveEnemies") });
+    if (aliveEnemiesResult?.success) {
+        const value = extractValue(aliveEnemiesResult.result);
+        assert("evaluate stage.aliveEnemies returns 1 (only dragon left)", value === 1,
+            `Expected 1, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage.aliveEnemies", `Request failed: ${JSON.stringify(aliveEnemiesResult)}`);
+
+    const multiplierResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("stage.multiplier") });
+    if (multiplierResult?.success) {
+        const value = extractValue(multiplierResult.result);
+        assert("evaluate stage.multiplier returns 5 (changed at frame 45)", value === 5,
+            `Expected 5, got ${JSON.stringify(value)}`);
+    } else fail("evaluate stage.multiplier", `Request failed: ${JSON.stringify(multiplierResult)}`);
+
+    // Phase 3j: DSL Evaluation - Literal values
+    const literalResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("42") });
+    if (literalResult?.success) {
+        const value = extractValue(literalResult.result);
+        assert("evaluate literal 42 returns 42", value === 42,
+            `Expected 42, got ${JSON.stringify(value)}`);
+    } else fail("evaluate literal 42", `Request failed: ${JSON.stringify(literalResult)}`);
+
+    const exprLiteralResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("10 + 20 * 3") });
+    if (exprLiteralResult?.success) {
+        const value = extractValue(exprLiteralResult.result);
+        assert("evaluate 10 + 20 * 3 returns 70 (precedence)", value === 70,
+            `Expected 70, got ${JSON.stringify(value)}`);
+    } else fail("evaluate 10 + 20 * 3", `Request failed: ${JSON.stringify(exprLiteralResult)}`);
+
+    const parenResult = await sendRequestWithTimeout("evaluate", { formula: Formula.compile("(10 + 20) * 3") });
+    if (parenResult?.success) {
+        const value = extractValue(parenResult.result);
+        assert("evaluate (10 + 20) * 3 returns 90 (parentheses)", value === 90,
+            `Expected 90, got ${JSON.stringify(value)}`);
+    } else fail("evaluate (10 + 20) * 3", `Request failed: ${JSON.stringify(parenResult)}`);
+
     // Phase 4: Memory Search
     const searchResult = await sendRequestWithTimeout("searchTargetForValue", { value: "goblin", pathFormula: null, pathString: "", searchMode: "value" });
     if (searchResult?.success) {
@@ -457,6 +762,41 @@ async function runTestProtocol(
         const paths = extractSearchResults(nameSearchResult.result);
         assert("Memory search by name finds 'gold'", paths.length > 0, `Expected non-empty results, got ${JSON.stringify(nameSearchResult.result)}`);
     } else fail("Memory search by name for 'gold'", `Request failed: ${JSON.stringify(nameSearchResult)}`);
+
+    // Phase 4b: Additional memory searches
+    const dragonSearch = await sendRequestWithTimeout("searchTargetForValue", { value: "dragon", pathFormula: null, pathString: "", searchMode: "value" });
+    if (dragonSearch?.success) {
+        const paths = extractSearchResults(dragonSearch.result);
+        assert("Memory search finds 'dragon'", paths.length > 0, `Expected non-empty results, got ${JSON.stringify(dragonSearch.result)}`);
+    } else fail("Memory search for 'dragon'", `Request failed: ${JSON.stringify(dragonSearch)}`);
+
+    const heroSearch = await sendRequestWithTimeout("searchTargetForValue", { value: "Hero", pathFormula: null, pathString: "", searchMode: "value" });
+    if (heroSearch?.success) {
+        const paths = extractSearchResults(heroSearch.result);
+        assert("Memory search finds 'Hero' (player.name)", paths.length > 0, `Expected non-empty results, got ${JSON.stringify(heroSearch.result)}`);
+        if (paths.length > 0) {
+            assert("Memory search 'Hero' path includes 'player'", paths.some((p) => p.includes("player")),
+                `Expected path containing 'player', got ${JSON.stringify(paths)}`);
+        }
+    } else fail("Memory search for 'Hero'", `Request failed: ${JSON.stringify(heroSearch)}`);
+
+    const forestSearch = await sendRequestWithTimeout("searchTargetForValue", { value: "forest", pathFormula: null, pathString: "", searchMode: "value" });
+    if (forestSearch?.success) {
+        const paths = extractSearchResults(forestSearch.result);
+        assert("Memory search finds 'forest' (world.zone1.name)", paths.length > 0, `Expected non-empty results, got ${JSON.stringify(forestSearch.result)}`);
+    } else fail("Memory search for 'forest'", `Request failed: ${JSON.stringify(forestSearch)}`);
+
+    const nameSearchPhase = await sendRequestWithTimeout("searchTargetForValue", { value: "phase", pathFormula: null, pathString: "", searchMode: "name" });
+    if (nameSearchPhase?.success) {
+        const paths = extractSearchResults(nameSearchPhase.result);
+        assert("Memory search by name finds 'phase'", paths.length > 0, `Expected non-empty results, got ${JSON.stringify(nameSearchPhase.result)}`);
+    } else fail("Memory search by name for 'phase'", `Request failed: ${JSON.stringify(nameSearchPhase)}`);
+
+    const nameSearchMana = await sendRequestWithTimeout("searchTargetForValue", { value: "mana", pathFormula: null, pathString: "", searchMode: "name" });
+    if (nameSearchMana?.success) {
+        const paths = extractSearchResults(nameSearchMana.result);
+        assert("Memory search by name finds 'mana'", paths.length > 0, `Expected non-empty results, got ${JSON.stringify(nameSearchMana.result)}`);
+    } else fail("Memory search by name for 'mana'", `Request failed: ${JSON.stringify(nameSearchMana)}`);
 
     // Cleanup
     try { reader.cancel(); } catch { /* ok */ }
