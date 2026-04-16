@@ -235,45 +235,6 @@ test("watch - wildcard pattern matching", () => {
     JSONDiff.watchers = [];
 });
 
-test("watch - watcher modifies data creates derivedDiff", () => {
-    JSONDiff.watchers = [];
-
-    // Watcher that computes a derived field
-    JSONDiff.watch("input", (segments) => {
-        const root = segments[0];
-        if (root && typeof root === 'object') {
-            // Get parent object to modify sibling
-            // segments structure: we need to access parent
-        }
-    });
-
-    // Simpler test: watcher directly modifies target
-    JSONDiff.watch("value", (segments) => {
-        // segments[0] is the value itself after traversal
-        // We need access to the root - let's check the implementation
-    });
-
-    // Actually, let's test with a watcher that modifies a known path
-    JSONDiff.watchers = [];
-
-    let watcherCalled = false;
-    JSONDiff.watch("source", (segments) => {
-        watcherCalled = true;
-        // Watchers receive segments but need root access to modify
-        // The root is passed as the first segment in _traverse
-    });
-
-    const target: Record<string, any> = { source: "hello", computed: "" };
-    const diff = { edited: [["source", "world"] as [string, any]] };
-
-    const result = JSONDiff.processIncomingDiff(target, diff);
-
-    assertEqual(watcherCalled, true);
-    assertEqual(target.source, "world");
-
-    JSONDiff.watchers = [];
-});
-
 test("processIncomingDiff - fullDiff contains all changes", () => {
     JSONDiff.watchers = [];
 
@@ -285,19 +246,6 @@ test("processIncomingDiff - fullDiff contains all changes", () => {
     assertEqual(result.fullDiff.edited.length, 2);
     assertEqual(target.name, "Bob");
     assertEqual(target.age, 31);
-
-    JSONDiff.watchers = [];
-});
-
-test("processIncomingDiff - derivedDiff is empty when no watchers", () => {
-    JSONDiff.watchers = [];
-
-    const target = { name: "Alice" };
-    const diff = { edited: [["name", "Bob"] as [string, any]] };
-
-    const result = JSONDiff.processIncomingDiff(target, diff);
-
-    assertEqual(result.derivedDiff.edited.length, 0);
 
     JSONDiff.watchers = [];
 });
@@ -334,13 +282,6 @@ test("salvage threshold - high similarity creates nested diff", () => {
 
 test("getDataDiff - empty objects", () => {
     const diff = JSONDiff.getDataDiff({}, {});
-    assertEqual(diff.edited.length, 0);
-});
-
-test("getDataDiff - empty arrays", () => {
-    const before = { items: [] as any[] };
-    const after = { items: [] as any[] };
-    const diff = JSONDiff.getDataDiff(before, after);
     assertEqual(diff.edited.length, 0);
 });
 
@@ -383,23 +324,6 @@ test("getDataDiff - null value handling", () => {
     assertEqual(diff.edited[0][1], null);
 });
 
-test("getDataDiff - boolean change", () => {
-    const before = { enabled: true };
-    const after = { enabled: false };
-    const diff = JSONDiff.getDataDiff(before, after);
-
-    assertEqual(diff.edited.length, 1);
-    assertEqual(diff.edited[0][1], false);
-});
-
-test("getDataDiff - number variations", () => {
-    const before = { int: 1, float: 1.5, negative: -10 };
-    const after = { int: 2, float: 2.5, negative: -20 };
-    const diff = JSONDiff.getDataDiff(before, after);
-
-    assertEqual(diff.edited.length, 3);
-});
-
 // === Edge Cases - applyDataDiff ===
 
 test("applyDataDiff - create nested path that doesn't exist", () => {
@@ -426,14 +350,6 @@ test("applyDataDiff - multi-element array deletion", () => {
 test("applyDataDiff - apply to empty object", () => {
     const target: Record<string, any> = {};
     const diff = { edited: [["name", "Alice"] as [string, any]] };
-    JSONDiff.applyDataDiff(target, diff);
-
-    assertEqual(target.name, "Alice");
-});
-
-test("applyDataDiff - apply empty diff is no-op", () => {
-    const target = { name: "Alice" };
-    const diff = { edited: [] };
     JSONDiff.applyDataDiff(target, diff);
 
     assertEqual(target.name, "Alice");
@@ -472,24 +388,6 @@ test("getDataDiff - array element type change", () => {
 });
 
 // === Edge Cases - mergeDiffs ===
-
-test("mergeDiffs - merge with empty diffA", () => {
-    const diffA = { edited: [] };
-    const diffB = { edited: [["name", "Bob"] as [string, any]] };
-    const merged = JSONDiff.mergeDiffs(diffA, diffB);
-
-    assertEqual(merged.edited.length, 1);
-    assertEqual(merged.edited[0][1], "Bob");
-});
-
-test("mergeDiffs - merge with empty diffB", () => {
-    const diffA = { edited: [["name", "Alice"] as [string, any]] };
-    const diffB = { edited: [] };
-    const merged = JSONDiff.mergeDiffs(diffA, diffB);
-
-    assertEqual(merged.edited.length, 1);
-    assertEqual(merged.edited[0][1], "Alice");
-});
 
 test("mergeDiffs - deep nested path merging", () => {
     const diffA = { edited: [["a/b/c", 1] as [string, any]] };

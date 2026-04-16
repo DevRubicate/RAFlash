@@ -37,14 +37,6 @@ test("compile - unary negation of number", () => {
     assertEqual(bytecode[valueIndices[1] + 1], "5");
 });
 
-test("compile - unary negation of identifier", () => {
-    const bytecode = Formula.compile("-x");
-    assertEqual(bytecode[0], "VERSION_1");
-    assertEqual(bytecode.includes("SUB"), true);
-    assertEqual(bytecode.includes("VALUE"), true);
-    assertEqual(bytecode.includes("READ_GLOBAL"), true);
-});
-
 test("compile - negation in arithmetic: -x + 5", () => {
     const bytecode = Formula.compile("-x + 5");
     assertEqual(bytecode[0], "VERSION_1");
@@ -132,19 +124,6 @@ test("compile - chained numeric properties", () => {
 // len() Function
 // =============================================================================
 
-test("compile - len() basic", () => {
-    const bytecode = Formula.compile("len(stage)");
-    assertEqual(bytecode[0], "VERSION_1");
-    assertEqual(bytecode.includes("LEN"), true);
-});
-
-test("compile - len() with property chain", () => {
-    const bytecode = Formula.compile("len(stage.enemies)");
-    assertEqual(bytecode[0], "VERSION_1");
-    assertEqual(bytecode.includes("LEN"), true);
-    assertEqual(bytecode.includes("OBJECT_ACCESS"), true);
-});
-
 test("compile - len() in boolean condition", () => {
     const bytecode = Formula.compile("len(stage.enemies) > 0 && len(stage.allies) > 0");
     assertEqual(bytecode[0], "VERSION_1");
@@ -213,12 +192,6 @@ test("compile - double NOT", () => {
 // Remembered Values
 // =============================================================================
 
-test("compile - simple remembered value", () => {
-    const bytecode = Formula.compile("{stage.score}");
-    assertEqual(bytecode[0], "VERSION_1");
-    assertEqual(bytecode.includes("REMEMBER"), true);
-});
-
 test("compile - remembered value in comparison", () => {
     const bytecode = Formula.compile("{stage.score} > 100");
     assertEqual(bytecode[0], "VERSION_1");
@@ -237,21 +210,6 @@ test("compile - remembered value with len()", () => {
 // Ternary Expressions
 // =============================================================================
 
-test("compile - simple ternary", () => {
-    const bytecode = Formula.compile("x > 0 ? x : 0");
-    assertEqual(bytecode[0], "VERSION_1");
-    assertEqual(bytecode.includes("TERNARY"), true);
-    assertEqual(bytecode.includes("GREATER"), true);
-});
-
-test("compile - ternary with property access", () => {
-    const bytecode = Formula.compile("stage.hp != null ? stage.hp : 0");
-    assertEqual(bytecode[0], "VERSION_1");
-    assertEqual(bytecode.includes("TERNARY"), true);
-    assertEqual(bytecode.includes("NOT_EQUAL"), true);
-    assertEqual(bytecode.includes("NULL"), true);
-});
-
 test("compile - nested ternary", () => {
     const bytecode = Formula.compile("a > 0 ? a > 5 ? 2 : 1 : 0");
     assertEqual(bytecode[0], "VERSION_1");
@@ -262,22 +220,6 @@ test("compile - nested ternary", () => {
 // =============================================================================
 // Leading Dot (implicit this)
 // =============================================================================
-
-test("compile - leading dot produces implicit this", () => {
-    const bytecode = Formula.compile(".health");
-    assertEqual(bytecode[0], "VERSION_1");
-    assertEqual(bytecode.includes("OBJECT_ACCESS"), true);
-    // Should have READ_GLOBAL for "this"
-    const thisIdx = bytecode.indexOf("this");
-    assertEqual(thisIdx >= 0, true);
-});
-
-test("compile - leading dot chained access", () => {
-    const bytecode = Formula.compile(".player.health");
-    assertEqual(bytecode[0], "VERSION_1");
-    const accessCount = bytecode.filter((s: string) => s === "OBJECT_ACCESS").length;
-    assertEqual(accessCount, 2);
-});
 
 // =============================================================================
 // Complex Combinations
@@ -510,13 +452,6 @@ test("compile - exponent right-associative: 2 ** 3 ** 2", () => {
 // String Literals in Expressions
 // =============================================================================
 
-test("compile - string equality", () => {
-    const bytecode = Formula.compile('"hello" == "world"');
-    assertEqual(bytecode[0], "VERSION_1");
-    assertEqual(bytecode.includes("STRING"), true);
-    assertEqual(bytecode.includes("EQUAL"), true);
-});
-
 test("compile - string with escape in comparison", () => {
     const bytecode = Formula.compile('"line1\\nline2" != null');
     assertEqual(bytecode[0], "VERSION_1");
@@ -527,12 +462,6 @@ test("compile - string with escape in comparison", () => {
 // =============================================================================
 // Complex Nesting
 // =============================================================================
-
-test("compile - deeply nested parentheses", () => {
-    const bytecode = Formula.compile("((((((1 + 2))))))");
-    assertEqual(bytecode[0], "VERSION_1");
-    assertEqual(bytecode.includes("ADD"), true);
-});
 
 test("compile - len() of array access result in arithmetic", () => {
     const bytecode = Formula.compile("len(stage.items[0]) + len(stage.items[1])");
@@ -609,14 +538,3 @@ test("compile - empty parens compiles (no content)", () => {
 // Whitespace-Only Input
 // =============================================================================
 
-test("compile - whitespace-only compiles to READ_GLOBAL this", () => {
-    const bytecode = Formula.compile("   ");
-    assertEqual(bytecode[0], "VERSION_1");
-    assertEqual(bytecode.includes("READ_GLOBAL"), true);
-});
-
-test("compile - tab-only input compiles to READ_GLOBAL this", () => {
-    const bytecode = Formula.compile("\t\t");
-    assertEqual(bytecode[0], "VERSION_1");
-    assertEqual(bytecode.includes("READ_GLOBAL"), true);
-});

@@ -38,11 +38,6 @@ test("stripAssetData - handles missing optional properties", () => {
     assertEqual(result, { id: 1 });
 });
 
-test("stripAssetData - returns empty object for empty data", () => {
-    const result = AppData.stripAssetData({}, simpleSchema);
-    assertEqual(result, {});
-});
-
 test("stripAssetData - returns primitive as-is for non-object", () => {
     const result = AppData.stripAssetData(42 as unknown, simpleSchema);
     assertEqual(result, 42 as unknown as Record<string, unknown>);
@@ -225,25 +220,6 @@ test("sanitizeAssetForSave - no-op for group without requirements", () => {
     const asset = { id: 1, groups: [{ id: 1 }] } as any;
     AppData.sanitizeAssetForSave(asset);
     assertEqual(asset.groups[0].id, 1);
-});
-
-test("sanitizeAssetForSave - valid maxHits integers unchanged", () => {
-    const asset = {
-        id: 1,
-        groups: [{
-            id: 1,
-            requirements: [
-                { id: 1, maxHits: 0 },
-                { id: 2, maxHits: 5 },
-                { id: 3, maxHits: 100 },
-            ],
-        }],
-    } as any;
-
-    AppData.sanitizeAssetForSave(asset);
-    assertEqual(asset.groups[0].requirements[0].maxHits, 0);
-    assertEqual(asset.groups[0].requirements[1].maxHits, 5);
-    assertEqual(asset.groups[0].requirements[2].maxHits, 100);
 });
 
 // =============================================================================

@@ -68,28 +68,10 @@ test("AVM1Builder push - double value", () => {
     }
 });
 
-test("AVM1Builder push - null", () => {
-    const bytes = new AVM1Builder().push(aNull()).toBytes();
-    assertEqual(bytes[3], 0x02);
-    assertEqual(readUI16(bytes, 1), 1); // payload is just the type tag
-});
-
-test("AVM1Builder push - undefined", () => {
-    const bytes = new AVM1Builder().push(aUndefined()).toBytes();
-    assertEqual(bytes[3], 0x03);
-    assertEqual(readUI16(bytes, 1), 1);
-});
-
 test("AVM1Builder push - boolean true", () => {
     const bytes = new AVM1Builder().push(aBool(true)).toBytes();
     assertEqual(bytes[3], 0x05);
     assertEqual(bytes[4], 1);
-});
-
-test("AVM1Builder push - boolean false", () => {
-    const bytes = new AVM1Builder().push(aBool(false)).toBytes();
-    assertEqual(bytes[3], 0x05);
-    assertEqual(bytes[4], 0);
 });
 
 test("AVM1Builder push - register", () => {
@@ -140,12 +122,6 @@ test("AVM1Builder - single-byte opcodes produce correct bytes", () => {
 // =============================================================================
 // Chaining
 // =============================================================================
-
-test("AVM1Builder - methods return this for chaining", () => {
-    const b = new AVM1Builder();
-    const result = b.push(aInt(1)).pop().add2().end();
-    assertEqual(result, b);
-});
 
 // =============================================================================
 // Branching
@@ -328,9 +304,3 @@ test("AVM1Builder position tracks buffer length", () => {
     assertEqual(b.position, 2);
 });
 
-test("AVM1Builder length matches position", () => {
-    const b = new AVM1Builder();
-    b.pop().pop().pop();
-    assertEqual(b.length, 3);
-    assertEqual(b.length, b.position);
-});

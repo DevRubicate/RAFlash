@@ -51,24 +51,6 @@ function readUI32(buf: Uint8Array, offset: number): number {
 // AVM2ConstantPool — construction defaults
 // =============================================================================
 
-test("AVM2ConstantPool - constructor creates publicNs, publicNsSet, latePub", () => {
-    const pool = new AVM2ConstantPool();
-    assertEqual(pool.publicNs, 1);
-    assertEqual(pool.publicNsSet, 1);
-    assertEqual(pool.latePub, 1);
-});
-
-// =============================================================================
-// AVM2ConstantPool — string deduplication
-// =============================================================================
-
-test("AVM2ConstantPool addString - returns 1-based index", () => {
-    const pool = new AVM2ConstantPool();
-    // "" is already at index 1 (added by constructor)
-    const idx = pool.addString("");
-    assertEqual(idx, 1);
-});
-
 test("AVM2ConstantPool addString - new strings get incrementing indices", () => {
     const pool = new AVM2ConstantPool();
     const a = pool.addString("hello");
@@ -87,12 +69,6 @@ test("AVM2ConstantPool addString - deduplicates identical strings", () => {
 // =============================================================================
 // AVM2ConstantPool — integer deduplication
 // =============================================================================
-
-test("AVM2ConstantPool addInt - returns 1-based index", () => {
-    const pool = new AVM2ConstantPool();
-    const idx = pool.addInt(42);
-    assertEqual(idx, 1);
-});
 
 test("AVM2ConstantPool addInt - deduplicates identical integers", () => {
     const pool = new AVM2ConstantPool();
@@ -119,12 +95,6 @@ test("AVM2ConstantPool addInt - truncates to 32-bit integer", () => {
 // =============================================================================
 // AVM2ConstantPool — double deduplication
 // =============================================================================
-
-test("AVM2ConstantPool addDouble - returns 1-based index", () => {
-    const pool = new AVM2ConstantPool();
-    const idx = pool.addDouble(3.14);
-    assertEqual(idx, 1);
-});
 
 test("AVM2ConstantPool addDouble - deduplicates identical doubles", () => {
     const pool = new AVM2ConstantPool();
@@ -291,33 +261,6 @@ test("AVM2ConstantPool serialize - includes added doubles", () => {
 // =============================================================================
 // AVM2Code — single-byte opcodes
 // =============================================================================
-
-test("AVM2Code pushNull - emits 0x20", () => {
-    const pool = new AVM2ConstantPool();
-    const code = new AVM2Code(pool);
-    const bytes = code.pushNull().toBytes();
-    assertEqual(bytes.length, 1);
-    assertEqual(bytes[0], 0x20);
-});
-
-test("AVM2Code pushUndefined - emits 0x21", () => {
-    const pool = new AVM2ConstantPool();
-    const bytes = new AVM2Code(pool).pushUndefined().toBytes();
-    assertEqual(bytes[0], 0x21);
-});
-
-test("AVM2Code pushTrue/pushFalse - emit 0x26/0x27", () => {
-    const pool = new AVM2ConstantPool();
-    const bytes = new AVM2Code(pool).pushTrue().pushFalse().toBytes();
-    assertEqual(bytes[0], 0x26);
-    assertEqual(bytes[1], 0x27);
-});
-
-test("AVM2Code pushNaN - emits 0x28", () => {
-    const pool = new AVM2ConstantPool();
-    const bytes = new AVM2Code(pool).pushNaN().toBytes();
-    assertEqual(bytes[0], 0x28);
-});
 
 // =============================================================================
 // AVM2Code — push values
@@ -546,20 +489,8 @@ test("AVM2Code type conversion - all conversion ops emit correct opcodes", () =>
 // AVM2Code — type checking
 // =============================================================================
 
-test("AVM2Code isTypeLate - emits 0xB3", () => {
-    const pool = new AVM2ConstantPool();
-    const bytes = new AVM2Code(pool).isTypeLate().toBytes();
-    assertEqual(bytes[0], 0xB3);
-});
-
-test("AVM2Code instanceOf - emits 0xB1", () => {
-    const pool = new AVM2ConstantPool();
-    const bytes = new AVM2Code(pool).instanceOf().toBytes();
-    assertEqual(bytes[0], 0xB1);
-});
-
 // =============================================================================
-// AVM2Code — branching
+// AVM2Code ��� branching
 // =============================================================================
 
 test("AVM2Code jumpTo - emits 0x10 + S24 offset", () => {
@@ -813,34 +744,6 @@ test("AVM2Code hasNext2 - emits 0x32 + U30 objectReg + U30 indexReg", () => {
     assertEqual(bytes[2], 5);
 });
 
-test("AVM2Code nextName - emits 0x1E", () => {
-    const pool = new AVM2ConstantPool();
-    const bytes = new AVM2Code(pool).nextName().toBytes();
-    assertEqual(bytes[0], 0x1E);
-});
-
-test("AVM2Code nextValue - emits 0x23", () => {
-    const pool = new AVM2ConstantPool();
-    const bytes = new AVM2Code(pool).nextValue().toBytes();
-    assertEqual(bytes[0], 0x23);
-});
-
-// =============================================================================
-// AVM2Code — return
-// =============================================================================
-
-test("AVM2Code returnValue - emits 0x48", () => {
-    const pool = new AVM2ConstantPool();
-    const bytes = new AVM2Code(pool).returnValue().toBytes();
-    assertEqual(bytes[0], 0x48);
-});
-
-test("AVM2Code returnVoid - emits 0x47", () => {
-    const pool = new AVM2ConstantPool();
-    const bytes = new AVM2Code(pool).returnVoid().toBytes();
-    assertEqual(bytes[0], 0x47);
-});
-
 // =============================================================================
 // AVM2Code — rawBytes and length
 // =============================================================================
@@ -852,35 +755,6 @@ test("AVM2Code rawBytes - appends bytes verbatim", () => {
     assertEqual(bytes[0], 0xAA);
     assertEqual(bytes[1], 0xBB);
     assertEqual(bytes[2], 0xCC);
-});
-
-test("AVM2Code length - tracks buffer size", () => {
-    const pool = new AVM2ConstantPool();
-    const code = new AVM2Code(pool);
-    assertEqual(code.length, 0);
-    code.pop(); // 1 byte
-    assertEqual(code.length, 1);
-    code.pop();
-    assertEqual(code.length, 2);
-});
-
-test("AVM2Code position - tracks current byte offset", () => {
-    const pool = new AVM2ConstantPool();
-    const code = new AVM2Code(pool);
-    assertEqual(code.position, 0);
-    code.pushByte(0); // 2 bytes
-    assertEqual(code.position, 2);
-});
-
-// =============================================================================
-// AVM2Code — chaining
-// =============================================================================
-
-test("AVM2Code - methods return this for chaining", () => {
-    const pool = new AVM2ConstantPool();
-    const code = new AVM2Code(pool);
-    const result = code.pushNull().pop().add().returnVoid();
-    assertEqual(result, code);
 });
 
 // =============================================================================

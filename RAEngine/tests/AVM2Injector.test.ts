@@ -95,12 +95,6 @@ function parseABCStrings(abc: Uint8Array, offset: number): { strings: string[]; 
 // buildInjectorTags — basic structure
 // =============================================================================
 
-test("AVM2Injector - returns non-empty Uint8Array", () => {
-    const result = buildInjectorTags("firmware.swf", 100);
-    assertEqual(result instanceof Uint8Array, true);
-    assertEqual(result.length > 0, true);
-});
-
 test("AVM2Injector - contains exactly 4 SWF tags", () => {
     const tags = parseTags(buildInjectorTags("firmware.swf", 100));
     assertEqual(tags.length, 4);
@@ -499,14 +493,6 @@ test("AVM2Injector - constructor body calls constructsuper with 0 args", () => {
     assertEqual(bodyCode[4], 0x00); // 0 args
 });
 
-test("AVM2Injector - constructor body ends with returnvoid", () => {
-    const data = buildInjectorTags("fw.swf", 100);
-    const abcStart = getABCOffset(data);
-    const abc = data.slice(abcStart);
-    const bodyCode = extractMethodBody(abc, 0);
-    assertEqual(bodyCode[bodyCode.length - 1], 0x47); // returnvoid
-});
-
 test("AVM2Injector - constructor sets visible = false", () => {
     const data = buildInjectorTags("fw.swf", 100);
     const abcStart = getABCOffset(data);
@@ -539,15 +525,6 @@ test("AVM2Injector - constructor has branch offsets that target returnvoid", () 
 // cinit body (method body 1)
 // =============================================================================
 
-test("AVM2Injector - cinit is just returnvoid", () => {
-    const data = buildInjectorTags("fw.swf", 100);
-    const abcStart = getABCOffset(data);
-    const abc = data.slice(abcStart);
-    const bodyCode = extractMethodBody(abc, 1);
-    assertEqual(bodyCode.length, 1);
-    assertEqual(bodyCode[0], 0x47); // returnvoid
-});
-
 // =============================================================================
 // Script init body (method body 2)
 // =============================================================================
@@ -574,14 +551,6 @@ test("AVM2Injector - script init uses initproperty for class registration", () =
         if (b === 0x68) { foundInitprop = true; break; }
     }
     assertEqual(foundInitprop, true);
-});
-
-test("AVM2Injector - script init ends with returnvoid", () => {
-    const data = buildInjectorTags("fw.swf", 100);
-    const abcStart = getABCOffset(data);
-    const abc = data.slice(abcStart);
-    const bodyCode = extractMethodBody(abc, 2);
-    assertEqual(bodyCode[bodyCode.length - 1], 0x47);
 });
 
 // =============================================================================

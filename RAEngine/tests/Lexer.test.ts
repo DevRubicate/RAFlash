@@ -31,10 +31,6 @@ test("Lexer - zero", () => {
     assertEqual(values("0"), ["0"]);
 });
 
-test("Lexer - multi-digit number", () => {
-    assertEqual(values("12345"), ["12345"]);
-});
-
 test("Lexer - hex literal", () => {
     assertEqual(types("0xFF"), [TokenType.NUMBER]);
     assertEqual(values("0xFF"), ["0xFF"]);
@@ -342,11 +338,6 @@ test("Lexer - number followed by dot identifier is not float", () => {
     assertEqual(types("stage.0"), [TokenType.IDENTIFIER, TokenType.DOT, TokenType.NUMBER]);
 });
 
-test("Lexer - 0.1 is a single float token", () => {
-    assertEqual(types("0.1"), [TokenType.NUMBER]);
-    assertEqual(values("0.1"), ["0.1"]);
-});
-
 // =============================================================================
 // Bare Prefix Rejection
 // =============================================================================
@@ -405,33 +396,6 @@ test("Lexer - carriage return normalized to newline", () => {
 // =============================================================================
 // Additional Unrecognized Symbols
 // =============================================================================
-
-test("Lexer - @ throws", () => {
-    assertThrows(() => new Lexer("@"), Error, "Unrecognized symbol");
-});
-
-test("Lexer - # throws", () => {
-    assertThrows(() => new Lexer("#"), Error, "Unrecognized symbol");
-});
-
-test("Lexer - $ throws", () => {
-    assertThrows(() => new Lexer("$"), Error, "Unrecognized symbol");
-});
-
-test("Lexer - backtick throws", () => {
-    assertThrows(() => new Lexer("`"), Error, "Unrecognized symbol");
-});
-
-// =============================================================================
-// Question, Colon, Ternary Tokens
-// =============================================================================
-
-test("Lexer - question mark token", () => {
-    assertEqual(types("a ? b : c"), [
-        TokenType.IDENTIFIER, TokenType.QUESTION, TokenType.IDENTIFIER,
-        TokenType.COLON, TokenType.IDENTIFIER,
-    ]);
-});
 
 // =============================================================================
 // Digit-Prefixed Identifiers

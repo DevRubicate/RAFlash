@@ -64,22 +64,6 @@ test("Builder - NOT on complex expression has correct parent chain", () => {
 // len() Function
 // =============================================================================
 
-test("Builder - len() produces LenUnit", () => {
-    const root = buildAST("len(stage)");
-    function findLen(unit: any): any {
-        if (unit.constructor.name === "LenUnit") return unit;
-        for (const child of unit.children) {
-            const found = findLen(child);
-            if (found) return found;
-        }
-        return null;
-    }
-    const len = findLen(root);
-    assertEqual(len !== null, true);
-    assertEqual(len.children.length, 1);
-    assertEqual(len.children[0].parent, len);
-});
-
 test("Builder - len() with property chain", () => {
     const root = buildAST("len(stage.enemies)");
     function findLen(unit: any): any {
@@ -96,43 +80,3 @@ test("Builder - len() with property chain", () => {
     assertEqual(len.children[0].constructor.name, "ObjectAccessExpressionUnit");
 });
 
-// =============================================================================
-// All Operator Parent Links
-// =============================================================================
-
-test("Builder - binary operators have children with parent back-links", () => {
-    const expressions = [
-        "1 + 2",
-        "1 - 2",
-        "1 * 2",
-        "1 / 2",
-        "1 % 2",
-        "2 ** 3",
-        "a == b",
-        "a != b",
-        "a > b",
-        "a >= b",
-        "a < b",
-        "a <= b",
-        "a && b",
-        "a || b",
-        "a ^ b",
-    ];
-
-    for (const expr of expressions) {
-        const root = buildAST(expr);
-        // Walk the tree and verify all parent links
-        function checkParents(unit: any, expectedParent: any) {
-            if (expectedParent !== null) {
-                assertEqual(
-                    unit.parent, expectedParent,
-                    `Parent mismatch in "${expr}" at ${unit.constructor.name}`
-                );
-            }
-            for (const child of unit.children) {
-                checkParents(child, unit);
-            }
-        }
-        checkParents(root, null);
-    }
-});

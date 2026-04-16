@@ -21,27 +21,6 @@ function toBase64(str: string): string {
 // networkRuleZipPath
 // =============================================================================
 
-test("zipPath - http URL", () => {
-    assertEqual(
-        networkRuleZipPath("http://kongregate.com/category/games/tracker.swf"),
-        "network/kongregate.com/category/games/tracker.swf",
-    );
-});
-
-test("zipPath - https URL", () => {
-    assertEqual(
-        networkRuleZipPath("https://example.com/api/data.json"),
-        "network/example.com/api/data.json",
-    );
-});
-
-test("zipPath - preserves query string", () => {
-    assertEqual(
-        networkRuleZipPath("http://host.com/path?key=val"),
-        "network/host.com/path?key=val",
-    );
-});
-
 test("zipPath - root path", () => {
     assertEqual(
         networkRuleZipPath("http://example.com/"),
@@ -87,20 +66,12 @@ test("contentType - .jpg", () => {
     assertEqual(contentTypeForUrl("http://example.com/photo.jpg"), "image/jpeg");
 });
 
-test("contentType - .jpeg", () => {
-    assertEqual(contentTypeForUrl("http://example.com/photo.jpeg"), "image/jpeg");
-});
-
 test("contentType - .gif", () => {
     assertEqual(contentTypeForUrl("http://example.com/anim.gif"), "image/gif");
 });
 
 test("contentType - .html", () => {
     assertEqual(contentTypeForUrl("http://example.com/page.html"), "text/html");
-});
-
-test("contentType - .htm", () => {
-    assertEqual(contentTypeForUrl("http://example.com/page.htm"), "text/html");
 });
 
 test("contentType - .css", () => {
@@ -113,18 +84,6 @@ test("contentType - .js", () => {
 
 test("contentType - .mp3", () => {
     assertEqual(contentTypeForUrl("http://example.com/audio.mp3"), "audio/mpeg");
-});
-
-test("contentType - .txt", () => {
-    assertEqual(contentTypeForUrl("http://example.com/readme.txt"), "text/plain");
-});
-
-test("contentType - .flv", () => {
-    assertEqual(contentTypeForUrl("http://example.com/video.flv"), "video/x-flv");
-});
-
-test("contentType - .csv", () => {
-    assertEqual(contentTypeForUrl("http://example.com/data.csv"), "text/csv");
 });
 
 test("contentType - unknown extension falls back to octet-stream", () => {

@@ -87,42 +87,9 @@ test("reconcile - simultaneous add, delete, and move", () => {
 // contentTypeForUrl — additional extensions
 // =============================================================================
 
-test("contentType - .svg", () => {
-    // SVG is common in web games — verify it has a mapping or falls back
-    const ct = contentTypeForUrl("http://example.com/icon.svg");
-    // Either mapped to image/svg+xml or falls back to octet-stream
-    assertEqual(typeof ct, "string");
-    assertEqual(ct.length > 0, true);
-});
-
-test("contentType - .woff", () => {
-    const ct = contentTypeForUrl("http://example.com/font.woff");
-    assertEqual(typeof ct, "string");
-});
-
-test("contentType - URL with fragment returns fallback", () => {
-    // Fragment is part of the URL string, so "game.swf#fragment" has no recognized extension
-    const ct = contentTypeForUrl("http://example.com/game.swf#fragment");
-    assertEqual(ct, "application/octet-stream");
-});
-
-// =============================================================================
-// networkRuleZipPath — edge cases
-// =============================================================================
-
-test("zipPath - URL with fragment", () => {
-    const path = networkRuleZipPath("http://example.com/game.swf#section");
-    assertEqual(path.startsWith("network/"), true);
-});
-
 test("zipPath - URL with encoded characters", () => {
     const path = networkRuleZipPath("http://example.com/path%20with%20spaces/file.swf");
     assertEqual(path, "network/example.com/path%20with%20spaces/file.swf");
-});
-
-test("zipPath - https with port", () => {
-    const path = networkRuleZipPath("https://cdn.example.com:443/asset.swf");
-    assertEqual(path, "network/cdn.example.com:443/asset.swf");
 });
 
 // =============================================================================

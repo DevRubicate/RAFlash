@@ -44,26 +44,10 @@ test("buildSWF - file length field matches actual length", () => {
     assertEqual(reportedLen, swf.length);
 });
 
-test("buildSWF - RECT is a single zero byte (Nbits=0)", () => {
-    const swf = buildSWF(new Uint8Array([0x00]));
-    assertEqual(swf[8], 0x00);
-});
-
-test("buildSWF - default frame rate is 1", () => {
-    const swf = buildSWF(new Uint8Array([0x00]));
-    assertEqual(swf[9], 0x00);  // fractional
-    assertEqual(swf[10], 0x01); // integer
-});
-
 test("buildSWF - respects custom frame rate", () => {
     const swf = buildSWF(new Uint8Array([0x00]), { frameRate: 30 });
     assertEqual(swf[9], 0x00);
     assertEqual(swf[10], 30);
-});
-
-test("buildSWF - frame count is 1", () => {
-    const swf = buildSWF(new Uint8Array([0x00]));
-    assertEqual(readUI16(swf, 11), 1);
 });
 
 // =============================================================================

@@ -199,7 +199,6 @@ const SUITES: Record<string, () => Promise<SuiteResult>> = {
     },
 
     engine: () => runTSSuite("RAEngine", [
-        "RAEngine/tests/hello.test.ts",
         "RAEngine/tests/Formula.test.ts",
         "RAEngine/tests/Lexer.test.ts",
         "RAEngine/tests/Parser.test.ts",
@@ -228,7 +227,6 @@ const SUITES: Record<string, () => Promise<SuiteResult>> = {
     ]),
 
     display: () => runTSSuite("RADisplay", [
-        "RADisplay/tests/hello.test.ts",
         "RADisplay/tests/JSONDiff.test.ts",
     ]),
 

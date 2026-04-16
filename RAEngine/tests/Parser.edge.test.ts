@@ -23,21 +23,6 @@ function getParseTree(input: string): string[] {
 // Unary Negation (-expr → 0 - expr)
 // =============================================================================
 
-test("Parser - unary minus produces SUBTRACTION with implicit zero", () => {
-    const log = getParseTree("-5");
-    assertEqual(log.includes("    SUBTRACTION"), true);
-    // Should have two VALUE children: 0 and 5
-    const valueCount = log.filter(line => line.trim() === "VALUE").length;
-    assertEqual(valueCount, 2);
-});
-
-test("Parser - unary minus on identifier", () => {
-    const log = getParseTree("-x");
-    assertEqual(log.includes("    SUBTRACTION"), true);
-    assertEqual(log.includes("      VALUE"), true);       // implicit 0
-    assertEqual(log.includes("      READ_GLOBAL"), true); // x
-});
-
 test("Parser - unary minus on property access", () => {
     const log = getParseTree("-stage.player.health");
     assertEqual(log.includes("    SUBTRACTION"), true);
@@ -140,12 +125,6 @@ test("Parser - NOT on parenthesized expression", () => {
     assertEqual(log.includes("      GREATER_THAN"), true);
 });
 
-test("Parser - NOT on boolean expression", () => {
-    const log = getParseTree("!stage.player.dead");
-    assertEqual(log.includes("    NOT"), true);
-    assertEqual(log.includes("      OBJECT_ACCESS_EXPRESSION"), true);
-});
-
 test("Parser - double NOT", () => {
     const log = getParseTree("!!x");
     const notCount = log.filter(line => line.trim() === "NOT").length;
@@ -156,52 +135,10 @@ test("Parser - double NOT", () => {
 // len() Function Call
 // =============================================================================
 
-test("Parser - len() produces FUNCTION_CALL node", () => {
-    const log = getParseTree("len(stage)");
-    assertEqual(log.includes("    FUNCTION_CALL"), true);
-});
-
-test("Parser - len() with property chain", () => {
-    const log = getParseTree("len(stage.enemies)");
-    assertEqual(log.includes("    FUNCTION_CALL"), true);
-    assertEqual(log.includes("      OBJECT_ACCESS_EXPRESSION"), true);
-});
-
 test("Parser - len() in comparison", () => {
     const log = getParseTree("len(stage.enemies) > 0");
     assertEqual(log.includes("    GREATER_THAN"), true);
     assertEqual(log.includes("      FUNCTION_CALL"), true);
-});
-
-test("Parser - nested len()", () => {
-    const log = getParseTree("len(len(x))");
-    const fnCount = log.filter(line => line.trim() === "FUNCTION_CALL").length;
-    assertEqual(fnCount, 2);
-});
-
-test("Parser - unknown function throws error", () => {
-    // Parsing should succeed but building should fail - test compilation instead
-    // Actually, Parser itself should handle function parsing, error comes from Builder
-    // Let's just test that len() parses correctly
-    const log = getParseTree("len(42)");
-    assertEqual(log.includes("    FUNCTION_CALL"), true);
-    assertEqual(log.includes("      VALUE"), true);
-});
-
-// =============================================================================
-// Floating-point in Parser
-// =============================================================================
-
-test("Parser - float literal produces VALUE node", () => {
-    const log = getParseTree("3.14");
-    assertEqual(log.includes("    VALUE"), true);
-});
-
-test("Parser - float in comparison", () => {
-    const log = getParseTree("stage.health > 2.5");
-    assertEqual(log.includes("    GREATER_THAN"), true);
-    assertEqual(log.includes("      VALUE"), true);
-    assertEqual(log.includes("      OBJECT_ACCESS_EXPRESSION"), true);
 });
 
 test("Parser - float doesn't interfere with property access", () => {

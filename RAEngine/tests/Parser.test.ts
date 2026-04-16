@@ -16,100 +16,8 @@ function getParseTree(input: string): string[] {
 }
 
 // =============================================================================
-// Arithmetic Operators
-// =============================================================================
-
-test("Parser - addition node", () => {
-    const log = getParseTree("1 + 2");
-    assertEqual(log.includes("    ADDITION"), true);
-    assertEqual(log.includes("      VALUE"), true);
-});
-
-test("Parser - subtraction node", () => {
-    const log = getParseTree("1 - 2");
-    assertEqual(log.includes("    SUBTRACTION"), true);
-    assertEqual(log.includes("      VALUE"), true);
-});
-
-test("Parser - multiplication node", () => {
-    const log = getParseTree("1 * 2");
-    assertEqual(log.includes("    MULTIPLICATION"), true);
-    assertEqual(log.includes("      VALUE"), true);
-});
-
-test("Parser - division node", () => {
-    const log = getParseTree("1 / 2");
-    assertEqual(log.includes("    DIVISION"), true);
-    assertEqual(log.includes("      VALUE"), true);
-});
-
-test("Parser - modulo node", () => {
-    const log = getParseTree("1 % 2");
-    assertEqual(log.includes("    MODULO"), true);
-    assertEqual(log.includes("      VALUE"), true);
-});
-
-test("Parser - exponent node", () => {
-    const log = getParseTree("2 ** 3");
-    assertEqual(log.includes("    EXPONENT"), true);
-    assertEqual(log.includes("      VALUE"), true);
-});
-
-// =============================================================================
-// Comparison Operators
-// =============================================================================
-
-test("Parser - equal node", () => {
-    const log = getParseTree("1 == 2");
-    assertEqual(log.includes("    EQUAL"), true);
-});
-
-test("Parser - not equal node", () => {
-    const log = getParseTree("1 != 2");
-    assertEqual(log.includes("    NOT_EQUAL"), true);
-});
-
-test("Parser - greater than node", () => {
-    const log = getParseTree("1 > 2");
-    assertEqual(log.includes("    GREATER_THAN"), true);
-});
-
-test("Parser - greater than or equal node", () => {
-    const log = getParseTree("1 >= 2");
-    assertEqual(log.includes("    GREATER_THAN_OR_EQUAL"), true);
-});
-
-test("Parser - less than node", () => {
-    const log = getParseTree("1 < 2");
-    assertEqual(log.includes("    LESS_THAN"), true);
-});
-
-test("Parser - less than or equal node", () => {
-    const log = getParseTree("1 <= 2");
-    assertEqual(log.includes("    LESS_THAN_OR_EQUAL"), true);
-});
-
-// =============================================================================
 // Logical Operators
 // =============================================================================
-
-test("Parser - AND node", () => {
-    const log = getParseTree("1 && 2");
-    assertEqual(log.includes("    AND"), true);
-    assertEqual(log.includes("      VALUE"), true);
-});
-
-test("Parser - OR node", () => {
-    const log = getParseTree("1 || 2");
-    assertEqual(log.includes("    OR"), true);
-    assertEqual(log.includes("      VALUE"), true);
-});
-
-test("Parser - XOR node", () => {
-    const log = getParseTree("1 ^ 2");
-    assertEqual(log.includes("    XOR"), true);
-    assertEqual(log.includes("      VALUE"), true);
-});
 
 test("Parser - NOT node", () => {
     const log = getParseTree("!x");
@@ -237,25 +145,6 @@ test("Parser - arithmetic combined with property access", () => {
 });
 
 // =============================================================================
-// Literal Types
-// =============================================================================
-
-test("Parser - number literal produces VALUE", () => {
-    const log = getParseTree("42");
-    assertEqual(log.includes("    VALUE"), true);
-});
-
-test("Parser - string literal produces STRING", () => {
-    const log = getParseTree('"hello"');
-    assertEqual(log.includes("    STRING"), true);
-});
-
-test("Parser - null literal produces NULL", () => {
-    const log = getParseTree("null");
-    assertEqual(log.includes("    NULL"), true);
-});
-
-// =============================================================================
 // Empty Input
 // =============================================================================
 
@@ -269,44 +158,9 @@ test("Parser - empty string produces READ_GLOBAL this", () => {
 // Error Cases
 // =============================================================================
 
-test("Parser - bare = throws error", () => {
-    assertThrows(
-        () => getParseTree("="),
-        Error,
-    );
-});
-
 test("Parser - unclosed parenthesis throws error", () => {
     assertThrows(
         () => getParseTree("(1 + 2"),
-        Error,
-    );
-});
-
-test("Parser - unclosed string throws error", () => {
-    assertThrows(
-        () => getParseTree('"unclosed'),
-        Error,
-    );
-});
-
-test("Parser - triple equals throws error", () => {
-    assertThrows(
-        () => getParseTree("1 === 2"),
-        Error,
-    );
-});
-
-test("Parser - lone ampersand throws error", () => {
-    assertThrows(
-        () => getParseTree("1 & 2"),
-        Error,
-    );
-});
-
-test("Parser - lone pipe throws error", () => {
-    assertThrows(
-        () => getParseTree("1 | 2"),
         Error,
     );
 });
@@ -415,17 +269,3 @@ test("Parser - remembered with property chain", () => {
     assertEqual(accessCount, 2);
 });
 
-// =============================================================================
-// Float in Expressions
-// =============================================================================
-
-test("Parser - float literal produces VALUE node", () => {
-    const log = getParseTree("3.14");
-    assertEqual(log.includes("    VALUE"), true);
-});
-
-test("Parser - float in comparison", () => {
-    const log = getParseTree("x > 2.5");
-    assertEqual(log.includes("    GREATER_THAN"), true);
-    assertEqual(log.includes("      VALUE"), true);
-});

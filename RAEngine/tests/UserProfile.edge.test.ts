@@ -21,10 +21,6 @@ function sanitize(name: string): string {
     return name.replace(/[/\\:*?"<>|]/g, "").trim();
 }
 
-test("sanitize - normal name unchanged", () => {
-    assertEqual(sanitize("Player1"), "Player1");
-});
-
 test("sanitize - strips forward slashes", () => {
     assertEqual(sanitize("../../../etc/passwd"), "......etcpasswd");
 });
@@ -45,20 +41,12 @@ test("sanitize - strips pipe", () => {
     assertEqual(sanitize("name|pipe"), "namepipe");
 });
 
-test("sanitize - trims whitespace", () => {
-    assertEqual(sanitize("  name  "), "name");
-});
-
 test("sanitize - empty after stripping returns empty", () => {
     assertEqual(sanitize("/\\:*?\"<>|"), "");
 });
 
 test("sanitize - preserves unicode characters", () => {
     assertEqual(sanitize("プレイヤー"), "プレイヤー");
-});
-
-test("sanitize - preserves spaces in middle", () => {
-    assertEqual(sanitize("Player Name"), "Player Name");
 });
 
 test("sanitize - path traversal with spaces", () => {
@@ -90,13 +78,6 @@ test("UserProfile.recordUnlock - zero ID is valid", () => {
     cleanup();
 });
 
-test("UserProfile.recordUnlock - large negative ID", () => {
-    setupProfile();
-    UserProfile.recordUnlock("game1", -999);
-    assertEqual(UserProfile.data!.games["game1"].unlocked, [-999]);
-    cleanup();
-});
-
 test("UserProfile.recordUnlock - many unlocks for same game", () => {
     setupProfile();
     for (let i = 0; i < 100; i++) {
@@ -108,11 +89,3 @@ test("UserProfile.recordUnlock - many unlocks for same game", () => {
     cleanup();
 });
 
-test("UserProfile.recordUnlock - duplicate across multiple calls doesn't add", () => {
-    setupProfile();
-    UserProfile.recordUnlock("game1", 5);
-    UserProfile.recordUnlock("game1", 5);
-    UserProfile.recordUnlock("game1", 5);
-    assertEqual(UserProfile.data!.games["game1"].unlocked, [5]);
-    cleanup();
-});

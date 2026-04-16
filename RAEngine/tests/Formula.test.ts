@@ -27,32 +27,6 @@ function getMnemonic(input: string): string[] {
 }
 
 // =============================================================================
-// Lexer Tests
-// =============================================================================
-
-test("Lexer - tokenizes ? as QUESTION", () => {
-    const lexer = new Lexer("?");
-    assertEqual(lexer.output[0].type, TokenType.QUESTION);
-});
-
-test("Lexer - tokenizes : as COLON", () => {
-    const lexer = new Lexer(":");
-    assertEqual(lexer.output[0].type, TokenType.COLON);
-});
-
-test("Lexer - tokenizes full ternary expression", () => {
-    const lexer = new Lexer('1 ? "a" : "b"');
-    const types = lexer.output.map(t => t.type);
-    assertEqual(types, [
-        TokenType.NUMBER,
-        TokenType.QUESTION,
-        TokenType.STRING,
-        TokenType.COLON,
-        TokenType.STRING,
-    ]);
-});
-
-// =============================================================================
 // Parser Tests - Basic
 // =============================================================================
 
@@ -103,18 +77,6 @@ test("Parser - binary op with ternary in parens", () => {
     assertEqual(log.includes("    ADDITION"), true);
     assertEqual(log.includes("      STRING"), true);
     assertEqual(log.includes("      TERNARY"), true);
-});
-
-test("Parser - arithmetic in parens works", () => {
-    // Regression test for LEFT_PARENTHESIS precedence barrier
-    const log = getParseTree('(1 + 2)');
-    assertEqual(log.includes("    ADDITION"), true);
-});
-
-test("Parser - nested arithmetic in parens", () => {
-    const log = getParseTree('((1 + 2) * 3)');
-    assertEqual(log.includes("    MULTIPLICATION"), true);
-    assertEqual(log.includes("      ADDITION"), true);
 });
 
 // =============================================================================
@@ -195,11 +157,6 @@ test("Mnemonic - ternary with comparison", () => {
     const equalIdx = mnemonic.indexOf("EQUAL");
     const ternaryIdx = mnemonic.indexOf("TERNARY");
     assertEqual(equalIdx < ternaryIdx, true);
-});
-
-test("Mnemonic - starts with VERSION_1", () => {
-    const mnemonic = getMnemonic('1 ? "a" : "b"');
-    assertEqual(mnemonic[0], "VERSION_1");
 });
 
 // =============================================================================

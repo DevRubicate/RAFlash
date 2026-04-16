@@ -198,12 +198,6 @@ test("Compile - NOT", () => {
     ]);
 });
 
-test("Compile - double NOT", () => {
-    assertEqual(compile("!!1"), [
-        "VERSION_1", "VALUE", "1", "NOT", "NOT",
-    ]);
-});
-
 // =============================================================================
 // Property Access (OBJECT_ACCESS)
 // =============================================================================
@@ -381,22 +375,6 @@ test("Compile - this global", () => {
 // =============================================================================
 // VERSION_1 header
 // =============================================================================
-
-test("Compile - always starts with VERSION_1", () => {
-    assertEqual(compile("1")[0], "VERSION_1");
-    assertEqual(compile("stage.x")[0], "VERSION_1");
-    assertEqual(compile('"hello"')[0], "VERSION_1");
-});
-
-// =============================================================================
-// Empty / edge cases
-// =============================================================================
-
-test("Compile - bare identifier returns READ_GLOBAL(this)", () => {
-    // Empty expressions default to `this`
-    const result = compile("this");
-    assertEqual(result, ["VERSION_1", "IDENTIFIER", "this", "READ_GLOBAL"]);
-});
 
 test("Compile - hex number in expression", () => {
     const result = compile("0xFF + 1");

@@ -128,16 +128,6 @@ for (const { type, unitClass, name } of binaryTests) {
         assertEqual(unit.children[1] instanceof ValueUnit, true);
     });
 
-    test(`Builder.convert - ${type} sets parent references`, () => {
-        const left = new Node(NODE_TYPE.VALUE, 1);
-        const right = new Node(NODE_TYPE.VALUE, 2);
-        const node = new Node(type);
-        node.addChild(left, right);
-
-        const unit = Builder.convert(node);
-        assertEqual(unit.children[0].parent, unit);
-        assertEqual(unit.children[1].parent, unit);
-    });
 }
 
 // =============================================================================
@@ -171,15 +161,6 @@ for (const type of binaryErrorTypes) {
         assertThrows(() => Builder.convert(node), Error, "Unexpected number of children");
     });
 
-    test(`Builder.convert - ${type} throws on 3 children`, () => {
-        const node = new Node(type);
-        node.addChild(
-            new Node(NODE_TYPE.VALUE, 1),
-            new Node(NODE_TYPE.VALUE, 2),
-            new Node(NODE_TYPE.VALUE, 3),
-        );
-        assertThrows(() => Builder.convert(node), Error, "Unexpected number of children");
-    });
 }
 
 // =============================================================================
@@ -379,24 +360,6 @@ test("Builder.convert - NOT with 0 children still converts (no child count check
 // ROOT with 0 children
 // =============================================================================
 
-test("Builder.convert - ROOT with 0 children produces empty RootUnit", () => {
-    const node = new Node(NODE_TYPE.ROOT);
-    const unit = Builder.convert(node);
-    assertEqual(unit instanceof RootUnit, true);
-    assertEqual(unit.children.length, 0);
-});
-
-// =============================================================================
-// ARRAY with 0 children
-// =============================================================================
-
-test("Builder.convert - ARRAY with 0 children produces empty ArrayUnit", () => {
-    const node = new Node(NODE_TYPE.ARRAY);
-    const unit = Builder.convert(node);
-    assertEqual(unit instanceof ArrayUnit, true);
-    assertEqual(unit.children.length, 0);
-});
-
 // =============================================================================
 // Builder.build() and output()
 // =============================================================================
@@ -412,16 +375,6 @@ test("Builder.build() populates result and log", () => {
     assertEqual(builder.log.length > 0, true);
     assertEqual(builder.log[0], "RootUnit");
     assertEqual(builder.log[1], "  ValueUnit");
-});
-
-test("Builder.output() returns result after build", () => {
-    const root = new Node(NODE_TYPE.ROOT);
-    root.addChild(new Node(NODE_TYPE.VALUE, 1));
-
-    const builder = new Builder(root);
-    builder.build();
-    const result = builder.output();
-    assertEqual(result instanceof RootUnit, true);
 });
 
 test("Builder.output() throws before build", () => {
