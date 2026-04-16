@@ -266,7 +266,7 @@
         const query = searchQuery.value.toLowerCase().trim();
         return codeNotes.value
             .map((note, index) => ({ note, originalIndex: index }))
-            .filter(({ note }) => !query || note.note.toLowerCase().includes(query));
+            .filter(({ note }) => note && (!query || note.note.toLowerCase().includes(query)));
     });
 
     // Visibility tracking for live value updates
@@ -305,7 +305,8 @@
             note: '',
             path: ''
         });
-        save();
+        // Don't save yet — the entry is empty. The @change handler on
+        // the inputs will save once the user fills in a field.
     };
 
     const deleteNote = (index) => {
@@ -328,6 +329,8 @@
     };
 
     const save = async () => {
+        // Strip null entries and empty notes (no note and no path) before persisting
+        App.data.codeNotes = App.data.codeNotes.filter(n => n && (n.note || n.path));
         await App.save();
     };
 
@@ -388,7 +391,7 @@
     });
 
     // Observe rows when codeNotes array length changes (add/remove)
-    watch(() => codeNotes.value.map(n => n.id).join(','), async () => {
+    watch(() => codeNotes.value.map(n => n?.id).join(','), async () => {
         rowValues.value = {};
         visibleRows.value = new Set();
 
@@ -421,6 +424,8 @@
     });
 
     App.initialize().then(() => {
+        // Scrub null entries and empty notes left by prior bugs
+        App.data.codeNotes = (App.data.codeNotes || []).filter(n => n && (n.note || n.path));
         nextId = Math.max(0, ...App.data.codeNotes.map(n => n.id || 0)) + 1;
         App.ready = true;
     });
