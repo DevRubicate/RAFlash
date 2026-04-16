@@ -20,7 +20,6 @@ import { ValueUnit }                    from './unit/ValueUnit.ts';
 import { StringUnit }                   from './unit/StringUnit.ts';
 import { NullUnit }                     from './unit/NullUnit.ts';
 import { ReadGlobalUnit }               from './unit/ReadGlobalUnit.ts';
-import { VoidUnit }                     from './unit/VoidUnit.ts';
 import { EqualUnit }                    from './unit/EqualUnit.ts';
 import { NotEqualUnit }                 from './unit/NotEqualUnit.ts';
 import { GreaterThanUnit }              from './unit/GreaterThanUnit.ts';
@@ -284,14 +283,6 @@ export class Builder {
             }
             case NODE_TYPE.NULL: {
                 const element = new NullUnit(null);
-                return element;
-            }
-            case NODE_TYPE.VOID: {
-                const element = new VoidUnit(null);
-                element.children.push(
-                    Builder.convert(node.children[0]),
-                );
-                element.children[0].parent = element;
                 return element;
             }
             case NODE_TYPE.EQUAL: {

@@ -39,7 +39,6 @@ import { ObjectAccessExpressionUnit } from "../src/formula/unit/ObjectAccessExpr
 import { ArrayAccessUnit } from "../src/formula/unit/ArrayAccessUnit.ts";
 import { ArrayUnit } from "../src/formula/unit/ArrayUnit.ts";
 import { RootUnit } from "../src/formula/unit/RootUnit.ts";
-import { VoidUnit } from "../src/formula/unit/VoidUnit.ts";
 import { ExecutableBlockUnit } from "../src/formula/unit/ExecutableBlockUnit.ts";
 
 // =============================================================================
@@ -305,21 +304,6 @@ test("Builder.convert - EXECUTABLE_BLOCK with children", () => {
     const unit = Builder.convert(node);
     assertEqual(unit instanceof ExecutableBlockUnit, true);
     assertEqual(unit.children.length, 2);
-});
-
-// =============================================================================
-// VOID
-// =============================================================================
-
-test("Builder.convert - VOID wraps child", () => {
-    const child = new Node(NODE_TYPE.VALUE, 1);
-    const node = new Node(NODE_TYPE.VOID);
-    node.addChild(child);
-
-    const unit = Builder.convert(node);
-    assertEqual(unit instanceof VoidUnit, true);
-    assertEqual(unit.children.length, 1);
-    assertEqual(unit.children[0].parent, unit);
 });
 
 // =============================================================================

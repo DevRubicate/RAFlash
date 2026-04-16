@@ -108,12 +108,6 @@ class Lexer {
             while (this.position < this.input.length) {
                 const char = this.input[this.position];
 
-                // Treat this garbage as if it doesn't exist
-                if (char === '\r') {
-                    ++this.position;
-                    continue;
-                }
-
                 switch (this.state) {
                     case 'DEFAULT':
                         this.handleDefaultState(char);
@@ -287,8 +281,6 @@ class Lexer {
                         str += '\n';
                     } else if (escapedChar === 't') {
                         str += '\t';
-                    } else if (escapedChar === 'r') {
-                        str += '\r';
                     } else if (escapedChar === '\\') {
                         str += '\\';
                     } else if (escapedChar === this.stringDelimiter) {

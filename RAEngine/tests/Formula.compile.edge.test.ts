@@ -317,3 +317,128 @@ test("compile - NOT with remembered value", () => {
     assertEqual(bytecode.includes("NOT"), true);
     assertEqual(bytecode.includes("REMEMBER"), true);
 });
+
+// =============================================================================
+// Ternary with Property Access in Both Branches
+// =============================================================================
+
+test("compile - ternary with property access in both branches", () => {
+    const bytecode = Formula.compile("stage.x > 0 ? stage.a : stage.b");
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("TERNARY"), true);
+    assertEqual(bytecode.includes("GREATER"), true);
+    // 3 property chains: stage.x, stage.a, stage.b → 3 OBJECT_ACCESS
+    const accessCount = bytecode.filter((s: string) => s === "OBJECT_ACCESS").length;
+    assertEqual(accessCount, 3);
+});
+
+test("compile - ternary with chained property access in branches", () => {
+    const bytecode = Formula.compile("stage.player.health != null ? stage.player.health : 0");
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("TERNARY"), true);
+    assertEqual(bytecode.includes("NOT_EQUAL"), true);
+    assertEqual(bytecode.includes("NULL"), true);
+    // stage.player.health appears twice (condition + then), stage.player.health → 2 accesses each = 4
+    const accessCount = bytecode.filter((s: string) => s === "OBJECT_ACCESS").length;
+    assertEqual(accessCount, 4);
+});
+
+// =============================================================================
+// Function Call with Complex Inner Expression
+// =============================================================================
+
+test("compile - len() with array access inside", () => {
+    const bytecode = Formula.compile("len(stage.enemies[0])");
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("LEN"), true);
+    assertEqual(bytecode.includes("OBJECT_ACCESS"), true);
+    assertEqual(bytecode.includes("ARRAY_ACCESS"), true);
+});
+
+test("compile - len() with arithmetic inside", () => {
+    const bytecode = Formula.compile("len(stage.items) + 1");
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("LEN"), true);
+    assertEqual(bytecode.includes("ADD"), true);
+});
+
+test("compile - len() with comparison inside parens", () => {
+    const bytecode = Formula.compile("len(stage.enemies) >= 5 && len(stage.allies) > 0");
+    assertEqual(bytecode[0], "VERSION_1");
+    const lenCount = bytecode.filter((s: string) => s === "LEN").length;
+    assertEqual(lenCount, 2);
+    assertEqual(bytecode.includes("AND"), true);
+    assertEqual(bytecode.includes("GREATER_EQUAL"), true);
+    assertEqual(bytecode.includes("GREATER"), true);
+});
+
+// =============================================================================
+// Remembered Value Combinations
+// =============================================================================
+
+test("compile - remembered value with property chain", () => {
+    const bytecode = Formula.compile("{stage.player.health}");
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("REMEMBER"), true);
+    const accessCount = bytecode.filter((s: string) => s === "OBJECT_ACCESS").length;
+    assertEqual(accessCount, 2);
+});
+
+test("compile - remembered value with bare identifier", () => {
+    const bytecode = Formula.compile("{x}");
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("REMEMBER"), true);
+    assertEqual(bytecode.includes("READ_GLOBAL"), true);
+});
+
+test("compile - remembered value in arithmetic", () => {
+    const bytecode = Formula.compile("{stage.score} + 100");
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("REMEMBER"), true);
+    assertEqual(bytecode.includes("ADD"), true);
+});
+
+test("compile - two remembered values in comparison", () => {
+    const bytecode = Formula.compile("{stage.score} > {stage.highScore}");
+    assertEqual(bytecode[0], "VERSION_1");
+    const rememberCount = bytecode.filter((s: string) => s === "REMEMBER").length;
+    assertEqual(rememberCount, 2);
+    assertEqual(bytecode.includes("GREATER"), true);
+});
+
+test("compile - arithmetic inside remembered value returns error", () => {
+    // Binary operators inside {} are not supported
+    assertEqual(Formula.compile("{stage.score + 100}"), ERROR_MARKER);
+    assertEqual(Formula.compile("{1 + 2}"), ERROR_MARKER);
+});
+
+// =============================================================================
+// Ternary Inside Parentheses with Outer Arithmetic
+// =============================================================================
+
+test("compile - ternary in parens with outer addition", () => {
+    const bytecode = Formula.compile("1 + (x > 0 ? 2 : 3)");
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("TERNARY"), true);
+    assertEqual(bytecode.includes("ADD"), true);
+    assertEqual(bytecode.includes("GREATER"), true);
+});
+
+test("compile - ternary in parens with outer multiplication", () => {
+    const bytecode = Formula.compile("(x > 0 ? 2 : 3) * 4");
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("TERNARY"), true);
+    assertEqual(bytecode.includes("MUL"), true);
+});
+
+test("compile - ternary in parens as part of larger expression", () => {
+    const bytecode = Formula.compile("1 + (x ? 2 : 3) * 4");
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("TERNARY"), true);
+    assertEqual(bytecode.includes("ADD"), true);
+    assertEqual(bytecode.includes("MUL"), true);
+    // MUL should bind tighter than ADD in the output
+    const mulIdx = bytecode.indexOf("MUL");
+    const addIdx = bytecode.indexOf("ADD");
+    assertEqual(mulIdx < addIdx, true);
+});

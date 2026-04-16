@@ -19,8 +19,6 @@ enum NODE_TYPE {
     VALUE = 'VALUE',
     STRING = 'STRING',
     NULL = 'NULL',
-    VOID = 'VOID',
-
     // Variables
     READ_GLOBAL = 'READ_GLOBAL',
 

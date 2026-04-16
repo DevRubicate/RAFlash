@@ -330,8 +330,53 @@ test("Compile - compound condition with AND", () => {
 });
 
 // =============================================================================
-// Semicolons are not used for multi-statement in this DSL
+// Multiline Formulas
 // =============================================================================
+
+test("Compile - multiline formula with newline", () => {
+    const result = compile("stage.player\n.health");
+    assertEqual(result[0], "VERSION_1");
+    assertEqual(result.filter(s => s === "OBJECT_ACCESS").length, 2);
+});
+
+test("Compile - newlines as whitespace in arithmetic", () => {
+    assertEqual(compile("1\n+\n2"), [
+        "VERSION_1", "VALUE", "1", "VALUE", "2", "ADD",
+    ]);
+});
+
+test("Compile - newline between comparison operands", () => {
+    const result = compile("stage.x\n==\n0");
+    assertEqual(result.includes("EQUAL"), true);
+    assertEqual(result.includes("OBJECT_ACCESS"), true);
+});
+
+// =============================================================================
+// Globals
+// =============================================================================
+
+test("Compile - stage_frame global", () => {
+    const result = compile("stage_frame");
+    assertEqual(result, ["VERSION_1", "IDENTIFIER", "stage_frame", "READ_GLOBAL"]);
+});
+
+test("Compile - stage_frame in comparison", () => {
+    const result = compile("stage_frame > 100");
+    assertEqual(result, [
+        "VERSION_1", "IDENTIFIER", "stage_frame", "READ_GLOBAL",
+        "VALUE", "100", "GREATER",
+    ]);
+});
+
+test("Compile - key global", () => {
+    const result = compile("key");
+    assertEqual(result, ["VERSION_1", "IDENTIFIER", "key", "READ_GLOBAL"]);
+});
+
+test("Compile - this global", () => {
+    const result = compile("this");
+    assertEqual(result, ["VERSION_1", "IDENTIFIER", "this", "READ_GLOBAL"]);
+});
 
 // =============================================================================
 // VERSION_1 header

@@ -279,3 +279,27 @@ test("compile - len() in remembered value", () => {
     assertEqual(bytecode.includes("LEN"), true);
     assertEqual(bytecode.includes("REMEMBER"), true);
 });
+
+// =============================================================================
+// Function Call Error Cases
+// =============================================================================
+
+test("compile - unknown function returns error", () => {
+    assertEqual(Formula.compile("foo(x)"), ERROR_MARKER);
+});
+
+test("compile - unknown function with property arg returns error", () => {
+    assertEqual(Formula.compile("bar(stage.player)"), ERROR_MARKER);
+});
+
+test("compile - semicolons are rejected", () => {
+    assertEqual(Formula.compile("a; b"), ERROR_MARKER);
+});
+
+test("compile - len() with no arguments returns error", () => {
+    assertEqual(Formula.compile("len()"), ERROR_MARKER);
+});
+
+test("compile - len() with multiple arguments returns error", () => {
+    assertEqual(Formula.compile("len(a, b)"), ERROR_MARKER);
+});

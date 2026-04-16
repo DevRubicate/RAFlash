@@ -144,21 +144,7 @@ class Parser {
             }
         }
 
-        // Make sure the last statement in the program returns a value
-        if(this.currentNode.children.length > 0) {
-            const nodes = [];
-            for(let i=0, len=this.currentNode.children[0].children.length; i<len; ++i) {
-                nodes.push(this.currentNode.children[0].children.pop()!);
-            }
-
-            for(let i=nodes.length-1; i>=0; --i) {
-                if(i > 0) {
-                    this.currentNode.children[0].children.push(new Node(NODE_TYPE.VOID).addChild(nodes[i]));
-                } else {
-                    this.currentNode.children[0].children.push(nodes[i]);
-                }
-            }
-        } else {
+        if(this.currentNode.children.length === 0) {
             this.currentNode.children[0] = new Node(NODE_TYPE.READ_GLOBAL).addChild(new Node(NODE_TYPE.IDENTIFIER, 'this'));
         }
 
@@ -351,21 +337,6 @@ class Parser {
                     this.currentNode = this.currentNode.parent;
                     break;
                 }
-                case CONSUME.SEMICOLON: {
-                    switch (this.peakToken().type) {
-                        case TokenType.SEMICOLON: {
-                            // Move past the semicolon token
-                            this.advanceToken();
-                            break;
-                        }
-                        default:
-                            throw new ParseError(
-                                `Unexpected %s, expected semicolon`,
-                                this.peakToken(),
-                            );
-                    }
-                    break;
-                }
                 case CONSUME.MAIN: {
                     if (this.peakToken().type !== TokenType.EOF) {
                         this.replaceCurrentNode(
@@ -379,52 +350,9 @@ class Parser {
                     break;
                 }
                 case CONSUME.MAIN_CONTINUE: {
-                    if (this.peakToken().type === TokenType.SEMICOLON) {
-                        this.advanceToken();
-                        if (this.peakToken().type === TokenType.EOF) {
-                            break;
-                        }
-                        this.currentNode.addConsume(
-                            CONSUME.MAIN_CONTINUE,
-                            CONSUME.STATEMENT,
-                        );
-                    } else if (this.peakToken().type !== TokenType.EOF) {
+                    if (this.peakToken().type !== TokenType.EOF) {
                         throw new ParseError(
                             `Unexpected %s in main`,
-                            this.peakToken(),
-                        );
-                    }
-                    break;
-                }
-                case CONSUME.EXECUTABLE_BLOCK: {
-                    if (this.peakToken().type !== TokenType.RBRACE) {
-                        this.replaceCurrentNode(
-                            new Node(NODE_TYPE.EXECUTABLE_BLOCK)
-                                .addConsume(
-                                    CONSUME.BLOCK_CONTINUE,
-                                    CONSUME.STATEMENT,
-                                ),
-                        );
-                    } else {
-                        this.replaceCurrentNode(
-                            new Node(NODE_TYPE.EXECUTABLE_BLOCK),
-                        );
-                    }
-                    break;
-                }
-                case CONSUME.BLOCK_CONTINUE: {
-                    if (this.peakToken().type === TokenType.SEMICOLON) {
-                        this.advanceToken();
-                        if (this.peakToken().type === TokenType.RBRACE) {
-                            break;
-                        }
-                        this.currentNode.addConsume(
-                            CONSUME.BLOCK_CONTINUE,
-                            CONSUME.STATEMENT,
-                        );
-                    } else if (this.peakToken().type !== TokenType.RBRACE) {
-                        throw new ParseError(
-                            `Unexpected %s in block`,
                             this.peakToken(),
                         );
                     }
@@ -563,10 +491,6 @@ class Parser {
                             )
                         );
                         // Move past the token
-                        this.advanceToken();
-                    } else if(this.peakToken().type === TokenType.LEFT_BRACKET) {
-                        this.currentNode.addConsume(CONSUME.EXPRESSION);
-                        // Move past the parenthesis token
                         this.advanceToken();
                     }
                     break;
