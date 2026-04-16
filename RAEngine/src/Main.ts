@@ -1477,7 +1477,7 @@ function emitLog(source: string, level: string, message: string): void {
  */
 async function openDevtoolsMenu(): Promise<void> {
     // Reuse existing menu window if one is still open
-    const existing = HTMLWindow.instances.find(w => !w.isClosed);
+    const existing = HTMLWindow.instances.find(w => !w.isClosed && w.url === "menu.html");
     if (existing) return;
 
     devtoolsOpened = true;

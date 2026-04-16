@@ -12,15 +12,17 @@ export class HTMLWindow {
     windowId: number;
     isClosed: boolean;
     persistent: boolean;
+    url: string;
 
     // The constructor is private and is only called by the async `create` method.
-    private constructor(process: Deno.ChildProcess, tempDir: string, chromeUserDataDir: string, windowId: number) {
+    private constructor(process: Deno.ChildProcess, tempDir: string, chromeUserDataDir: string, windowId: number, url: string) {
         this.process = process;
         this.tempDir = tempDir;
         this.chromeUserDataDir = chromeUserDataDir;
         this.windowId = windowId;
         this.isClosed = false;
         this.persistent = false;
+        this.url = url;
         
         // Asynchronously update the state when the user closes the window.
         this.process.status.then(() => {
@@ -142,7 +144,7 @@ export class HTMLWindow {
         }
 
         // Create the class instance now that the process is spawned.
-        new HTMLWindow(process, tempDir, chromeUserDataDir, windowId);
+        new HTMLWindow(process, tempDir, chromeUserDataDir, windowId, url);
     }
 
     /**
