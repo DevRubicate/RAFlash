@@ -2551,6 +2551,14 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
     const writer = conn.writable.getWriter();
 
     try {
+        // Reject connections before avmConfig is initialized (Flash Player hasn't launched yet)
+        if (!avmConfig) {
+            reader.releaseLock();
+            writer.releaseLock();
+            conn.close();
+            return;
+        }
+
         // Read initial data — loop until we have enough to determine request type.
         // HTTP requests need at least the first line; XMLSocket sends a policy request or JSON.
         while (true) {
