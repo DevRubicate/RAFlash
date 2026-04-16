@@ -39,7 +39,7 @@ export class HTMLWindow {
      * @param startX Optional - explicit X position (overrides parent/center calculation).
      * @param startY Optional - explicit Y position (overrides parent/center calculation).
      */
-    static async create(url: string, width: number, height: number, windowId: number, parentWindowId?: number, startX?: number, startY?: number) {
+    static async create(url: string, width: number, height: number, windowId: number, port: number, parentWindowId?: number, startX?: number, startY?: number) {
         const platform = Deno.build.os;
 
         // Calculate window position
@@ -70,7 +70,7 @@ export class HTMLWindow {
         }
 
         const chromeArgs = [
-            `--app=http://localhost:18080/${url}?windowId=${windowId}`,
+            `--app=http://localhost:${port}/${url}?windowId=${windowId}`,
             '--new-window',
             '--no-first-run',
             '--log-level=3',
@@ -111,7 +111,7 @@ export class HTMLWindow {
                 content_settings: {
                     exceptions: {
                         clipboard: {
-                            "http://localhost:18080,*": {
+                            [`http://localhost:${port},*`]: {
                                 setting: 1
                             }
                         }

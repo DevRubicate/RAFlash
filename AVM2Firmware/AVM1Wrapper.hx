@@ -36,9 +36,23 @@ class AVM1Wrapper extends Sprite {
         contextMenu = cm;
         stage.addEventListener(MouseEvent.RIGHT_CLICK, function(_:MouseEvent):Void {});
 
-        // Load the real AVM1 firmware
+        // Load the real AVM1 firmware, passing through the port param
+        // so the AS2 firmware knows which port to connect to.
+        var firmwareUrl:String = "avm1-firmware.swf";
+        try {
+            var myUrl:String = flash.Lib.current.loaderInfo.url;
+            if (myUrl != null) {
+                var portIdx:Int = myUrl.indexOf("port=");
+                if (portIdx >= 0) {
+                    var portStr:String = myUrl.substr(portIdx + 5);
+                    var ampIdx:Int = portStr.indexOf("&");
+                    if (ampIdx >= 0) portStr = portStr.substr(0, ampIdx);
+                    firmwareUrl = "avm1-firmware.swf?port=" + portStr;
+                }
+            }
+        } catch (e:Dynamic) {}
         var loader = new Loader();
         addChild(loader);
-        loader.load(new URLRequest("avm1-firmware.swf"));
+        loader.load(new URLRequest(firmwareUrl));
     }
 }

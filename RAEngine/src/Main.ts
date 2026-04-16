@@ -213,9 +213,38 @@ JSONDiff.watch(
     }
 );
 
-const HTTP_PORT = 18080;
-const FLASH_PORT = 18081;
-const PROXY_PORT = 18082;
+const DEFAULT_PORT = 18080;
+
+let HTTP_PORT = DEFAULT_PORT;
+let FLASH_PORT = DEFAULT_PORT + 1;
+let PROXY_PORT = DEFAULT_PORT + 2;
+
+/** Quick probe — returns true if nothing is listening on `port`. */
+function isPortFree(port: number): boolean {
+    try {
+        const listener = Deno.listen({ port });
+        listener.close();
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Allocate `count` consecutive-ish ports starting from `base`.
+ * Tries `base` first, then increments until a free port is found;
+ * each subsequent port starts searching from the previous one + 1.
+ */
+function allocatePorts(base: number, count: number): number[] {
+    const ports: number[] = [];
+    let candidate = base;
+    for (let i = 0; i < count; i++) {
+        while (!isPortFree(candidate)) candidate++;
+        ports.push(candidate);
+        candidate++;
+    }
+    return ports;
+}
 const RAFLASH_DOMAIN = "raflash.local"; // Fake domain for proxy routing (127.0.0.1 bypasses WinInet proxy)
 
 /**
@@ -1535,7 +1564,7 @@ async function openDevtoolsMenu(): Promise<void> {
 
     devtoolsOpened = true;
     const windowId = Math.floor(Math.random() * 0xFFFFFF);
-    await HTMLWindow.create("menu.html", 300, 600, windowId, undefined, 0, 0);
+    await HTMLWindow.create("menu.html", 300, 600, windowId, HTTP_PORT, undefined, 0, 0);
 }
 
 /**
@@ -1753,10 +1782,10 @@ function startHttpServerInner() {
                         catch { /* use default domain */ }
                     }
                     if (avmConfig.mode === "AVM2") {
-                        const fwUrl = `http://${fwDomain}/avm2-firmware.swf?mode=child`;
+                        const fwUrl = `http://${fwDomain}/avm2-firmware.swf?mode=child&port=${FLASH_PORT}`;
                         file = injectAVM2FirmwareLoader(file, fwUrl) as Uint8Array<ArrayBuffer>;
                     } else {
-                        const fwUrl = `http://${fwDomain}/avm1-firmware.swf`;
+                        const fwUrl = `http://${fwDomain}/avm1-firmware.swf?port=${FLASH_PORT}`;
                         file = injectFirmwareLoader(file, fwUrl) as Uint8Array<ArrayBuffer>;
                     }
                 }
@@ -2241,7 +2270,7 @@ async function handleApiRequest(
             const height = Number(input.params.height) || 600;
             const windowId = Math.floor(Math.random() * 0xFFFFFF);
             const parentWindowId = input.params.parentWindowId as number | undefined;
-            await HTMLWindow.create(`${windowName}.html`, width, height, windowId, parentWindowId);
+            await HTMLWindow.create(`${windowName}.html`, width, height, windowId, HTTP_PORT, parentWindowId);
             return { success: true };
         }
         case "showPopup": {
@@ -2259,7 +2288,7 @@ async function handleApiRequest(
 
             // Extract just the HTML filename from the URL path
             const htmlFile = url.split("/").pop() || url;
-            await HTMLWindow.create(htmlFile, width, height, windowId, parentWindowId);
+            await HTMLWindow.create(htmlFile, width, height, windowId, HTTP_PORT, parentWindowId);
 
             // Event Log survives between games
             if (htmlFile === "event-log.html") {
@@ -2478,7 +2507,7 @@ async function showFilePicker(invalidDropMessage?: string | null): Promise<{ gam
     if (invalidDropMessage) {
         windowParams.set(windowId, { invalidDropMessage });
     }
-    await HTMLWindow.create("file-picker.html", 800, 500, windowId);
+    await HTMLWindow.create("file-picker.html", 800, 500, windowId, HTTP_PORT);
 
     // Race the file selection against the *picker window's* process exiting,
     // NOT against any HTMLWindow closing. After Flash crashes we may have
@@ -2679,10 +2708,10 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
                     try { rsDomain = new URL(rsOriginUrl).host; } catch { /* malformed URL, use default */ }
                 }
                 if (avmConfig.mode === "AVM2") {
-                    const rsFirmwareUrl = `http://${rsDomain}/avm2-firmware.swf?mode=child`;
+                    const rsFirmwareUrl = `http://${rsDomain}/avm2-firmware.swf?mode=child&port=${FLASH_PORT}`;
                     swfData = injectAVM2FirmwareLoader(swfData, rsFirmwareUrl);
                 } else {
-                    const rsFirmwareUrl = `http://${rsDomain}/avm1-firmware.swf`;
+                    const rsFirmwareUrl = `http://${rsDomain}/avm1-firmware.swf?port=${FLASH_PORT}`;
                     swfData = injectFirmwareLoader(swfData, rsFirmwareUrl);
                 }
             }
@@ -3150,7 +3179,7 @@ function launchFlashPlayer(): Deno.ChildProcess {
         const gc = AppData.data.gameConfig;
         const nextUrl = (mode === "child")
             ? resolved.url
-            : `http://${resolved.domain}${avmConfig.firmwareUrl}`;
+            : `http://${resolved.domain}${avmConfig.firmwareUrl}?port=${FLASH_PORT}`;
         // Build query string manually — Flash Player's FlashVar parser
         // doesn't URL-decode values, so we must not encode them.
         const qScaleMode = gc.scaleMode || "neutral";
@@ -3159,7 +3188,7 @@ function launchFlashPlayer(): Deno.ChildProcess {
     } else if (mode === "child" || mode === "none") {
         launchUrl = resolved.url;
     } else {
-        launchUrl = `http://${resolved.domain}${avmConfig.firmwareUrl}`;
+        launchUrl = `http://${resolved.domain}${avmConfig.firmwareUrl}?port=${FLASH_PORT}`;
     }
 
     const command = new Deno.Command(fpPath, {
@@ -3296,6 +3325,11 @@ async function main(): Promise<void> {
 
     // Load persistent settings
     await loadSettings();
+
+    // Allocate ports sequentially from DEFAULT_PORT.
+    // Main.ts is the single source of truth — subsystems use exactly
+    // the port they are given, no fallback.
+    [HTTP_PORT, FLASH_PORT, PROXY_PORT] = allocatePorts(DEFAULT_PORT, 3);
 
     // 1. Start HTTP server (persists across game sessions, retries port on startup after self-update)
     await startHttpServer();

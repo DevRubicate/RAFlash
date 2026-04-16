@@ -37,7 +37,7 @@ class Main {
     private static var _rescanWarned:Boolean = false;
     private static var RESCAN_WARN_THRESHOLD:Number = 60;
 
-    // Configuration
+    // Configuration (default port, overridden by URL ?port= param in init())
     private static var PORT:Number = 18081;
     private static var fixTextFieldBindings:Boolean = true;
     private static var fixSoundAttach:Boolean = true;
@@ -205,6 +205,21 @@ class Main {
             var pathStart:Number = level0Url.indexOf("/", schemeEnd + 3);
             if (pathStart >= 0) {
                 imageBaseUrl = level0Url.substring(0, pathStart);
+            }
+        }
+
+        // Extract port from the firmware SWF's own URL (?port=XXXX).
+        // In child mode self is the child clip loaded from avm1-firmware.swf;
+        // in parent mode self is the firmware's root (loaded by AVM1Wrapper).
+        if (self != undefined) {
+            var fwUrl:String = String(self._url);
+            var portIdx:Number = fwUrl.indexOf("port=");
+            if (portIdx >= 0) {
+                var portStr:String = fwUrl.substring(portIdx + 5);
+                var ampIdx:Number = portStr.indexOf("&");
+                if (ampIdx >= 0) portStr = portStr.substring(0, ampIdx);
+                var parsed:Number = parseInt(portStr);
+                if (!isNaN(parsed) && parsed > 0) PORT = parsed;
             }
         }
 

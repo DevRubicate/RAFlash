@@ -61,7 +61,8 @@ class Main extends MovieClip {
     // (game is root, firmware is child). Detected from loaderInfo URL query param.
     private var childMode:Bool = false;
 
-    private static inline var PORT:Int = 18081;
+    // Default port, overridden by URL ?port= param in constructor
+    private static var PORT:Int = 18081;
 
     public function new() {
         super();
@@ -85,6 +86,15 @@ class Main extends MovieClip {
                 if (schemeEnd >= 0) {
                     var pathStart:Int = url.indexOf("/", schemeEnd + 3);
                     Achievement.imageBaseUrl = (pathStart >= 0) ? url.substring(0, pathStart) : url;
+                }
+                // Extract port from ?port=XXXX (or &port=XXXX)
+                var portIdx:Int = url.indexOf("port=");
+                if (portIdx >= 0) {
+                    var portStr:String = url.substr(portIdx + 5);
+                    var ampIdx:Int = portStr.indexOf("&");
+                    if (ampIdx >= 0) portStr = portStr.substr(0, ampIdx);
+                    var parsed:Null<Int> = Std.parseInt(portStr);
+                    if (parsed != null && parsed > 0) PORT = parsed;
                 }
             }
         } catch (e:Dynamic) {
