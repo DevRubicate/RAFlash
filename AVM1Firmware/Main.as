@@ -106,6 +106,9 @@ class Main {
     private static var nativeRPFnMap:Object = null;      // asset index → function array index
     private static var nativeRPStorage:Array = [];        // per-asset storage objects (for REMEMBER)
 
+    // Origin for asset image URLs (derived from firmware's own URL at startup)
+    private static var imageBaseUrl:String = "http://raflash.local";
+
     // Socket receive buffer for fragmented messages
     private static var receiveBuffer:String = "";
 
@@ -193,6 +196,17 @@ class Main {
     public static function init(self:MovieClip):Void {
         var level0Url:String = String(_level0._url);
         childMode = (level0Url.indexOf("/game.swf") != -1);
+
+        // Extract origin (scheme + host) from _level0's URL for asset image
+        // requests. Works in both modes: parent mode _level0 is the wrapper
+        // loaded from the origin domain; child mode _level0 is the game itself.
+        var schemeEnd:Number = level0Url.indexOf("://");
+        if (schemeEnd >= 0) {
+            var pathStart:Number = level0Url.indexOf("/", schemeEnd + 3);
+            if (pathStart >= 0) {
+                imageBaseUrl = level0Url.substring(0, pathStart);
+            }
+        }
 
         if (childMode) {
             // Child mode: firmware was loaded by injected bytecode into a
@@ -1191,7 +1205,7 @@ class Main {
         };
 
         loader.addListener(listener);
-        loader.loadClip("http://raflash.local/asset-image/" + assetId, holder);
+        loader.loadClip(imageBaseUrl + "/asset-image/" + assetId, holder);
     }
 
     /**
@@ -3214,7 +3228,7 @@ class Main {
                 var naPrimed:Boolean = (naStore._primed == true);
                 if (naPrimed) {
                     if (!achievement._primed) {
-                        var primedImgUrl:String = "http://raflash.local/asset-image/" + achievement.id;
+                        var primedImgUrl:String = imageBaseUrl + "/asset-image/" + achievement.id;
                         PrimedBadges.show(achievement.id, primedImgUrl);
                     }
                     achievement._primed = true;
@@ -3234,7 +3248,7 @@ class Main {
                         (naMCur != naPrevMeasured || naMTgt != achievement._measuredTarget);
                     if (naValueChanged && achResult != 1) {
                         var naMText:String = String(Math.floor(naMCur)) + "/" + String(Math.floor(naMTgt));
-                        var naMImgUrl:String = "http://raflash.local/asset-image/" + achievement.id;
+                        var naMImgUrl:String = imageBaseUrl + "/asset-image/" + achievement.id;
                         Measure.showOrReset(achievement.name, achievement.description || "",
                                             naMText, naMImgUrl, achievement.id);
                     }
@@ -3244,7 +3258,7 @@ class Main {
 
                 // Handle trigger
                 if (achResult == 1) {
-                    var naImageUrl:String = "http://raflash.local/asset-image/" + achievement.id;
+                    var naImageUrl:String = imageBaseUrl + "/asset-image/" + achievement.id;
                     Toast.show("Achievement Unlocked", achievement.name,
                                achievement.description || "", "left", naImageUrl);
                     // Reset storage and hits across all groups
@@ -3329,7 +3343,7 @@ class Main {
                 if (simpleEligible) {
                     // All requirements passed — trigger the achievement
                     if (simpleAllPass && simpleReqs.length > 0) {
-                        var imageUrl:String = "http://raflash.local/asset-image/" + achievement.id;
+                        var imageUrl:String = imageBaseUrl + "/asset-image/" + achievement.id;
                         Toast.show("Achievement Unlocked", achievement.name, achievement.description || "", "left", imageUrl);
                         clearAssetDeltaValues(achievement);
                         diffSet(achievement, "state", "TRIGGERED", "assets/" + i + "/state");
@@ -4057,7 +4071,7 @@ class Main {
                         // PRIMED state - all prerequisites met, waiting for trigger condition
                         if (!achievement._primed) {
                             // Just became primed - show badge
-                            var primedImageUrl:String = "http://raflash.local/asset-image/" + achievement.id;
+                            var primedImageUrl:String = imageBaseUrl + "/asset-image/" + achievement.id;
                             PrimedBadges.show(achievement.id, primedImageUrl);
                         }
                         achievement._primed = true;
@@ -4363,7 +4377,7 @@ class Main {
             if (hasAnyMeasured) {
                 var prevMeasuredValue:Number = achievement._measuredValue;
                 var prevMeasuredError:Boolean = achievement._measuredError;
-                var measuredImageUrl:String = "http://raflash.local/asset-image/" + achievement.id;
+                var measuredImageUrl:String = imageBaseUrl + "/asset-image/" + achievement.id;
 
                 if (measuredError) {
                     // Error state - different targets
@@ -4389,7 +4403,7 @@ class Main {
 
             // Achievement triggered - show toast and handle state
             if (assetTriggered && hasRequirements) {
-                var imageUrl:String = "http://raflash.local/asset-image/" + achievement.id;
+                var imageUrl:String = imageBaseUrl + "/asset-image/" + achievement.id;
                 Toast.show("Achievement Unlocked", achievement.name, achievement.description || "", "left", imageUrl);
 
                 // Reset all hits to 0 on all requirements
