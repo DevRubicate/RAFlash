@@ -30,6 +30,9 @@ class Achievement {
     private static var nativeRpStorage:Array<Dynamic> = [];       // per-RP-asset storage objects
     public static var nativeAchLoader:Dynamic = null;             // Keep Loader alive to prevent GC of compiled ABC
 
+    // Origin for asset image URLs (derived from firmware's own URL at startup)
+    public static var imageBaseUrl:String = "http://raflash.local";
+
     /**
      * Safely convert a Dynamic value to Float.
      * Haxe's (x : Float) type annotation generates AS3's `x as Number` which
@@ -345,7 +348,7 @@ class Achievement {
                         var naPrimed:Dynamic = untyped naStore._primed;
                         if (naPrimed == true || naPrimed == 1) {
                             if (untyped achievement._primed != true) {
-                                var primedImg:String = "http://raflash.local/asset-image/" + Std.string(untyped achievement.id);
+                                var primedImg:String = imageBaseUrl + "/asset-image/" + Std.string(untyped achievement.id);
                                 PrimedBadges.show(untyped achievement.id, primedImg);
                             }
                             untyped achievement._primed = true;
@@ -367,7 +370,7 @@ class Achievement {
                                 (mCurF != toFloat(prevMV) || mTgtF != toFloat(untyped achievement._measuredTarget));
                             if (mvChanged && achResult != 1) {
                                 var mText:String = Std.string(Math.floor(mCurF)) + "/" + Std.string(Math.floor(mTgtF));
-                                var mImg:String = "http://raflash.local/asset-image/" + Std.string(untyped achievement.id);
+                                var mImg:String = imageBaseUrl + "/asset-image/" + Std.string(untyped achievement.id);
                                 Measure.showOrReset(Std.string(untyped achievement.name), Std.string(untyped achievement.description), mText, mImg, untyped achievement.id);
                             }
                             untyped achievement._measuredValue = mCurF;
@@ -376,7 +379,7 @@ class Achievement {
 
                         // Achievement triggered
                         if (achResult == 1) {
-                            var trigImg:String = "http://raflash.local/asset-image/" + Std.string(untyped achievement.id);
+                            var trigImg:String = imageBaseUrl + "/asset-image/" + Std.string(untyped achievement.id);
                             Toast.show("Achievement Unlocked", Std.string(untyped achievement.name), Std.string(untyped achievement.description), "left", trigImg);
                             clearAssetDeltaValues(achievement);
                             diffSet(achievement, "state", "TRIGGERED", "assets/" + ai + "/state");
@@ -932,7 +935,7 @@ class Achievement {
                     if (hasAltGroups && !anyAltGroupPassed) allNonTriggerMet = false;
                     if (allNonTriggerMet && !allTriggerMet) {
                         if (untyped achievement._primed != true) {
-                            var primedImageUrl:String = "http://raflash.local/asset-image/" + Std.string(untyped achievement.id);
+                            var primedImageUrl:String = imageBaseUrl + "/asset-image/" + Std.string(untyped achievement.id);
                             PrimedBadges.show(untyped achievement.id, primedImageUrl);
                         }
                         untyped achievement._primed = true;
@@ -1185,7 +1188,7 @@ class Achievement {
             if (hasAnyMeasured) {
                 var prevMeasuredValue:Dynamic = untyped achievement._measuredValue;
                 var prevMeasuredError:Dynamic = untyped achievement._measuredError;
-                var measuredImageUrl:String = "http://raflash.local/asset-image/" + Std.string(untyped achievement.id);
+                var measuredImageUrl:String = imageBaseUrl + "/asset-image/" + Std.string(untyped achievement.id);
 
                 if (measuredError) {
                     if (prevMeasuredError != true && !assetTriggered) {
@@ -1207,7 +1210,7 @@ class Achievement {
 
             // Achievement triggered
             if (assetTriggered && hasRequirements) {
-                var imageUrl:String = "http://raflash.local/asset-image/" + Std.string(untyped achievement.id);
+                var imageUrl:String = imageBaseUrl + "/asset-image/" + Std.string(untyped achievement.id);
                 Toast.show("Achievement Unlocked", Std.string(untyped achievement.name), Std.string(untyped achievement.description), "left", imageUrl);
 
                 // Reset all hits

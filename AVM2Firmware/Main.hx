@@ -73,9 +73,20 @@ class Main extends MovieClip {
 
         // Detect child mode from the firmware URL query parameter.
         // In child mode, the injected bytecode loads us with ?mode=child.
+        // Also extract the origin (scheme + host) for building asset image
+        // URLs — the firmware must request images from the same domain it
+        // was loaded from to avoid cross-domain security blocks.
         try {
             var url:String = flash.Lib.current.loaderInfo.url;
             childMode = (url != null && url.indexOf("mode=child") != -1);
+            if (url != null) {
+                // Extract "http://host" from "http://host/path?query"
+                var schemeEnd:Int = url.indexOf("://");
+                if (schemeEnd >= 0) {
+                    var pathStart:Int = url.indexOf("/", schemeEnd + 3);
+                    Achievement.imageBaseUrl = (pathStart >= 0) ? url.substring(0, pathStart) : url;
+                }
+            }
         } catch (e:Dynamic) {
             childMode = false;
         }
