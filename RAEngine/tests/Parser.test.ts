@@ -310,3 +310,122 @@ test("Parser - lone pipe throws error", () => {
         Error,
     );
 });
+
+// =============================================================================
+// Function Call
+// =============================================================================
+
+test("Parser - function call produces FUNCTION_CALL node", () => {
+    const log = getParseTree("len(stage)");
+    assertEqual(log.includes("    FUNCTION_CALL"), true);
+});
+
+test("Parser - function call with property chain", () => {
+    const log = getParseTree("len(stage.enemies)");
+    assertEqual(log.includes("    FUNCTION_CALL"), true);
+    assertEqual(log.includes("      OBJECT_ACCESS_EXPRESSION"), true);
+});
+
+test("Parser - nested function call", () => {
+    const log = getParseTree("len(len(stage))");
+    const funcCallCount = log.filter(line => line.trim() === "FUNCTION_CALL").length;
+    assertEqual(funcCallCount, 2);
+});
+
+// =============================================================================
+// Ternary
+// =============================================================================
+
+test("Parser - ternary produces TERNARY node", () => {
+    const log = getParseTree("x > 0 ? 1 : 0");
+    assertEqual(log.includes("    TERNARY"), true);
+    // Condition should be GREATER_THAN
+    assertEqual(log.includes("      GREATER_THAN"), true);
+});
+
+test("Parser - nested ternary", () => {
+    const log = getParseTree("a > 0 ? a > 5 ? 2 : 1 : 0");
+    const ternaryCount = log.filter(line => line.trim() === "TERNARY").length;
+    assertEqual(ternaryCount, 2);
+});
+
+// =============================================================================
+// Unary Negation
+// =============================================================================
+
+test("Parser - unary negation inserts implicit zero", () => {
+    const log = getParseTree("-x");
+    // -x becomes (0 - x), so SUBTRACTION node with VALUE child
+    assertEqual(log.includes("    SUBTRACTION"), true);
+    assertEqual(log.includes("      VALUE"), true);
+    assertEqual(log.includes("      READ_GLOBAL"), true);
+});
+
+test("Parser - unary negation of number", () => {
+    const log = getParseTree("-5");
+    assertEqual(log.includes("    SUBTRACTION"), true);
+});
+
+// =============================================================================
+// Implicit This (Leading Dot)
+// =============================================================================
+
+test("Parser - leading dot produces READ_GLOBAL this with OBJECT_ACCESS_EXPRESSION", () => {
+    const log = getParseTree(".health");
+    assertEqual(log.includes("    OBJECT_ACCESS_EXPRESSION"), true);
+    assertEqual(log.includes("      READ_GLOBAL"), true);
+});
+
+// =============================================================================
+// Keyword Error Cases
+// =============================================================================
+
+test("Parser - if keyword throws unimplemented", () => {
+    assertThrows(
+        () => getParseTree("if"),
+        Error,
+    );
+});
+
+test("Parser - else keyword throws unimplemented", () => {
+    assertThrows(
+        () => getParseTree("else"),
+        Error,
+    );
+});
+
+// =============================================================================
+// Multi-dimensional Array Access
+// =============================================================================
+
+test("Parser - multi-dimensional array access", () => {
+    const log = getParseTree("a[0][1]");
+    const arrayAccessCount = log.filter(line => line.trim() === "ARRAY_ACCESS").length;
+    assertEqual(arrayAccessCount, 2);
+});
+
+// =============================================================================
+// Remembered Value
+// =============================================================================
+
+test("Parser - remembered with property chain", () => {
+    const log = getParseTree("{stage.player.health}");
+    assertEqual(log.includes("    REMEMBERED"), true);
+    const accessCount = log.filter(line => line.trim() === "OBJECT_ACCESS_EXPRESSION").length;
+    assertEqual(accessCount, 2);
+});
+
+// =============================================================================
+// Float in Expressions
+// =============================================================================
+
+test("Parser - float literal produces VALUE node", () => {
+    const log = getParseTree("3.14");
+    assertEqual(log.includes("    VALUE"), true);
+});
+
+test("Parser - float in comparison", () => {
+    const log = getParseTree("x > 2.5");
+    assertEqual(log.includes("    GREATER_THAN"), true);
+    assertEqual(log.includes("      VALUE"), true);
+});

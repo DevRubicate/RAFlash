@@ -40,6 +40,7 @@ import { ArrayAccessUnit } from "../src/formula/unit/ArrayAccessUnit.ts";
 import { ArrayUnit } from "../src/formula/unit/ArrayUnit.ts";
 import { RootUnit } from "../src/formula/unit/RootUnit.ts";
 import { ExecutableBlockUnit } from "../src/formula/unit/ExecutableBlockUnit.ts";
+import { LenUnit } from "../src/formula/unit/LenUnit.ts";
 
 // =============================================================================
 // Leaf nodes
@@ -323,6 +324,77 @@ test("Builder.convert - IDENTIFIER throws on 2+ children", () => {
 test("Builder.convert - throws on unknown node type", () => {
     const node = new Node("INVALID_TYPE" as NODE_TYPE);
     assertThrows(() => Builder.convert(node), Error, "Invalid node type");
+});
+
+// =============================================================================
+// FUNCTION_CALL (len)
+// =============================================================================
+
+test("Builder.convert - FUNCTION_CALL len with 1 child produces LenUnit", () => {
+    const arg = new Node(NODE_TYPE.VALUE, 42);
+    const node = new Node(NODE_TYPE.FUNCTION_CALL);
+    node.value = "len";
+    node.addChild(arg);
+
+    const unit = Builder.convert(node);
+    assertEqual(unit instanceof LenUnit, true);
+    assertEqual(unit.children.length, 1);
+    assertEqual(unit.children[0] instanceof ValueUnit, true);
+    assertEqual(unit.children[0].parent, unit);
+});
+
+test("Builder.convert - FUNCTION_CALL len throws on 0 children", () => {
+    const node = new Node(NODE_TYPE.FUNCTION_CALL);
+    node.value = "len";
+    assertThrows(() => Builder.convert(node), Error, "len() expects 1 argument");
+});
+
+test("Builder.convert - FUNCTION_CALL len throws on 2 children", () => {
+    const node = new Node(NODE_TYPE.FUNCTION_CALL);
+    node.value = "len";
+    node.addChild(new Node(NODE_TYPE.VALUE, 1), new Node(NODE_TYPE.VALUE, 2));
+    assertThrows(() => Builder.convert(node), Error, "len() expects 1 argument");
+});
+
+test("Builder.convert - FUNCTION_CALL unknown function throws", () => {
+    const node = new Node(NODE_TYPE.FUNCTION_CALL);
+    node.value = "foo";
+    node.addChild(new Node(NODE_TYPE.VALUE, 1));
+    assertThrows(() => Builder.convert(node), Error, "Unknown function");
+});
+
+// =============================================================================
+// NOT error case
+// =============================================================================
+
+test("Builder.convert - NOT with 0 children still converts (no child count check)", () => {
+    // NOT has no child count validation in Builder, it just iterates
+    const node = new Node(NODE_TYPE.NOT);
+    const unit = Builder.convert(node);
+    assertEqual(unit instanceof NotUnit, true);
+    assertEqual(unit.children.length, 0);
+});
+
+// =============================================================================
+// ROOT with 0 children
+// =============================================================================
+
+test("Builder.convert - ROOT with 0 children produces empty RootUnit", () => {
+    const node = new Node(NODE_TYPE.ROOT);
+    const unit = Builder.convert(node);
+    assertEqual(unit instanceof RootUnit, true);
+    assertEqual(unit.children.length, 0);
+});
+
+// =============================================================================
+// ARRAY with 0 children
+// =============================================================================
+
+test("Builder.convert - ARRAY with 0 children produces empty ArrayUnit", () => {
+    const node = new Node(NODE_TYPE.ARRAY);
+    const unit = Builder.convert(node);
+    assertEqual(unit instanceof ArrayUnit, true);
+    assertEqual(unit.children.length, 0);
 });
 
 // =============================================================================

@@ -317,3 +317,128 @@ test("Lexer - complex boolean expression", () => {
         TokenType.NOT, TokenType.IDENTIFIER,
     ]);
 });
+
+// =============================================================================
+// Float Literals
+// =============================================================================
+
+test("Lexer - simple float", () => {
+    assertEqual(types("3.14"), [TokenType.NUMBER]);
+    assertEqual(values("3.14"), ["3.14"]);
+});
+
+test("Lexer - float with leading zero", () => {
+    assertEqual(types("0.5"), [TokenType.NUMBER]);
+    assertEqual(values("0.5"), ["0.5"]);
+});
+
+test("Lexer - float in expression", () => {
+    assertEqual(types("1 + 0.5"), [TokenType.NUMBER, TokenType.PLUS, TokenType.NUMBER]);
+    assertEqual(values("1 + 0.5"), ["1", null, "0.5"]);
+});
+
+test("Lexer - number followed by dot identifier is not float", () => {
+    // "stage.0" should be IDENTIFIER DOT NUMBER, not a float
+    assertEqual(types("stage.0"), [TokenType.IDENTIFIER, TokenType.DOT, TokenType.NUMBER]);
+});
+
+test("Lexer - 0.1 is a single float token", () => {
+    assertEqual(types("0.1"), [TokenType.NUMBER]);
+    assertEqual(values("0.1"), ["0.1"]);
+});
+
+// =============================================================================
+// Bare Prefix Rejection
+// =============================================================================
+
+test("Lexer - bare 0x throws", () => {
+    assertThrows(() => new Lexer("0x"), Error, "no digits after prefix");
+});
+
+test("Lexer - bare 0b throws", () => {
+    assertThrows(() => new Lexer("0b"), Error, "no digits after prefix");
+});
+
+// =============================================================================
+// Newline Handling
+// =============================================================================
+
+test("Lexer - newline acts as whitespace", () => {
+    assertEqual(types("1\n+\n2"), [TokenType.NUMBER, TokenType.PLUS, TokenType.NUMBER]);
+});
+
+test("Lexer - newline in complex expression", () => {
+    assertEqual(types("stage\n.player"), [
+        TokenType.IDENTIFIER, TokenType.DOT, TokenType.IDENTIFIER,
+    ]);
+});
+
+// =============================================================================
+// String Escape Edge Cases
+// =============================================================================
+
+test("Lexer - default escape passes through character", () => {
+    // \z is not a recognized escape, so it becomes just "z"
+    assertEqual(values('"a\\zb"'), ["azb"]);
+});
+
+test("Lexer - single-quoted string with \\n escape", () => {
+    assertEqual(values("'line1\\nline2'"), ["line1\nline2"]);
+});
+
+test("Lexer - string ending with lone backslash throws", () => {
+    assertThrows(() => new Lexer('"hello\\'), Error, "Unclosed string");
+});
+
+// =============================================================================
+// Carriage Return Rejection
+// =============================================================================
+
+test("Lexer - carriage return throws", () => {
+    assertThrows(() => new Lexer("a\rb"), Error, "Unrecognized symbol");
+});
+
+// =============================================================================
+// Additional Unrecognized Symbols
+// =============================================================================
+
+test("Lexer - @ throws", () => {
+    assertThrows(() => new Lexer("@"), Error, "Unrecognized symbol");
+});
+
+test("Lexer - # throws", () => {
+    assertThrows(() => new Lexer("#"), Error, "Unrecognized symbol");
+});
+
+test("Lexer - $ throws", () => {
+    assertThrows(() => new Lexer("$"), Error, "Unrecognized symbol");
+});
+
+test("Lexer - backtick throws", () => {
+    assertThrows(() => new Lexer("`"), Error, "Unrecognized symbol");
+});
+
+// =============================================================================
+// Question, Colon, Ternary Tokens
+// =============================================================================
+
+test("Lexer - question mark token", () => {
+    assertEqual(types("a ? b : c"), [
+        TokenType.IDENTIFIER, TokenType.QUESTION, TokenType.IDENTIFIER,
+        TokenType.COLON, TokenType.IDENTIFIER,
+    ]);
+});
+
+// =============================================================================
+// Digit-Prefixed Identifiers
+// =============================================================================
+
+test("Lexer - bare 0x followed by non-hex letters throws", () => {
+    // 0xGG still fails bare-prefix check because G is not a hex digit
+    assertThrows(() => new Lexer("0xGG"), Error, "no digits after prefix");
+});
+
+test("Lexer - number followed by letters", () => {
+    assertEqual(types("42abc"), [TokenType.IDENTIFIER]);
+    assertEqual(values("42abc"), ["42abc"]);
+});

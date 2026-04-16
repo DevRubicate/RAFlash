@@ -414,3 +414,140 @@ test("Compile - string comparison", () => {
         "VERSION_1", "STRING", "hello", "STRING", "world", "EQUAL",
     ]);
 });
+
+// =============================================================================
+// Bytecode Length Prefixes
+// =============================================================================
+
+test("Compile - OBJECT_ACCESS includes correct length prefix", () => {
+    const result = compile("stage.x");
+    const oaIdx = result.indexOf("OBJECT_ACCESS");
+    assertEqual(oaIdx >= 0, true);
+    // Filter is: IDENTIFIER key, READ_GLOBAL, IDENTIFIER x, EQUAL → 6 elements
+    // But the length prefix says how many bytecodes follow as filter
+    const len = parseInt(result[oaIdx + 1], 10);
+    assertEqual(len, 6);
+    // Verify the filter contents
+    assertEqual(result[oaIdx + 2], "IDENTIFIER");
+    assertEqual(result[oaIdx + 3], "key");
+    assertEqual(result[oaIdx + 4], "READ_GLOBAL");
+    assertEqual(result[oaIdx + 5], "IDENTIFIER");
+    assertEqual(result[oaIdx + 6], "x");
+    assertEqual(result[oaIdx + 7], "EQUAL");
+});
+
+test("Compile - REMEMBER includes correct length prefix", () => {
+    const result = compile("{stage}");
+    const remIdx = result.indexOf("REMEMBER");
+    assertEqual(remIdx >= 0, true);
+    const len = parseInt(result[remIdx + 1], 10);
+    // Inner: IDENTIFIER stage, READ_GLOBAL → 3 elements
+    assertEqual(len, 3);
+    assertEqual(result[remIdx + 2], "IDENTIFIER");
+    assertEqual(result[remIdx + 3], "stage");
+    assertEqual(result[remIdx + 4], "READ_GLOBAL");
+});
+
+test("Compile - TERNARY includes correct branch length prefixes", () => {
+    const result = compile('1 ? "a" : "b"');
+    const tIdx = result.indexOf("TERNARY");
+    assertEqual(tIdx >= 0, true);
+    // Then-branch length
+    const thenLen = parseInt(result[tIdx + 1], 10);
+    assertEqual(thenLen, 2); // STRING "a"
+    assertEqual(result[tIdx + 2], "STRING");
+    assertEqual(result[tIdx + 3], "a");
+    // Else-branch length
+    const elseLen = parseInt(result[tIdx + 2 + thenLen], 10);
+    assertEqual(elseLen, 2); // STRING "b"
+    assertEqual(result[tIdx + 3 + thenLen], "STRING");
+    assertEqual(result[tIdx + 4 + thenLen], "b");
+});
+
+test("Compile - ARRAY_ACCESS includes correct length prefix", () => {
+    const result = compile("stage.items[0]");
+    const aaIdx = result.indexOf("ARRAY_ACCESS");
+    assertEqual(aaIdx >= 0, true);
+    const len = parseInt(result[aaIdx + 1], 10);
+    // Inner: VALUE 0 → 2 elements
+    assertEqual(len, 2);
+    assertEqual(result[aaIdx + 2], "VALUE");
+    assertEqual(result[aaIdx + 3], "0");
+});
+
+// =============================================================================
+// Multi-dimensional Array Access
+// =============================================================================
+
+test("Compile - multi-dimensional array access a[0][1]", () => {
+    const result = compile("a[0][1]");
+    assertEqual(result[0], "VERSION_1");
+    const aaCount = result.filter(s => s === "ARRAY_ACCESS").length;
+    assertEqual(aaCount, 2);
+});
+
+// =============================================================================
+// Unary Negation Exact Bytecode
+// =============================================================================
+
+test("Compile - unary negation exact bytecode", () => {
+    assertEqual(compile("-5"), [
+        "VERSION_1", "VALUE", "0", "VALUE", "5", "SUB",
+    ]);
+});
+
+test("Compile - unary negation of identifier", () => {
+    const result = compile("-x");
+    assertEqual(result[0], "VERSION_1");
+    assertEqual(result[1], "VALUE");
+    assertEqual(result[2], "0");
+    assertEqual(result.includes("SUB"), true);
+    assertEqual(result.includes("READ_GLOBAL"), true);
+});
+
+// =============================================================================
+// NOT Exact Bytecode
+// =============================================================================
+
+test("Compile - NOT of identifier", () => {
+    assertEqual(compile("!x"), [
+        "VERSION_1", "IDENTIFIER", "x", "READ_GLOBAL", "NOT",
+    ]);
+});
+
+// =============================================================================
+// LEN Exact Bytecode
+// =============================================================================
+
+test("Compile - len() exact bytecode with identifier", () => {
+    assertEqual(compile("len(stage)"), [
+        "VERSION_1", "IDENTIFIER", "stage", "READ_GLOBAL", "LEN",
+    ]);
+});
+
+// =============================================================================
+// Implicit This Exact Bytecode
+// =============================================================================
+
+test("Compile - leading dot exact bytecode", () => {
+    const result = compile(".x");
+    assertEqual(result[0], "VERSION_1");
+    assertEqual(result[1], "IDENTIFIER");
+    assertEqual(result[2], "this");
+    assertEqual(result[3], "READ_GLOBAL");
+    assertEqual(result[4], "OBJECT_ACCESS");
+});
+
+// =============================================================================
+// Float Exact Bytecode
+// =============================================================================
+
+test("Compile - float literal exact bytecode", () => {
+    assertEqual(compile("3.14"), ["VERSION_1", "VALUE", "3.14"]);
+});
+
+test("Compile - float arithmetic", () => {
+    assertEqual(compile("1.5 + 2.5"), [
+        "VERSION_1", "VALUE", "1.5", "VALUE", "2.5", "ADD",
+    ]);
+});

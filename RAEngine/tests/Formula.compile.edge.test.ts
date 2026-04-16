@@ -442,3 +442,179 @@ test("compile - ternary in parens as part of larger expression", () => {
     const addIdx = bytecode.indexOf("ADD");
     assertEqual(mulIdx < addIdx, true);
 });
+
+// =============================================================================
+// Carriage Return Rejection
+// =============================================================================
+
+test("compile - carriage return in expression returns error", () => {
+    assertEqual(Formula.compile("a\rb"), ERROR_MARKER);
+});
+
+test("compile - carriage return in string is literal", () => {
+    // \r inside a string literal is just a character, not whitespace
+    // The lexer processes string contents character-by-character
+    const bytecode = Formula.compile('"hello\\rworld"');
+    // \r escape is not specially handled, so it falls through to default
+    // and becomes just 'r'
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode[1], "STRING");
+    assertEqual(bytecode[2], "hellorworld");
+});
+
+// =============================================================================
+// Comparison Operator Precedence
+// =============================================================================
+
+test("compile - comparison lower than arithmetic: a + 1 > b - 2", () => {
+    const bytecode = Formula.compile("a + 1 > b - 2");
+    assertEqual(bytecode[0], "VERSION_1");
+    // ADD and SUB should come before GREATER in RPN
+    const addIdx = bytecode.indexOf("ADD");
+    const subIdx = bytecode.indexOf("SUB");
+    const gtIdx = bytecode.indexOf("GREATER");
+    assertEqual(addIdx < gtIdx, true);
+    assertEqual(subIdx < gtIdx, true);
+});
+
+test("compile - chained comparisons: a > 0 == 1", () => {
+    // Equal precedence, left-to-right: (a > 0) == 1
+    const bytecode = Formula.compile("a > 0 == 1");
+    assertEqual(bytecode[0], "VERSION_1");
+    const gtIdx = bytecode.indexOf("GREATER");
+    const eqIdx = bytecode.indexOf("EQUAL");
+    assertEqual(gtIdx < eqIdx, true);
+});
+
+// =============================================================================
+// Exponent Right Associativity
+// =============================================================================
+
+test("compile - exponent right-associative: 2 ** 3 ** 2", () => {
+    const bytecode = Formula.compile("2 ** 3 ** 2");
+    assertEqual(bytecode[0], "VERSION_1");
+    // Right-associative means 2 ** (3 ** 2)
+    // RPN: 2, 3, 2, POW, POW
+    const powIndices = bytecode.reduce((acc: number[], s: string, i: number) => {
+        if (s === "POW") acc.push(i);
+        return acc;
+    }, []);
+    assertEqual(powIndices.length, 2);
+    // First POW operates on 3,2; second POW operates on 2,result
+    assertEqual(powIndices[0] < powIndices[1], true);
+});
+
+// =============================================================================
+// String Literals in Expressions
+// =============================================================================
+
+test("compile - string equality", () => {
+    const bytecode = Formula.compile('"hello" == "world"');
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("STRING"), true);
+    assertEqual(bytecode.includes("EQUAL"), true);
+});
+
+test("compile - string with escape in comparison", () => {
+    const bytecode = Formula.compile('"line1\\nline2" != null');
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("NOT_EQUAL"), true);
+    assertEqual(bytecode.includes("NULL"), true);
+});
+
+// =============================================================================
+// Complex Nesting
+// =============================================================================
+
+test("compile - deeply nested parentheses", () => {
+    const bytecode = Formula.compile("((((((1 + 2))))))");
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("ADD"), true);
+});
+
+test("compile - len() of array access result in arithmetic", () => {
+    const bytecode = Formula.compile("len(stage.items[0]) + len(stage.items[1])");
+    assertEqual(bytecode[0], "VERSION_1");
+    const lenCount = bytecode.filter((s: string) => s === "LEN").length;
+    assertEqual(lenCount, 2);
+    assertEqual(bytecode.includes("ADD"), true);
+    const aaCount = bytecode.filter((s: string) => s === "ARRAY_ACCESS").length;
+    assertEqual(aaCount, 2);
+});
+
+test("compile - remembered value inside ternary condition", () => {
+    const bytecode = Formula.compile("{stage.score} > 0 ? 1 : 0");
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("REMEMBER"), true);
+    assertEqual(bytecode.includes("TERNARY"), true);
+    assertEqual(bytecode.includes("GREATER"), true);
+});
+
+test("compile - negation inside parentheses", () => {
+    const bytecode = Formula.compile("(-x) + 5");
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("SUB"), true);
+    assertEqual(bytecode.includes("ADD"), true);
+});
+
+test("compile - NOT inside ternary condition", () => {
+    const bytecode = Formula.compile("!stage.dead ? stage.health : 0");
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("NOT"), true);
+    assertEqual(bytecode.includes("TERNARY"), true);
+});
+
+test("compile - len() in remembered value in comparison", () => {
+    const bytecode = Formula.compile("{len(stage.items)} > 0");
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("REMEMBER"), true);
+    assertEqual(bytecode.includes("LEN"), true);
+    assertEqual(bytecode.includes("GREATER"), true);
+});
+
+// =============================================================================
+// Error Cases
+// =============================================================================
+
+test("compile - unclosed remembered value returns error", () => {
+    assertEqual(Formula.compile("{stage.score"), ERROR_MARKER);
+});
+
+test("compile - missing ternary else branch returns error", () => {
+    assertEqual(Formula.compile("x > 0 ? 1"), ERROR_MARKER);
+});
+
+test("compile - double dot returns error", () => {
+    assertEqual(Formula.compile("stage..x"), ERROR_MARKER);
+});
+
+test("compile - trailing operator returns error", () => {
+    assertEqual(Formula.compile("1 +"), ERROR_MARKER);
+});
+
+test("compile - leading binary operator returns error", () => {
+    assertEqual(Formula.compile("* 5"), ERROR_MARKER);
+});
+
+test("compile - empty parens compiles (no content)", () => {
+    // () is parsed as empty expression — the RPAREN is hit in EXPRESSION,
+    // which sees no matching LPAREN on stack and ends the expression
+    const bytecode = Formula.compile("()");
+    assertEqual(bytecode[0], "VERSION_1");
+});
+
+// =============================================================================
+// Whitespace-Only Input
+// =============================================================================
+
+test("compile - whitespace-only compiles to READ_GLOBAL this", () => {
+    const bytecode = Formula.compile("   ");
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("READ_GLOBAL"), true);
+});
+
+test("compile - tab-only input compiles to READ_GLOBAL this", () => {
+    const bytecode = Formula.compile("\t\t");
+    assertEqual(bytecode[0], "VERSION_1");
+    assertEqual(bytecode.includes("READ_GLOBAL"), true);
+});
