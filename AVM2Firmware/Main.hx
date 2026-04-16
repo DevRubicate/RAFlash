@@ -507,7 +507,7 @@ class Main extends MovieClip {
         loader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, onGameLoadError);
 
         var gameUrl = (url != null) ? url : "http://raflash.local/game.swf";
-        var context = new LoaderContext(false, ApplicationDomain.currentDomain);
+        var context = new LoaderContext(false, new ApplicationDomain(null));
         loader.load(new URLRequest(gameUrl), context);
 
         addChild(loader);
