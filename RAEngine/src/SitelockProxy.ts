@@ -131,8 +131,11 @@ interface ProxyConfig {
 let listener: Deno.TcpListener | null = null;
 let config: ProxyConfig | null = null;
 
+const NO_CACHE_HEADERS = 'Cache-Control: no-cache, no-store, must-revalidate\r\nPragma: no-cache\r\nExpires: 0';
+
 function httpResponse(status: number, statusText: string, headers: Record<string, string>, body?: Uint8Array): Uint8Array {
     const lines = [`HTTP/1.1 ${status} ${statusText}`];
+    lines.push(NO_CACHE_HEADERS);
     for (const [k, v] of Object.entries(headers)) {
         lines.push(`${k}: ${v}`);
     }
@@ -142,6 +145,20 @@ function httpResponse(status: number, statusText: string, headers: Record<string
     const result = new Uint8Array(headerBytes.length + body.length);
     result.set(headerBytes);
     result.set(body, headerBytes.length);
+    return result;
+}
+
+/** Inject no-cache headers into a raw HTTP response from an upstream server. */
+function injectNoCacheHeaders(raw: Uint8Array): Uint8Array {
+    const text = new TextDecoder().decode(raw);
+    const headerEnd = text.indexOf('\r\n');
+    if (headerEnd === -1) return raw;
+    const inject = '\r\n' + NO_CACHE_HEADERS;
+    const injectBytes = encoder.encode(inject);
+    const result = new Uint8Array(raw.length + injectBytes.length);
+    result.set(raw.subarray(0, headerEnd));
+    result.set(injectBytes, headerEnd);
+    result.set(raw.subarray(headerEnd), headerEnd + injectBytes.length);
     return result;
 }
 
@@ -274,7 +291,7 @@ async function handleConnection(conn: Deno.TcpConn) {
                 localUrl.port = String(config.flashPort);
                 const response = await forwardRequest(localUrl, method, rawHeaders, body);
                 const writer = conn.writable.getWriter();
-                await writer.write(response);
+                await writer.write(injectNoCacheHeaders(response));
                 writer.releaseLock();
                 log?.(method, match[2], 200);
             } catch {
