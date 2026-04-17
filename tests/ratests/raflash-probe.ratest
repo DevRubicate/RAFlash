@@ -1,0 +1,18 @@
+# Regression test for the .raflash resolver path.
+#
+# The Makefile builds .tests/StagehandGame.raflash (a zip wrapping
+# StagehandGame.swf with a distinctive hashOverride of all-a's) via
+# tests/build-raflash.ts as a prerequisite of `make test-stagehand`. This
+# test proves that:
+#   1. The scanner indexes .raflash files, not just .swf
+#   2. data.json.hashOverride is used as the identity (not the inner SWF's MD5)
+#   3. Stagehand launches the extracted SWF bytes correctly
+
+hash aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+port 18092
+
+assert stage.fireCount == 0
+click stage.fireButton
+assert stage.fireCount == 1
+tick 2
+assert stage.tickCount == 2

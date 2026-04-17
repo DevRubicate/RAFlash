@@ -242,10 +242,38 @@ const SUITES: Record<string, () => Promise<SuiteResult>> = {
         printSuiteFooter(result);
         return result;
     },
+
+    stagehand: async () => {
+        printSuiteHeader("Stagehand (.ratest)");
+        const { runRatestFile, discoverRatestFiles } = await import("./ratest.ts");
+        const files = await discoverRatestFiles(`${Deno.cwd()}/tests/ratests`);
+        const allResults: TestResult[] = [];
+        const start = performance.now();
+        for (const file of files) {
+            const fileResult = await runRatestFile(file);
+            const rel = file.split(/[\\/]/).pop() ?? file;
+            console.log(`  ${colors.cyan}${rel}${colors.reset}`);
+            for (const r of fileResult.results) {
+                printResult(r);
+                allResults.push(r);
+            }
+            // Stop after the first file with failures for faster feedback.
+            if (fileResult.failed > 0) break;
+        }
+        const combined: SuiteResult = {
+            name: "Stagehand (.ratest)",
+            passed: allResults.filter((r) => r.passed).length,
+            failed: allResults.filter((r) => !r.passed).length,
+            results: allResults,
+            durationMs: performance.now() - start,
+        };
+        printSuiteFooter(combined);
+        return combined;
+    },
 };
 
 // Default order when running all suites
-const DEFAULT_ORDER = ["avm1", "avm2", "engine", "display", "integration"];
+const DEFAULT_ORDER = ["avm1", "avm2", "engine", "display", "integration", "stagehand"];
 
 // -------------------------------------------------------------------------
 // Main

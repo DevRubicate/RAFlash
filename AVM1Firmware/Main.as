@@ -1076,6 +1076,31 @@ class Main {
                 }
                 break;
 
+            case "invokeMethod":
+                // Resolve a path formula to a target object and call a named
+                // method on it with the supplied args. Used by the Stagehand
+                // test harness to drive interaction (clicks, ticks, ...)
+                // without having to inject input events into Flash Player.
+                _stageContext[0] = gameRoot;
+                var imFormula:Array = params.pathFormula;
+                var imResult:Array = evaluate(imFormula, 1, imFormula.length, _stageContext, _stageKeys);
+                if (imResult == null || imResult.length == 0) {
+                    sendResponse(id, { success: false, error: "Path not found" });
+                    break;
+                }
+                var imTarget:Object = imResult[0];
+                var imMethod:String = String(params.method);
+                var imFn:Function = imTarget[imMethod];
+                if (typeof(imFn) != "function") {
+                    sendResponse(id, { success: false, error: "Not a function: " + imMethod });
+                    break;
+                }
+                var imArgs:Array = (params.args instanceof Array) ? params.args : [];
+                var imRet = imFn.apply(imTarget, imArgs);
+                var imFormatted:Object = formatOutput([imRet], 0);
+                sendResponse(id, { success: true, result: imFormatted });
+                break;
+
             case "loadCompiledAvm1":
                 var naUrl:String = String(params.url);
                 var naIndices:Array = params.compiledIndices;

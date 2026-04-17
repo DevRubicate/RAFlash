@@ -1,0 +1,95 @@
+{
+  "assets": [
+    {
+      "id": 1001,
+      "type": "ACHIEVEMENT",
+      "name": "First Click",
+      "description": "Fire the fire button once",
+      "points": 5,
+      "category": "LOCAL",
+      "published": false,
+      "groups": [
+        {
+          "id": 1,
+          "type": "CORE",
+          "requirements": [
+            {
+              "id": 1,
+              "flag": "",
+              "typeA": "Mem",
+              "addressA": "stage.fireCount",
+              "cmp": ">=",
+              "typeB": "Value",
+              "addressB": "1",
+              "maxHits": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1002,
+      "type": "ACHIEVEMENT",
+      "name": "Three Clicks",
+      "description": "Fire the fire button three times",
+      "points": 10,
+      "category": "LOCAL",
+      "published": false,
+      "groups": [
+        {
+          "id": 1,
+          "type": "CORE",
+          "requirements": [
+            {
+              "id": 1,
+              "flag": "",
+              "typeA": "Mem",
+              "addressA": "stage.fireCount",
+              "cmp": ">=",
+              "typeB": "Value",
+              "addressB": "3",
+              "maxHits": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1003,
+      "type": "ACHIEVEMENT",
+      "name": "Game Started",
+      "description": "Transition to the playing state",
+      "points": 5,
+      "category": "LOCAL",
+      "published": false,
+      "groups": [
+        {
+          "id": 1,
+          "type": "CORE",
+          "requirements": [
+            {
+              "id": 1,
+              "flag": "",
+              "typeA": "Mem",
+              "addressA": "stage.state",
+              "cmp": "==",
+              "typeB": "Value",
+              "addressB": "\"playing\"",
+              "maxHits": 0
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "codeNotes": [],
+  "gameConfig": {
+    "title": "Stagehand Test Game",
+    "badgeImage": "",
+    "originUrl": "",
+    "hashOverride": "",
+    "scaleMode": "neutral",
+    "align": "neutral",
+    "networkRules": []
+  }
+}

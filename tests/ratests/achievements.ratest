@@ -1,0 +1,40 @@
+# Achievement loading + trigger tracking regression test.
+#
+# The Makefile copies tests/ratests/fixtures/stagehand-achievements.json to
+# .build/RACache/games/{hash}.json so the ratest runner auto-loads the
+# achievements when it launches this game. The firmware evaluates them
+# every frame (its own 60fps onEnterFrame), so triggers arrive over the
+# editData channel as the test drives game state.
+#
+# Achievements in the fixture:
+#   1001 "First Click"   -- stage.fireCount >= 1
+#   1002 "Three Clicks"  -- stage.fireCount >= 3
+#   1003 "Game Started"  -- stage.state == "playing"
+
+hash a017605927b9ffed98479051ea7b90c6
+port 18094
+
+# Nothing should have triggered at startup.
+assertNotTriggered "First Click"
+assertNotTriggered "Three Clicks"
+assertNotTriggered "Game Started"
+
+# First click fires the fireCount>=1 achievement.
+click stage.fireButton
+waitTriggered "First Click" timeout=3000
+assertNotTriggered "Three Clicks"
+
+# Two more clicks reach fireCount==3.
+click stage.fireButton
+click stage.fireButton
+waitTriggered "Three Clicks" timeout=3000
+
+# Startup state transition is independent of fire count.
+assertNotTriggered "Game Started"
+invoke stage startGame
+waitTriggered "Game Started" timeout=3000
+
+# IDs also work in place of names.
+assertTriggered 1001
+assertTriggered 1002
+assertTriggered 1003

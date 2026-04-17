@@ -1,0 +1,86 @@
+# Stagehand POC — data-driven integration test
+# Exercises the Stagehand harness against StagehandGame.swf.
+#
+# The game is identified by the MD5 of the compiled SWF — the same identity
+# RAFlash uses to attach achievements to a game. Build output is deterministic
+# under MTASC, so this hash is stable as long as StagehandGame.as is unchanged.
+# If you modify StagehandGame.as and rebuild, run:
+#
+#     deno run --allow-read tests/ratest-hash.ts .tests/StagehandGame.swf
+#
+# to recompute the hash and update the line below.
+
+hash a017605927b9ffed98479051ea7b90c6
+port 18090
+
+# ---- Phase 1: initial state ----
+assert stage.fireCount == 0
+assert stage.tickCount == 0
+assert stage.state == "idle"
+assert stage.player.x == 0
+assert stage.bulletCount == 0
+
+# ---- Phase 2: synthetic clicks drive state ----
+click stage.fireButton
+assert stage.fireCount == 1
+assert stage.bulletCount == 1
+
+click stage.fireButton
+click stage.fireButton
+assert stage.fireCount == 3
+assert stage.bulletCount == 3
+
+# ---- Phase 3: deterministic state advancement via tick() ----
+# state is "idle", so player should NOT move on tick.
+tick 5
+assert stage.tickCount == 5
+assert stage.player.x == 0
+# Bullets move regardless: 3 bullets, vx=20, 5 ticks -> x=100
+assert stage.bullets[0].x == 100
+
+# ---- Phase 4: state machine transition via invoke() ----
+invoke stage startGame
+assert stage.state == "playing"
+
+tick 3
+assert stage.tickCount == 8
+# player.speed=5 * 3 ticks = 15
+assert stage.player.x == 15
+
+# ---- Phase 5: direct property mutation via setValue ----
+set stage.player speed 10
+assert stage.player.speed == 10
+tick 2
+# +10*2 onto existing x=15 -> 35
+assert stage.player.x == 35
+
+# ---- Phase 6: bullet culling validates loop semantics ----
+# Bullets currently at x=100 after 5 ticks of Phase 3, plus 3+2 more ticks = 10 total.
+# That puts them at x=200. Need 30 more ticks (at vx=20) to reach x>=800.
+tick 30
+assert stage.bulletCount == 0
+
+# ---- Phase 7: reset via second button ----
+click stage.resetButton
+assert stage.resetCount == 1
+assert stage.fireCount == 0
+assert stage.tickCount == 0
+assert stage.player.x == 0
+assert stage.state == "idle"
+
+# ---- Phase 8: invoke() passes args correctly (echo helper) ----
+# Note: .ratest doesn't yet capture return values, but the echo path proves
+# argument marshalling works — subsequent state (unchanged) is verified below.
+invoke stage echo "one" 2 true
+assert stage.fireCount == 0
+
+# ---- Phase 9: tick() accumulates correctly ----
+invoke stage tick
+invoke stage tick
+assert stage.tickCount == 2
+
+# ---- Phase 10: wait() polls until predicate holds ----
+click stage.fireButton
+tick 5
+# Bullet was spawned at player.x=0, moves vx=20 per tick -> x=100 after 5 ticks.
+wait stage.bullets[0].x >= 100 timeout=3000
