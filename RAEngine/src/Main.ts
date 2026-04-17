@@ -1634,6 +1634,105 @@ function emitLog(source: string, level: string, message: string): void {
 }
 
 /**
+ * Resolvers waiting for the firmware's next `gameLoaded` event.
+ * Populated by {@link waitForGameLoaded}, drained in the firmware-event
+ * dispatcher when the event arrives.
+ */
+const gameLoadedWaiters = new Set<() => void>();
+
+/**
+ * Resolve with `true` when the firmware next emits `gameLoaded`, or
+ * `false` if that doesn't happen within `timeoutMs`. Used by
+ * {@link performResetGame} so callers see reset-as-complete only after
+ * the new firmware has fully initialized, not merely ACKed the command.
+ */
+function waitForGameLoaded(timeoutMs: number): Promise<boolean> {
+    return new Promise((resolve) => {
+        let resolver: () => void;
+        const timer = setTimeout(() => {
+            gameLoadedWaiters.delete(resolver);
+            resolve(false);
+        }, timeoutMs);
+        resolver = () => {
+            clearTimeout(timer);
+            gameLoadedWaiters.delete(resolver);
+            resolve(true);
+        };
+        gameLoadedWaiters.add(resolver);
+    });
+}
+
+/**
+ * Reload the currently-loaded game and clear accumulated achievement
+ * runtime state. Shared by the `resetGame` devtools command and the
+ * `playRatest` harness so a test run always starts from a clean slate.
+ *
+ * Waits for the firmware's `gameLoaded` event before returning so callers
+ * can assume the game is ready for commands — without this, commands sent
+ * between the resetGame ACK and the post-reload setup race with firmware
+ * init and kill the XMLSocket.
+ */
+async function performResetGame(): Promise<Record<string, unknown>> {
+    if (gameResetting) {
+        return { success: false, error: "Reset already in progress" };
+    }
+    gameResetting = true;
+    try {
+        const gameUrl = AppData.data.gameConfig.originUrl ? resolveGameUrl().url : null;
+        emitLog("engine", "info", "Resetting game...");
+
+        // Partially-accumulated hits would falsely trigger on frame 1 of
+        // the fresh game when their conditions evaluate against the old
+        // hit counts.
+        const resetEdits: Array<[string, unknown]> = [];
+        const assets = AppData.data.assets;
+        for (let i = 0; i < assets.length; i++) {
+            const asset = assets[i];
+            if (asset._primed) {
+                asset._primed = false;
+                resetEdits.push([`assets/${i}/_primed`, false]);
+            }
+            const groups = asset.groups ?? [];
+            for (let g = 0; g < groups.length; g++) {
+                const reqs = groups[g].requirements ?? [];
+                for (let r = 0; r < reqs.length; r++) {
+                    const req = reqs[r];
+                    if (req && (req.hits ?? 0) !== 0) {
+                        req.hits = 0;
+                        resetEdits.push([`assets/${i}/groups/${g}/requirements/${r}/hits`, 0]);
+                    }
+                }
+            }
+        }
+
+        if (resetEdits.length > 0) {
+            const resetDiff: Diff = { edited: resetEdits };
+            broadcastToDevtools("editData", resetDiff);
+            sendToFirmware("editData", { changes: resetDiff }, 0).catch(() => {});
+        }
+
+        // Register the waiter BEFORE sending so there's no window where
+        // gameLoaded can fire between send and registration.
+        const gameLoadedPromise = waitForGameLoaded(10000);
+
+        const response = await sendToFirmware("resetGame", { gameUrl });
+        if (!response.success) {
+            return response;
+        }
+
+        const loaded = await gameLoadedPromise;
+        if (!loaded) {
+            emitLog("engine", "warn", "Game reset timed out waiting for gameLoaded (10s)");
+            return { success: false, error: "Game did not finish loading within 10s" };
+        }
+        emitLog("engine", "info", "Game reset complete");
+        return response;
+    } finally {
+        gameResetting = false;
+    }
+}
+
+/**
  * Open the devtools menu window
  */
 async function openDevtoolsMenu(): Promise<void> {
@@ -1970,7 +2069,7 @@ async function handleApiRequest(
                     hasRaflash = true;
                 } catch { /* doesn't exist */ }
             }
-            return { success: true, params: { ...settings, version: VERSION, isRaflash, hasRaflash } };
+            return { success: true, params: { ...settings, version: VERSION, isRaflash, hasRaflash, gameHash: AppData.gameHash } };
         }
         case "saveSettings": {
             const oldBenchmarking = settings.benchmarkingEnabled;
@@ -2485,54 +2584,143 @@ async function handleApiRequest(
         }
 
         case "resetGame": {
-            if (gameResetting) {
-                return { success: false, error: "Reset already in progress" };
-            }
-            gameResetting = true;
-            const gameUrl = AppData.data.gameConfig.originUrl ? resolveGameUrl().url : null;
-            emitLog("engine", "info", "Resetting game...");
+            return await performResetGame();
+        }
 
-            // Clear accumulated runtime state on every asset so the new run
-            // starts from a clean slate. Without this, achievements with
-            // partially-accumulated hits would falsely trigger on frame 1 of
-            // the fresh game when their conditions evaluate against the old
-            // hit counts.
-            const resetEdits: Array<[string, unknown]> = [];
-            const assets = AppData.data.assets;
-            for (let i = 0; i < assets.length; i++) {
-                const asset = assets[i];
-                if (asset._primed) {
-                    asset._primed = false;
-                    resetEdits.push([`assets/${i}/_primed`, false]);
-                }
-                const groups = asset.groups ?? [];
-                for (let g = 0; g < groups.length; g++) {
-                    const reqs = groups[g].requirements ?? [];
-                    for (let r = 0; r < reqs.length; r++) {
-                        const req = reqs[r];
-                        if (req && (req.hits ?? 0) !== 0) {
-                            req.hits = 0;
-                            resetEdits.push([`assets/${i}/groups/${g}/requirements/${r}/hits`, 0]);
-                        }
-                    }
-                }
-            }
-
-            if (resetEdits.length > 0) {
-                const resetDiff: Diff = { edited: resetEdits };
-                // Push to devtools clients so the editor reflects the cleared state
-                broadcastToDevtools("editData", resetDiff);
-                // Push to firmware so its in-memory copy matches (matters for
-                // parent mode where the firmware persists across the reset; in
-                // child mode the firmware is destroyed and resyncs from engine
-                // on reconnect anyway, but sending is harmless).
-                sendToFirmware("editData", { changes: resetDiff }, 0).catch(() => {});
-            }
-
-            const response = await sendToFirmware("resetGame", { gameUrl });
-            gameResetting = false;
-            emitLog("engine", "info", "Game reset complete");
+        case "invokeMethod": {
+            const path = String(input.params.path || "");
+            const method = String(input.params.method || "");
+            const args = Array.isArray(input.params.args) ? input.params.args as unknown[] : [];
+            if (!path || !method) return { success: false, error: "invokeMethod requires path and method" };
+            const compiled = compileFormula(path);
+            const response = await sendToFirmware("invokeMethod", { pathFormula: compiled, method, args });
             return response;
+        }
+
+        case "listRatests": {
+            if (!AppData.gameHash) return { success: false, error: "No game loaded" };
+            const dir = `RACache/ratests/${AppData.gameHash}`;
+            const files: string[] = [];
+            try {
+                for await (const entry of Deno.readDir(dir)) {
+                    if (entry.isFile && entry.name.endsWith(".ratest")) files.push(entry.name);
+                }
+            } catch (e) {
+                if (!(e instanceof Deno.errors.NotFound)) {
+                    return { success: false, error: `Failed to read ${dir}: ${(e as Error).message}` };
+                }
+            }
+            files.sort();
+            return { success: true, params: { files, dir } };
+        }
+
+        case "playRatest": {
+            if (!AppData.gameHash) return { success: false, error: "No game loaded" };
+            if (!flashConnected) return { success: false, error: "Flash Player is not running — reload the game to run tests" };
+            const name = String(input.params.file || "");
+            if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
+                return { success: false, error: `Invalid .ratest filename: ${name}` };
+            }
+            const path = `RACache/ratests/${AppData.gameHash}/${name}`;
+
+            const { parseRatest, runStep } = await import("../../tests/ratest.ts");
+            const { LiveStagehand } = await import("./LiveStagehand.ts");
+
+            let parsed: ReturnType<typeof parseRatest>;
+            try {
+                const text = await Deno.readTextFile(path);
+                parsed = parseRatest(path, text);
+            } catch (e) {
+                return { success: false, error: `parse ${path}: ${(e as Error).message}` };
+            }
+            if (!parsed.directives.hash) {
+                return { success: false, error: `${name}: missing required "hash <md5>" directive` };
+            }
+            if (parsed.directives.hash !== AppData.gameHash) {
+                return { success: false, error: `${name} is for hash ${parsed.directives.hash}, but the loaded game is ${AppData.gameHash}` };
+            }
+
+            // Normal resetGame leaves asset.state alone (TRIGGERED persists
+            // as the user's unlock record). Tests need a clean slate, so
+            // reactivate every asset and broadcast so the UI matches.
+            const stateEdits: Array<[string, unknown]> = [];
+            for (let i = 0; i < AppData.data.assets.length; i++) {
+                const asset = AppData.data.assets[i];
+                if (asset.state !== "ACTIVE") {
+                    asset.state = "ACTIVE";
+                    stateEdits.push([`assets/${i}/state`, "ACTIVE"]);
+                }
+            }
+            if (stateEdits.length > 0) {
+                const stateDiff: Diff = { edited: stateEdits };
+                broadcastToDevtools("editData", stateDiff);
+                sendToFirmware("editData", { changes: stateDiff }, 0).catch(() => {});
+            }
+
+            emitLog("ratest", "info", `Running ${name} (${parsed.steps.length} steps)`);
+            broadcastToDevtools("ratestStart", { file: name, total: parsed.steps.length });
+
+            const resetResp = await performResetGame();
+            if (!resetResp.success) {
+                return { success: false, error: `resetGame: ${resetResp.error ?? "unknown error"}` };
+            }
+
+            const page = new LiveStagehand(sendToFirmware);
+            const results: Array<{ name: string; passed: boolean; error?: string; durationMs: number }> = [];
+            for (let i = 0; i < parsed.steps.length; i++) {
+                const step = parsed.steps[i];
+                const before = results.length;
+                broadcastToDevtools("ratestStep", {
+                    index: i,
+                    total: parsed.steps.length,
+                    source: step.source,
+                    phase: "start",
+                });
+
+                const stepStart = performance.now();
+                await runStep(page, step, results);
+                const stepMs = Math.round(performance.now() - stepStart);
+
+                const newResult = results.length > before ? results[results.length - 1] : null;
+                const phase: "pass" | "fail" | "ok" = newResult
+                    ? (newResult.passed ? "pass" : "fail")
+                    : "ok";
+                broadcastToDevtools("ratestStep", {
+                    index: i,
+                    total: parsed.steps.length,
+                    source: step.source,
+                    phase,
+                    error: newResult?.error,
+                    durationMs: stepMs,
+                });
+
+                if (!flashConnected) {
+                    results.push({
+                        name: "firmware",
+                        passed: false,
+                        error: "Flash Player disconnected mid-test — reload the game and try again",
+                        durationMs: 0,
+                    });
+                    break;
+                }
+            }
+
+            const passed = results.filter((r) => r.passed).length;
+            const failed = results.filter((r) => !r.passed).length;
+            const firstError = results.find((r) => !r.passed);
+            const summary = firstError
+                ? `${passed} passed, ${failed} failed — ${firstError.name}: ${firstError.error}`
+                : `${passed} passed`;
+            emitLog("ratest", failed === 0 ? "info" : "warn", `${name}: ${summary}`);
+            return {
+                success: true,
+                params: {
+                    passed,
+                    failed,
+                    total: passed + failed,
+                    error: firstError ? `${firstError.name}: ${firstError.error}` : undefined,
+                },
+            };
         }
 
         // Memory Watch commands
@@ -3078,6 +3266,11 @@ function handleFirmwareData(data: string): void {
                 emitLog("firmware", "info", fwMsg);
             } else if (parsed.type === "gameLoaded") {
                 emitLog("engine", "info", "Game loaded");
+                // Wake any performResetGame callers waiting for the
+                // post-reset firmware to finish initializing.
+                const waiters = Array.from(gameLoadedWaiters);
+                gameLoadedWaiters.clear();
+                for (const resolve of waiters) resolve();
                 // Show welcome toast with game info
                 const gameTitle = AppData.data.gameConfig?.title || "Game Loaded";
                 const assetCount = AppData.data.assets.length;

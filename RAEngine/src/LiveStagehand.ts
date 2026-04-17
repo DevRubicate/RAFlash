@@ -1,0 +1,127 @@
+/**
+ * LiveStagehand — a `StagehandLike` adapter that drives the live firmware
+ * connection managed by RAEngine's Main.ts, so a `.ratest` file can play
+ * back against the currently-running game instead of spawning a fresh
+ * Flash Player process.
+ *
+ * Implements the same public surface that tests/ratest.ts's `runStep`
+ * depends on (evaluate, setValue, invoke, click, tick, hasTriggered,
+ * waitTriggered, waitFor, close). The concrete implementations forward
+ * to `sendToFirmware()` and read firmware-maintained state off the shared
+ * `AppData` singleton.
+ */
+import { Formula } from "./formula/Formula.ts";
+import { AppData } from "./AppData.ts";
+import type { StagehandLike } from "../../tests/stagehand.ts";
+
+type SendToFirmware = (
+    command: string,
+    params?: Record<string, unknown>,
+    reconnectTimeout?: number,
+) => Promise<Record<string, unknown>>;
+
+export class LiveStagehand implements StagehandLike {
+    constructor(private readonly send: SendToFirmware) {}
+
+    async evaluate<T = unknown>(formula: string): Promise<T> {
+        const compiled = Formula.compile(formula);
+        const resp = await this.send("evaluate", { formula: compiled });
+        if (!resp.success) throw new Error(`evaluate("${formula}") failed: ${resp.error ?? JSON.stringify(resp)}`);
+        return extractValue(resp.result) as T;
+    }
+
+    async setValue(path: string, property: string, value: string | number | boolean | null): Promise<void> {
+        const compiled = Formula.compile(path);
+        const raw = value === null ? "null" : String(value);
+        const resp = await this.send("setValue", { pathFormula: compiled, property, value: raw });
+        if (!resp.success) throw new Error(`setValue(${path}.${property}) failed: ${resp.error ?? JSON.stringify(resp)}`);
+    }
+
+    async invoke<T = unknown>(path: string, method: string, args: unknown[] = []): Promise<T> {
+        const compiled = Formula.compile(path);
+        const resp = await this.send("invokeMethod", { pathFormula: compiled, method, args });
+        if (!resp.success) throw new Error(`invoke(${path}.${method}) failed: ${resp.error ?? JSON.stringify(resp)}`);
+        return extractValue(resp.result) as T;
+    }
+
+    click(path: string): Promise<unknown> {
+        return this.invoke(path, "onRelease");
+    }
+
+    async tick(n = 1): Promise<void> {
+        for (let i = 0; i < n; i++) await this.invoke("stage", "tick");
+    }
+
+    hasTriggered(idOrName: number | string): boolean {
+        const asset = resolveAsset(idOrName);
+        if (!asset) throw new Error(`Unknown asset "${idOrName}"`);
+        return asset.state === "TRIGGERED";
+    }
+
+    async waitTriggered(idOrName: number | string, timeoutMs = 5000): Promise<void> {
+        const asset = resolveAsset(idOrName);
+        if (!asset) throw new Error(`Unknown asset "${idOrName}"`);
+        const deadline = Date.now() + timeoutMs;
+        while (asset.state !== "TRIGGERED") {
+            if (Date.now() > deadline) {
+                throw new Error(`waitTriggered(${idOrName}) timed out after ${timeoutMs}ms`);
+            }
+            await new Promise((r) => setTimeout(r, 50));
+        }
+    }
+
+    async waitFor<T = unknown>(
+        formula: string,
+        predicate: (value: T) => boolean,
+        opts: { timeoutMs?: number; pollMs?: number } = {},
+    ): Promise<T> {
+        const timeoutMs = opts.timeoutMs ?? 5000;
+        const pollMs = opts.pollMs ?? 50;
+        const deadline = Date.now() + timeoutMs;
+        let last: T | undefined;
+        while (Date.now() < deadline) {
+            last = await this.evaluate<T>(formula);
+            if (predicate(last)) return last;
+            await new Promise((r) => setTimeout(r, pollMs));
+        }
+        throw new Error(`waitFor("${formula}") timed out after ${timeoutMs}ms (last value: ${JSON.stringify(last)})`);
+    }
+
+    close(): Promise<void> {
+        // The live game stays running — nothing to tear down.
+        return Promise.resolve();
+    }
+}
+
+function resolveAsset(idOrName: number | string): { id: number; name?: string; state?: string } | null {
+    for (const asset of AppData.data.assets) {
+        if (typeof idOrName === "number" ? asset.id === idOrName : asset.name === idOrName) {
+            return asset as unknown as { id: number; name?: string; state?: string };
+        }
+    }
+    return null;
+}
+
+/**
+ * The firmware's `formatOutput` helper wraps strings in extra quotes for
+ * debugger display, and returns a shape `{ type: "...", value: ... }` for
+ * primitives. Unwrap so callers see plain JS values.
+ */
+function extractValue(raw: unknown): unknown {
+    if (raw === null || raw === undefined) return raw;
+    if (typeof raw === "object") {
+        const o = raw as Record<string, unknown>;
+        if ("value" in o) {
+            const v = o.value;
+            if (typeof v === "string") return unwrapQuoted(v);
+            return v;
+        }
+    }
+    if (typeof raw === "string") return unwrapQuoted(raw);
+    return raw;
+}
+
+function unwrapQuoted(s: string): string {
+    if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) return s.slice(1, -1);
+    return s;
+}

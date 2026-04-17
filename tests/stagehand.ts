@@ -37,6 +37,28 @@ export interface AppData {
     [k: string]: unknown;
 }
 
+/**
+ * The subset of Stagehand's public API that `runStep` (tests/ratest.ts)
+ * depends on. Extracted so playback can run against either a fresh-launch
+ * Stagehand or a live-connected adapter that drives an already-running
+ * RAEngine firmware.
+ */
+export interface StagehandLike {
+    evaluate<T = unknown>(formula: string): Promise<T>;
+    setValue(path: string, property: string, value: string | number | boolean | null): Promise<void>;
+    invoke<T = unknown>(path: string, method: string, args?: unknown[]): Promise<T>;
+    click(path: string): Promise<unknown>;
+    tick(n?: number): Promise<void>;
+    hasTriggered(idOrName: number | string): boolean;
+    waitTriggered(idOrName: number | string, timeoutMs?: number): Promise<void>;
+    waitFor<T = unknown>(
+        formula: string,
+        predicate: (value: T) => boolean,
+        opts?: { timeoutMs?: number; pollMs?: number },
+    ): Promise<T>;
+    close(): Promise<void>;
+}
+
 export interface LaunchOptions {
     /**
      * Path to the target game SWF on disk. Exactly one of swfPath or

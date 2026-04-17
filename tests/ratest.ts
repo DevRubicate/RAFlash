@@ -60,7 +60,7 @@
 import { crypto as stdCrypto } from "jsr:@std/crypto";
 import { unzipSync } from "npm:fflate";
 import type { SuiteResult, TestResult } from "./framework.ts";
-import { type AppData, Stagehand } from "./stagehand.ts";
+import { type AppData, Stagehand, type StagehandLike } from "./stagehand.ts";
 import { Formula } from "../RAEngine/src/formula/Formula.ts";
 
 // -------------------------------------------------------------------------
@@ -72,7 +72,7 @@ type StepKind =
     | "assert" | "wait"
     | "assertTriggered" | "assertNotTriggered" | "waitTriggered";
 
-interface Step {
+export interface Step {
     lineNo: number;
     source: string;
     kind: StepKind;
@@ -596,7 +596,7 @@ export async function runRatestFile(filePath: string): Promise<SuiteResult> {
     return finalize(filePath, results, start);
 }
 
-async function runStep(page: Stagehand, step: Step, results: TestResult[]): Promise<void> {
+export async function runStep(page: StagehandLike, step: Step, results: TestResult[]): Promise<void> {
     const t0 = performance.now();
     const name = `${step.source}`;
     try {

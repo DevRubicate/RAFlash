@@ -29,6 +29,7 @@ export default defineConfig({
         'benchmark': resolve(__dirname, 'src/html/benchmark.html'),
         'settings': resolve(__dirname, 'src/html/settings.html'),
         'resource-explorer': resolve(__dirname, 'src/html/resource-explorer.html'),
+        'tests': resolve(__dirname, 'src/html/tests.html'),
       },
     },
   },
