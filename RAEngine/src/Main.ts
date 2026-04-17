@@ -21,7 +21,7 @@ import { Formula } from "./formula/Formula.ts";
 import { AppData } from "./AppData.ts";
 import { UserProfile } from "./UserProfile.ts";
 import { WindowManager } from "./WindowManager.ts";
-import type { Requirement } from "./types.ts";
+import type { NetworkRule, Requirement } from "./types.ts";
 import { dirname, isAbsolute, join, resolve, SEPARATOR } from "https://deno.land/std/path/mod.ts";
 import { Buffer } from "node:buffer";
 import { PNG } from "npm:pngjs";
@@ -1981,11 +1981,9 @@ async function handleApiRequest(
                     } catch { /* start fresh */ }
                 }
 
-                // Update with provided fields
+                // Update with provided fields (behavior fields only — title/badgeImage live in RACache)
                 const params = input.params as Record<string, unknown>;
                 if ("originUrl" in params) dataJson.originUrl = params.originUrl as string;
-                if ("title" in params) dataJson.title = params.title as string;
-                if ("badgeImage" in params) dataJson.badgeImage = params.badgeImage as string;
                 if ("hashOverride" in params) dataJson.hashOverride = params.hashOverride as string;
                 if ("scaleMode" in params) dataJson.scaleMode = params.scaleMode as string;
                 if ("align" in params) dataJson.align = params.align as string;
@@ -3427,7 +3425,7 @@ async function main(): Promise<void> {
         selectedGamePath = resolvedGamePath;
 
         // --- .raflash handling: extract start.swf and data.json from zip ---
-        let raflashData: { title?: string; originUrl?: string; badgeImage?: string; hashOverride?: string; scaleMode?: string; align?: string } | null = null;
+        let raflashData: { title?: string; originUrl?: string; badgeImage?: string; hashOverride?: string; scaleMode?: string; align?: string; networkRules?: NetworkRule[] } | null = null;
         let extractedSwfBytes: Uint8Array | null = null;
         let raflashFiles: Record<string, Uint8Array> | null = null;
 
@@ -3490,6 +3488,18 @@ async function main(): Promise<void> {
             cachedGameSwf = extractedSwfBytes;
         }
 
+        // Load behavior fields from .raflash data.json into memory.
+        // These fields live exclusively in the .raflash archive and are
+        // NOT persisted to RACache, so we always apply them here.
+        if (raflashData) {
+            const gc = AppData.data.gameConfig;
+            if (raflashData.originUrl != null) gc.originUrl = raflashData.originUrl;
+            if (raflashData.hashOverride != null) gc.hashOverride = raflashData.hashOverride;
+            gc.scaleMode = raflashData.scaleMode ?? 'showAll';
+            gc.align = (raflashData.align != null) ? raflashData.align : 'TL';
+            if (raflashData.networkRules != null) gc.networkRules = raflashData.networkRules;
+        }
+
         // Hydrate file bytes for network behavior file rules from the zip
         if (raflashFiles) {
             const networkRules = AppData.data.gameConfig.networkRules || [];
@@ -3501,23 +3511,6 @@ async function main(): Promise<void> {
                     }
                 }
             }
-        }
-
-        // Pre-populate empty gameConfig fields from .raflash metadata
-        if (raflashData) {
-            const gc = AppData.data.gameConfig;
-            let changed = false;
-            if (!gc.title && raflashData.title) { gc.title = raflashData.title; changed = true; }
-            if (!gc.originUrl && raflashData.originUrl) { gc.originUrl = raflashData.originUrl; changed = true; }
-            if (!gc.badgeImage && raflashData.badgeImage) { gc.badgeImage = raflashData.badgeImage; changed = true; }
-            // For .raflash files, behavior fields default to enforced values
-            // (not neutral) when the data.json doesn't specify them.
-            if (raflashData.hashOverride && !gc.hashOverride) { gc.hashOverride = raflashData.hashOverride; changed = true; }
-            const raScale = raflashData.scaleMode ?? 'showAll';
-            const raAlign = (raflashData.align != null) ? raflashData.align : 'TL';
-            if (gc.scaleMode !== raScale) { gc.scaleMode = raScale; changed = true; }
-            if (gc.align !== raAlign) { gc.align = raAlign; changed = true; }
-            if (changed) await AppData.saveData();
         }
 
         // Load user and apply previously unlocked achievements

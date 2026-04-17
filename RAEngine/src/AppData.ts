@@ -6,7 +6,7 @@ export class AppData {
     static data: AppDataStructure = {
         assets: [],
         codeNotes: [],
-        gameConfig: { title: '', originUrl: '', badgeImage: '', hashOverride: '', scaleMode: 'neutral', align: 'neutral', networkRules: [] },
+        gameConfig: { title: '', badgeImage: '', originUrl: '', hashOverride: '', scaleMode: 'neutral', align: 'neutral', networkRules: [] },
     };
 
     // Game-specific state file path
@@ -59,13 +59,20 @@ export class AppData {
                 }
             }
 
+            // Strip gameConfig to schema-defined fields only, so stale
+            // behavior fields (originUrl, networkRules, etc.) left in old
+            // RACache files are not loaded into memory.
+            if (loadedData.gameConfig) {
+                loadedData.gameConfig = this.stripAssetData(loadedData.gameConfig, this.gameConfigSchema);
+            }
+
             const diff = JSONDiff.getDataDiff(AppData.data, loadedData);
             JSONDiff.processIncomingDiff(AppData.data, diff);
 
-            // Backfill defaults for fields added after existing state files
-            // were created. The diff-based load strips fields not present in
-            // the saved file, so we restore them to their defaults here.
+            // Ensure .raflash-only fields have defaults in memory
+            // (they are not persisted to RACache; loaded from .raflash on startup)
             const gc = AppData.data.gameConfig;
+            if (gc.originUrl == null) gc.originUrl = '';
             if (gc.scaleMode == null) gc.scaleMode = 'neutral';
             if (gc.align == null) gc.align = 'neutral';
             if (gc.hashOverride == null) gc.hashOverride = '';
@@ -73,7 +80,7 @@ export class AppData {
         } catch (error) {
             if (error instanceof Deno.errors.NotFound) {
                 // New game, start fresh
-                this.data = { assets: [], codeNotes: [], gameConfig: { title: '', originUrl: '', badgeImage: '', hashOverride: '', scaleMode: 'neutral', align: 'neutral', networkRules: [] } };
+                this.data = { assets: [], codeNotes: [], gameConfig: { title: '', badgeImage: '', originUrl: '', hashOverride: '', scaleMode: 'neutral', align: 'neutral', networkRules: [] } };
             } else {
                 throw error;
             }
@@ -333,25 +340,7 @@ export class AppData {
         type: 'object',
         properties: {
             title: { type: 'string' },
-            originUrl: { type: 'string' },
             badgeImage: { type: 'string' },
-            scaleMode: { type: 'string' },
-            align: { type: 'string' },
-            hashOverride: { type: 'string' },
-            networkRules: {
-                type: 'array',
-                items: {
-                    type: 'object',
-                    properties: {
-                        active: { type: 'boolean' },
-                        label: { type: 'string' },
-                        url: { type: 'string' },
-                        status: { type: 'number' },
-                        action: { type: 'string' },
-                        body: { type: 'string' },
-                    }
-                }
-            },
         }
     };
 
