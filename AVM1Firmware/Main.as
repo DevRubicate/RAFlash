@@ -194,8 +194,12 @@ class Main {
      * choosing the launch URL.
      */
     public static function init(self:MovieClip):Void {
+        // Detect child mode: the injected loader bytecode creates a clip
+        // named "__raflash" and loads the firmware into it, so self._name
+        // is "__raflash" in child mode. In parent mode the firmware is
+        // loaded by AVM1Wrapper and has a different clip name.
+        childMode = (self != undefined && self._name == "__raflash");
         var level0Url:String = String(_level0._url);
-        childMode = (level0Url.indexOf("/game.swf") != -1);
 
         // Extract origin (scheme + host) from _level0's URL for asset image
         // requests. Works in both modes: parent mode _level0 is the wrapper
