@@ -1,5 +1,6 @@
 /**
- * Patches a PE32 executable to load FlashpointProxy.exe via import table injection.
+ * Patches a PE32 executable to load FlashpointProxy.exe via import table injection,
+ * and strips dangerous keyboard shortcuts from the accelerator table.
  *
  * Matches the Flashpoint Archive approach (CFF Explorer):
  *   1. Strip Authenticode certificate
@@ -7,6 +8,7 @@
  *   3. Make .rdata writable (for existing IATs)
  *   4. Make .reloc writable + non-discardable (for new IAT)
  *   5. Update import directory RVA/size
+ *   6. Neutralize cheat-enabling keyboard accelerators (Ctrl+Enter, Ctrl+R, etc.)
  */
 
 function readAsciiZ(data: Uint8Array, offset: number, maxLen = 128): string {
@@ -16,6 +18,111 @@ function readAsciiZ(data: Uint8Array, offset: number, maxLen = 128): string {
         s += String.fromCharCode(data[offset + i]);
     }
     return s;
+}
+
+// Command IDs to keep (clipboard operations only)
+const SAFE_COMMANDS = new Set([
+    57642, // Ctrl+A (Select All)
+    57634, // Ctrl+C (Copy)
+    57637, // Ctrl+V (Paste)
+    57635, // Ctrl+X (Cut)
+]);
+
+/**
+ * Finds and neutralizes dangerous accelerator table entries in the PE resource directory.
+ *
+ * Flash Player's accelerator table (resource type 9) contains shortcuts like Ctrl+Enter
+ * (play), Ctrl+R (rewind), Ctrl+F (step forward), etc. that let users manipulate game
+ * timelines to cheat. We zero out all entries except safe clipboard/help shortcuts.
+ *
+ * PE resource directory structure: root → type (RT_ACCELERATOR=9) → ID → language → data entry
+ * Each accelerator entry is 8 bytes: [fVirt:u16, key:u16, cmd:u16, pad:u16]
+ */
+function stripAcceleratorShortcuts(
+    output: Uint8Array, outView: DataView,
+    ddOff: number, sectHeadersOff: number, numSections: number,
+) {
+    const RT_ACCELERATOR = 9;
+
+    function rvaToFileLocal(rva: number): number {
+        for (let i = 0; i < numSections; i++) {
+            const s = sectHeadersOff + i * 40;
+            const vaddr = outView.getUint32(s + 12, true);
+            const vsize = outView.getUint32(s + 8, true);
+            const rawPtr = outView.getUint32(s + 20, true);
+            if (rva >= vaddr && rva < vaddr + vsize) {
+                return rawPtr + (rva - vaddr);
+            }
+        }
+        throw new Error(`Cannot resolve RVA 0x${rva.toString(16)}`);
+    }
+
+    // Resource directory is data directory entry index 2
+    const resRVA = outView.getUint32(ddOff + 2 * 8, true);
+    if (resRVA === 0) throw new Error('No resource directory found');
+    const resBase = rvaToFileLocal(resRVA);
+
+    // Parse resource directory to find RT_ACCELERATOR entries
+    function readDirEntries(dirFileOff: number): Array<{id: number, isDir: boolean, offset: number}> {
+        const numNamed = outView.getUint16(dirFileOff + 12, true);
+        const numId = outView.getUint16(dirFileOff + 14, true);
+        const entries: Array<{id: number, isDir: boolean, offset: number}> = [];
+        for (let i = 0; i < numNamed + numId; i++) {
+            const entryOff = dirFileOff + 16 + i * 8;
+            const nameOrId = outView.getUint32(entryOff, true);
+            const dataOrDir = outView.getUint32(entryOff + 4, true);
+            const isDir = (dataOrDir & 0x80000000) !== 0;
+            const offset = dataOrDir & 0x7FFFFFFF;
+            entries.push({ id: nameOrId, isDir, offset });
+        }
+        return entries;
+    }
+
+    // Level 1: find RT_ACCELERATOR type
+    const rootEntries = readDirEntries(resBase);
+    const accelType = rootEntries.find(e => e.id === RT_ACCELERATOR);
+    if (!accelType || !accelType.isDir) {
+        throw new Error('No accelerator table resource found');
+    }
+
+    // Level 2: iterate all accelerator table IDs
+    const idEntries = readDirEntries(resBase + accelType.offset);
+    let strippedCount = 0;
+
+    for (const idEntry of idEntries) {
+        if (!idEntry.isDir) continue;
+
+        // Level 3: iterate language variants
+        const langEntries = readDirEntries(resBase + idEntry.offset);
+        for (const langEntry of langEntries) {
+            if (langEntry.isDir) continue;
+
+            // Data entry: RVA (4 bytes), Size (4 bytes), CodePage (4 bytes), Reserved (4 bytes)
+            const dataEntryOff = resBase + langEntry.offset;
+            const dataRVA = outView.getUint32(dataEntryOff, true);
+            const dataSize = outView.getUint32(dataEntryOff + 4, true);
+            const dataFileOff = rvaToFileLocal(dataRVA);
+            const numEntries = Math.floor(dataSize / 8);
+
+            for (let i = 0; i < numEntries; i++) {
+                const entryOff = dataFileOff + i * 8;
+                const fVirt = outView.getUint16(entryOff, true);
+                const cmd = outView.getUint16(entryOff + 4, true);
+
+                if (!SAFE_COMMANDS.has(cmd)) {
+                    // Zero the key and command but preserve the last-entry marker (0x80)
+                    outView.setUint16(entryOff, fVirt & 0x0080, true); // keep only last-entry bit
+                    outView.setUint16(entryOff + 2, 0, true);          // key = 0
+                    outView.setUint16(entryOff + 4, 0, true);          // cmd = 0
+                    strippedCount++;
+                }
+            }
+        }
+    }
+
+    if (strippedCount === 0) {
+        throw new Error('No accelerator entries were stripped — table may have already been patched');
+    }
 }
 
 export function patchFlashPlayer(inputPath: string, outputPath: string, proxyName = 'FlashpointProxy.exe') {
@@ -178,7 +285,10 @@ export function patchFlashPlayer(inputPath: string, outputPath: string, proxyNam
     outView.setUint32(ddOff + 4 * 8, 0, true);
     outView.setUint32(ddOff + 4 * 8 + 4, 0, true);
 
-    // 5. Calculate PE checksum (matches what CFF Explorer produces)
+    // 5. Strip dangerous keyboard shortcuts from accelerator table
+    stripAcceleratorShortcuts(output, outView, ddOff, sectHeadersOff, numSections);
+
+    // 6. Calculate PE checksum (matches what CFF Explorer produces)
     outView.setUint32(optHeaderOff + 64, 0, true); // zero first
     const checksumOffset = optHeaderOff + 64;
     let checksum = 0;
