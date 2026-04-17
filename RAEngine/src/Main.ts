@@ -247,6 +247,55 @@ function allocatePorts(base: number, count: number): number[] {
 }
 const RAFLASH_DOMAIN = "raflash.local"; // Fake domain for proxy routing (127.0.0.1 bypasses WinInet proxy)
 
+// WinInet cache clearing — Flash Player uses WinInet which has a persistent
+// disk cache. If the game URL exists on the real internet and was previously
+// cached (e.g. from a browser visit), WinInet serves the cached copy WITHOUT
+// making a network request, bypassing FlashpointProxy entirely. The game
+// loads without firmware injection and the firmware never connects.
+const wininet = Deno.build.os === "windows" ? (() => {
+    try {
+        return Deno.dlopen("wininet.dll", {
+            DeleteUrlCacheEntryW: { parameters: ["buffer"], result: "i32" },
+            InternetOpenW: { parameters: ["buffer", "u32", "pointer", "pointer", "u32"], result: "pointer" },
+            InternetOpenUrlW: { parameters: ["pointer", "buffer", "pointer", "u32", "u32", "pointer"], result: "pointer" },
+            InternetCloseHandle: { parameters: ["pointer"], result: "i32" },
+        });
+    } catch { return null; }
+})() : null;
+
+/** Encode a string as null-terminated UTF-16LE for WinInet W (wide) APIs. */
+function toWideString(str: string): Uint8Array<ArrayBuffer> {
+    const buf = new Uint8Array(new ArrayBuffer((str.length + 1) * 2));
+    for (let i = 0; i < str.length; i++) {
+        const c = str.charCodeAt(i);
+        buf[i * 2] = c & 0xFF;
+        buf[i * 2 + 1] = (c >> 8) & 0xFF;
+    }
+    return buf;
+}
+
+/** Delete a URL from WinInet's disk cache so Flash Player can't bypass the proxy. */
+function clearWininetCache(url: string): void {
+    if (!wininet) return;
+    try {
+        wininet.symbols.DeleteUrlCacheEntryW(toWideString(url));
+    } catch { /* best effort */ }
+}
+
+/** Fetch a URL through WinInet to populate its disk cache (for testing). */
+function poisonWininetCache(url: string): void {
+    if (!wininet) return;
+    try {
+        const INTERNET_OPEN_TYPE_PRECONFIG = 0;
+        const agent = toWideString("RAFlash");
+        const hInternet = wininet.symbols.InternetOpenW(agent, INTERNET_OPEN_TYPE_PRECONFIG, null, null, 0);
+        if (!hInternet) return;
+        const hUrl = wininet.symbols.InternetOpenUrlW(hInternet, toWideString(url), null, 0, 0, null);
+        if (hUrl) wininet.symbols.InternetCloseHandle(hUrl);
+        wininet.symbols.InternetCloseHandle(hInternet);
+    } catch { /* best effort */ }
+}
+
 /**
  * Resolve the configured origin URL into the full URL Flash Player should
  * launch the game from, the request path our HTTP handlers should match
@@ -3544,6 +3593,12 @@ async function main(): Promise<void> {
 
         // Switch to game running state
         appState = AppState.GAME_RUNNING;
+
+        // Clear WinInet cache entries for URLs our proxy serves. Flash
+        // Player uses WinInet which has a persistent disk cache — stale
+        // entries (e.g. old firmware SWF from before a fix) would be
+        // served without hitting the proxy, bypassing firmware injection.
+        clearWininetCache(resolveGameUrl().url);
 
         // Launch Flash Player
         flashProcess = launchFlashPlayer();
