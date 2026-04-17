@@ -259,9 +259,6 @@ const wininet = Deno.build.os === "windows" ? (() => {
             FindFirstUrlCacheEntryW: { parameters: ["pointer", "buffer", "buffer"], result: "pointer" },
             FindNextUrlCacheEntryW: { parameters: ["pointer", "buffer", "buffer"], result: "i32" },
             FindCloseUrlCache: { parameters: ["pointer"], result: "i32" },
-            InternetOpenW: { parameters: ["buffer", "u32", "pointer", "pointer", "u32"], result: "pointer" },
-            InternetOpenUrlW: { parameters: ["pointer", "buffer", "pointer", "u32", "u32", "pointer"], result: "pointer" },
-            InternetCloseHandle: { parameters: ["pointer"], result: "i32" },
         });
     } catch { return null; }
 })() : null;
@@ -275,14 +272,6 @@ function toWideString(str: string): Uint8Array<ArrayBuffer> {
         buf[i * 2 + 1] = (c >> 8) & 0xFF;
     }
     return buf;
-}
-
-/** Delete a URL from WinInet's disk cache so Flash Player can't bypass the proxy. */
-function clearWininetCache(url: string): void {
-    if (!wininet) return;
-    try {
-        wininet.symbols.DeleteUrlCacheEntryW(toWideString(url));
-    } catch { /* best effort */ }
 }
 
 /**
@@ -336,19 +325,6 @@ function clearWininetCacheByDomain(prefixes: string[]): void {
     } catch { /* best effort */ }
 }
 
-/** Fetch a URL through WinInet to populate its disk cache (for testing). */
-function poisonWininetCache(url: string): void {
-    if (!wininet) return;
-    try {
-        const INTERNET_OPEN_TYPE_PRECONFIG = 0;
-        const agent = toWideString("RAFlash");
-        const hInternet = wininet.symbols.InternetOpenW(agent, INTERNET_OPEN_TYPE_PRECONFIG, null, null, 0);
-        if (!hInternet) return;
-        const hUrl = wininet.symbols.InternetOpenUrlW(hInternet, toWideString(url), null, 0, 0, null);
-        if (hUrl) wininet.symbols.InternetCloseHandle(hUrl);
-        wininet.symbols.InternetCloseHandle(hInternet);
-    } catch { /* best effort */ }
-}
 
 /**
  * Resolve the configured origin URL into the full URL Flash Player should
