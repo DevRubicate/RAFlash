@@ -256,6 +256,9 @@ const wininet = Deno.build.os === "windows" ? (() => {
     try {
         return Deno.dlopen("wininet.dll", {
             DeleteUrlCacheEntryW: { parameters: ["buffer"], result: "i32" },
+            FindFirstUrlCacheEntryW: { parameters: ["pointer", "buffer", "buffer"], result: "pointer" },
+            FindNextUrlCacheEntryW: { parameters: ["pointer", "buffer", "buffer"], result: "i32" },
+            FindCloseUrlCache: { parameters: ["pointer"], result: "i32" },
             InternetOpenW: { parameters: ["buffer", "u32", "pointer", "pointer", "u32"], result: "pointer" },
             InternetOpenUrlW: { parameters: ["pointer", "buffer", "pointer", "u32", "u32", "pointer"], result: "pointer" },
             InternetCloseHandle: { parameters: ["pointer"], result: "i32" },
@@ -279,6 +282,57 @@ function clearWininetCache(url: string): void {
     if (!wininet) return;
     try {
         wininet.symbols.DeleteUrlCacheEntryW(toWideString(url));
+    } catch { /* best effort */ }
+}
+
+/**
+ * Delete ALL WinInet cache entries whose URL starts with any of the given
+ * prefixes (e.g. "http://uploads.ungrounded.net", "http://www.ngads.com").
+ * This handles wildcard network rules where we don't know the exact cached URLs.
+ */
+function clearWininetCacheByDomain(prefixes: string[]): void {
+    if (!wininet || prefixes.length === 0) return;
+    try {
+        // INTERNET_CACHE_ENTRY_INFOW is variable-size; 4KB is generous
+        const bufSize = 4096;
+        const buf = new Uint8Array(new ArrayBuffer(bufSize));
+        const sizeRef = new Uint8Array(new ArrayBuffer(4));
+
+        // First entry
+        new DataView(sizeRef.buffer).setUint32(0, bufSize, true);
+        const handle = wininet.symbols.FindFirstUrlCacheEntryW(null, buf, sizeRef);
+        if (!handle) return;
+
+        const processEntry = () => {
+            // lpszSourceUrlName is a pointer at offset 8 (64-bit)
+            const view = new DataView(buf.buffer);
+            const ptrLow = view.getUint32(8, true);
+            const ptrHigh = view.getUint32(12, true);
+            const ptr = ptrLow + ptrHigh * 0x100000000;
+            if (ptr === 0) return;
+
+            // Read UTF-16LE string from the pointer
+            const ptrObj = Deno.UnsafePointer.create(BigInt(ptr));
+            if (!ptrObj) return;
+            const ptrView = new Deno.UnsafePointerView(ptrObj);
+            const url = ptrView.getCString(); // reads as UTF-8; close enough for ASCII URLs
+
+            for (const prefix of prefixes) {
+                if (url.startsWith(prefix)) {
+                    wininet.symbols.DeleteUrlCacheEntryW(toWideString(url));
+                    break;
+                }
+            }
+        };
+
+        processEntry();
+        while (true) {
+            new DataView(sizeRef.buffer).setUint32(0, bufSize, true);
+            const ok = wininet.symbols.FindNextUrlCacheEntryW(handle, buf, sizeRef);
+            if (!ok) break;
+            processEntry();
+        }
+        wininet.symbols.FindCloseUrlCache(handle);
     } catch { /* best effort */ }
 }
 
@@ -3594,11 +3648,21 @@ async function main(): Promise<void> {
         // Switch to game running state
         appState = AppState.GAME_RUNNING;
 
-        // Clear WinInet cache entries for URLs our proxy serves. Flash
-        // Player uses WinInet which has a persistent disk cache — stale
-        // entries (e.g. old firmware SWF from before a fix) would be
-        // served without hitting the proxy, bypassing firmware injection.
-        clearWininetCache(resolveGameUrl().url);
+        // Clear WinInet cache entries for all domains our proxy intercepts.
+        // Flash Player uses WinInet which has a persistent disk cache —
+        // cached entries are served without a network request, bypassing
+        // FlashpointProxy and our firmware injection / network behavior rules.
+        {
+            const domains = new Set<string>();
+            const gUrl = resolveGameUrl();
+            domains.add(`http://${gUrl.domain}`);
+            for (const rule of AppData.data.gameConfig.networkRules || []) {
+                if (!rule.active || !rule.url) continue;
+                try { domains.add(`http://${new URL(rule.url.split('{')[0]).host}`); }
+                catch { /* malformed URL in rule */ }
+            }
+            clearWininetCacheByDomain([...domains]);
+        }
 
         // Launch Flash Player
         flashProcess = launchFlashPlayer();
