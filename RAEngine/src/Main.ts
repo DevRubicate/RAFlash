@@ -34,7 +34,7 @@ import { compileAchievementsSWF, type NativeAchResult } from "./swf/NativeEvalCo
 import { compileAchievementsSWF as compileAchievementsSWF_AVM2, type NativeAchResult as NativeAchResultAVM2 } from "./swf/NativeEvalCompilerAVM2.ts";
 import { buildInjectorTags, findMaxCharacterId } from "./swf/AVM2Injector.ts";
 
-const VERSION = "0.1.1";
+const VERSION = "0.1.2";
 
 // Compile a formula and emit an error log if compilation fails
 function compileFormula(input: string): unknown[] {
