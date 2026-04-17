@@ -10,6 +10,71 @@
 
 const encoder = new TextEncoder();
 
+/**
+ * Match a URL against a network rule pattern that may contain {wildcard} expressions.
+ *
+ * Supported wildcards:
+ *   {*}        — matches one or more characters
+ *   {#}        — matches one or more digits
+ *   {?}        — matches one or more letters (a-z, A-Z)
+ *
+ * Tokens compose freely inside braces: {#?#} matches "45test78".
+ *
+ * If the pattern contains no {...} tokens, falls back to exact string comparison.
+ */
+export function matchNetworkUrl(pattern: string, url: string): boolean {
+    // Fast path: no wildcards → exact match
+    if (!pattern.includes('{')) return pattern === url;
+
+    // Build regex from pattern by splitting on {...} tokens
+    let regex = '^';
+    let i = 0;
+    while (i < pattern.length) {
+        const open = pattern.indexOf('{', i);
+        if (open === -1) {
+            regex += escapeRegex(pattern.slice(i));
+            break;
+        }
+        const close = pattern.indexOf('}', open);
+        if (close === -1) {
+            // Unclosed brace — treat rest as literal
+            regex += escapeRegex(pattern.slice(i));
+            break;
+        }
+
+        // Add literal part before the brace
+        regex += escapeRegex(pattern.slice(i, open));
+
+        // Parse wildcard expression: each char is a token type
+        const expr = pattern.slice(open + 1, close);
+        regex += wildcardToRegex(expr);
+
+        i = close + 1;
+    }
+    regex += '$';
+
+    return new RegExp(regex).test(url);
+}
+
+/** Convert a wildcard expression (contents between { }) to a regex fragment. */
+function wildcardToRegex(expr: string): string {
+    let result = '';
+    for (let i = 0; i < expr.length; i++) {
+        const ch = expr[i];
+        if (ch === '\\' && i + 1 < expr.length) {
+            result += escapeRegex(expr[++i]);
+        } else if (ch === '*') result += '.+';
+        else if (ch === '#') result += '\\d+(?:\\.\\d+)?';
+        else if (ch === '?') result += '[a-zA-Z]+';
+        else result += escapeRegex(ch);
+    }
+    return result;
+}
+
+function escapeRegex(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 interface NetworkRule {
     active: boolean;
     url: string;
@@ -222,10 +287,10 @@ async function handleConnection(conn: Deno.TcpConn) {
             return;
         }
 
-        // Check network behavior rules (exact URL match)
+        // Check network behavior rules (supports {*}, {#}, {prefix*} wildcards)
         const rules = config.getNetworkRules?.() || [];
         const fullUrl = match[2];
-        const matchedRule = rules.find(r => r.active && r.url && r.url === fullUrl);
+        const matchedRule = rules.find(r => r.active && r.url && matchNetworkUrl(r.url, fullUrl));
         if (matchedRule) {
             const statusText = matchedRule.status === 200 ? 'OK' : String(matchedRule.status);
             let bodyBytes: Uint8Array;

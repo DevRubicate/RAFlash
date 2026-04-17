@@ -10,6 +10,7 @@ import {
     reconcileNetworkFiles,
     contentTypeForUrl,
     networkRuleZipPath,
+    matchNetworkUrl,
 } from "../src/SitelockProxy.ts";
 
 // Helper: encode string to base64 (simulating browser FileReader output)
@@ -397,4 +398,212 @@ test("reconcile - binary data survives base64 round-trip", () => {
     for (let i = 0; i < binaryData.length; i++) {
         assertEqual(result[i], binaryData[i]);
     }
+});
+
+// =============================================================================
+// matchNetworkUrl — wildcard matching
+// =============================================================================
+
+test("matchUrl - exact match with no wildcards", () => {
+    assertEqual(matchNetworkUrl("http://example.com/game.swf", "http://example.com/game.swf"), true);
+});
+
+test("matchUrl - exact mismatch with no wildcards", () => {
+    assertEqual(matchNetworkUrl("http://example.com/game.swf", "http://example.com/other.swf"), false);
+});
+
+test("matchUrl - {*} matches any query string", () => {
+    assertEqual(matchNetworkUrl(
+        "http://www.ngads.com/gateway_v2.php?seed={*}",
+        "http://www.ngads.com/gateway_v2.php?seed=0.56048827432096",
+    ), true);
+});
+
+test("matchUrl - {*} requires at least one character", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{*}.swf",
+        "http://example.com/.swf",
+    ), false);
+});
+
+test("matchUrl - {*} matches entire path", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{*}",
+        "http://example.com/any/path/here?q=1",
+    ), true);
+});
+
+test("matchUrl - {#} matches digits", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/level{#}.swf",
+        "http://example.com/level42.swf",
+    ), true);
+});
+
+test("matchUrl - {#} rejects non-digits", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/level{#}.swf",
+        "http://example.com/levelABC.swf",
+    ), false);
+});
+
+test("matchUrl - {#} requires at least one digit", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/level{#}.swf",
+        "http://example.com/level.swf",
+    ), false);
+});
+
+test("matchUrl - {#} matches decimal numbers", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/seed={#}",
+        "http://example.com/seed=0.56048827432096",
+    ), true);
+});
+
+test("matchUrl - {#} does not capture trailing dot without digit", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{#}.hello",
+        "http://example.com/555.hello",
+    ), true);
+});
+
+test("matchUrl - {#} matches integer when no decimal part", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/id={#}",
+        "http://example.com/id=42",
+    ), true);
+});
+
+test("matchUrl - {?} matches letters", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{?}.swf",
+        "http://example.com/game.swf",
+    ), true);
+});
+
+test("matchUrl - {?} rejects digits", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{?}.swf",
+        "http://example.com/123.swf",
+    ), false);
+});
+
+test("matchUrl - {?} rejects special characters", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{?}.swf",
+        "http://example.com/a-b.swf",
+    ), false);
+});
+
+test("matchUrl - {?} requires at least one letter", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{?}.swf",
+        "http://example.com/.swf",
+    ), false);
+});
+
+test("matchUrl - composed {#?#} matches digits-letters-digits", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{#?#}",
+        "http://example.com/45test78",
+    ), true);
+});
+
+test("matchUrl - composed {#?#} rejects wrong pattern", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{#?#}",
+        "http://example.com/test78",
+    ), false);
+});
+
+test("matchUrl - {prefix*} matches strings starting with prefix", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{game*}.swf",
+        "http://example.com/gameplay.swf",
+    ), true);
+});
+
+test("matchUrl - {prefix*} rejects strings not starting with prefix", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{game*}.swf",
+        "http://example.com/menu.swf",
+    ), false);
+});
+
+test("matchUrl - literal text in expression {v#} matches v followed by digits", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/api/{v#}/data",
+        "http://example.com/api/v2/data",
+    ), true);
+});
+
+test("matchUrl - multiple wildcards in one pattern", () => {
+    assertEqual(matchNetworkUrl(
+        "http://{*}.example.com/api/{#}/data",
+        "http://cdn.example.com/api/99/data",
+    ), true);
+});
+
+test("matchUrl - multiple wildcards, partial mismatch", () => {
+    assertEqual(matchNetworkUrl(
+        "http://{*}.example.com/api/{#}/data",
+        "http://cdn.example.com/api/abc/data",
+    ), false);
+});
+
+test("matchUrl - regex special chars in URL are escaped", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/file.php?a=1&b=2",
+        "http://example.com/file.php?a=1&b=2",
+    ), true);
+});
+
+test("matchUrl - unclosed brace is treated as literal", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{broken",
+        "http://example.com/{broken",
+    ), true);
+});
+
+test("matchUrl - escaped \\* matches literal asterisk", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{\\*}.swf",
+        "http://example.com/*.swf",
+    ), true);
+});
+
+test("matchUrl - escaped \\* does not act as wildcard", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{\\*}.swf",
+        "http://example.com/game.swf",
+    ), false);
+});
+
+test("matchUrl - escaped \\# matches literal hash", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{\\#}.swf",
+        "http://example.com/#.swf",
+    ), true);
+});
+
+test("matchUrl - escaped \\? matches literal question mark", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{\\?}",
+        "http://example.com/?",
+    ), true);
+});
+
+test("matchUrl - mix of escaped and wildcard tokens", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{\\*#}",
+        "http://example.com/*42",
+    ), true);
+});
+
+test("matchUrl - trailing backslash is literal", () => {
+    assertEqual(matchNetworkUrl(
+        "http://example.com/{\\}",
+        "http://example.com/\\",
+    ), true);
 });
