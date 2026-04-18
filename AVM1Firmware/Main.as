@@ -1388,7 +1388,12 @@ class Main {
             if (child instanceof MovieClip) {
                 var sub:Object = findTopmostHit(child, x, y, visited, depth + 1);
                 if (sub != null) return sub;
-                if (pointInChildStageBounds(child, x, y)) return child;
+                // A non-button-like MC is transparent to clicks: Flash lets
+                // the click fall through to whatever is behind it. So we
+                // only claim the hit for MCs that actually receive mouse
+                // events (onPress/onRelease/...). Plain container MCs stay
+                // in the recursion as transparent wrappers.
+                if (isMcClickable(child) && pointInChildStageBounds(child, x, y)) return child;
             } else if (child instanceof Button) {
                 if (pointInChildStageBounds(child, x, y)) return child;
             }
@@ -1457,6 +1462,26 @@ class Main {
             probe._y = y;
             return probe.hitTest(child) == true;
         }
+        return false;
+    }
+
+    /**
+     * True iff this MovieClip is button-like — i.e., Flash would route
+     * clicks to it rather than letting them pass through. An MC becomes
+     * interactive when any of these handlers is defined on the instance
+     * or its prototype. `onMouseDown/Up/Move` are broadcast-style
+     * listeners and don't make the MC intercept clicks, so they're
+     * intentionally excluded.
+     */
+    private static function isMcClickable(mc:Object):Boolean {
+        if (mc == null) return false;
+        if (typeof mc.onPress == "function") return true;
+        if (typeof mc.onRelease == "function") return true;
+        if (typeof mc.onReleaseOutside == "function") return true;
+        if (typeof mc.onRollOver == "function") return true;
+        if (typeof mc.onRollOut == "function") return true;
+        if (typeof mc.onDragOver == "function") return true;
+        if (typeof mc.onDragOut == "function") return true;
         return false;
     }
 
