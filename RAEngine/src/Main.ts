@@ -40,7 +40,9 @@ const VERSION = "0.1.2";
 function compileFormula(input: string): unknown[] {
     const compiled = Formula.compile(input);
     if (compiled.length === 3 && compiled[2] === 'ERROR') {
-        emitLog("engine", "error", `Formula compilation failed: ${input}`);
+        const detail = Formula.lastError;
+        const suffix = detail ? `: ${detail}` : "";
+        emitLog("engine", "error", `Formula compilation failed for "${input}"${suffix}`);
     }
     return compiled;
 }

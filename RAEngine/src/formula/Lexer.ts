@@ -134,7 +134,7 @@ class Lexer {
         } catch (err) {
             if (err instanceof LexerError) {
                 throw new Error(
-                    `file.munos:${err.row}:${err.column}: SyntaxError: ${err.message}\n${
+                    `radsl:${err.row}:${err.column}: SyntaxError: ${err.message}\n${
                         this.originalInput.split('\n')[err.row - 1]
                     }\n${' '.repeat(err.column - 1) + '^'}`,
                 );

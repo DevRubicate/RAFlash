@@ -180,7 +180,7 @@ class Parser {
         }
 
         throw new Error(
-            `file.munos:${err.token.row}:${err.token.column}: ParseError: ${
+            `radsl:${err.token.row}:${err.token.column}: ParseError: ${
                 err.message.replace('%s', printValue)
             }\n${this.originalInput.split('\n')[err.token.row - 1]}\n${
                 ' '.repeat(Math.max(0, err.token.column - 1)) +
