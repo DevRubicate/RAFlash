@@ -54,7 +54,12 @@
             </div>
 
             <div class="log-wrapper" v-if="steps.length > 0">
-                <div class="log-header">{{ recording ? 'Recording' : 'Steps' }}</div>
+                <div class="log-header">
+                    <span>{{ recording ? 'Recording' : 'Steps' }}</span>
+                    <button class="log-copy" @click="copySteps()" title="Copy steps as ratest source">
+                        {{ stepsCopied ? 'Copied' : 'Copy' }}
+                    </button>
+                </div>
                 <ul class="step-log" ref="stepLogEl">
                     <li
                         v-for="step in steps"
@@ -205,6 +210,27 @@
         text-transform: uppercase;
         letter-spacing: 0.05em;
         border-bottom: 1px solid var(--c-border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+    }
+
+    .log-copy {
+        font: inherit;
+        font-size: 0.6875rem;
+        letter-spacing: 0.05em;
+        padding: 0.1rem 0.5rem;
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--c-text-muted);
+        cursor: pointer;
+    }
+
+    .log-copy:hover {
+        background: var(--c-primary-soft);
+        color: var(--c-text);
     }
 
     .step-log,
@@ -614,6 +640,8 @@
     const hitTesting = ref(false);
     const hitTestResult = ref(null);
     const copied = ref(false);
+    const stepsCopied = ref(false);
+    let stepsCopiedTimer = null;
 
     const confirmingDelete = ref(null);
     let confirmingDeleteTimer = null;
@@ -750,6 +778,22 @@
             copied.value = true;
         } catch {
             copied.value = false;
+        }
+    };
+
+    const copySteps = async () => {
+        const text = steps.value
+            .filter((s) => !s.isSummary && s.source)
+            .map((s) => s.source)
+            .join('\n');
+        if (!text) return;
+        try {
+            await navigator.clipboard.writeText(text);
+            stepsCopied.value = true;
+            if (stepsCopiedTimer) clearTimeout(stepsCopiedTimer);
+            stepsCopiedTimer = setTimeout(() => { stepsCopied.value = false; }, 1500);
+        } catch (err) {
+            console.error('Failed to copy steps:', err);
         }
     };
 
