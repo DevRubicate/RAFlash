@@ -2937,7 +2937,9 @@ class Main {
                         // (`stage.foo.myButton`) via bracket lookup, which
                         // DOES resolve Buttons, so practical cases work.
                         for (var propertyName:String in target) {
-                            childThis.push(target[propertyName]);
+                            var propValue = target[propertyName];
+                            if (isHiddenBuiltinProp(propertyName, propValue)) continue;
+                            childThis.push(propValue);
                             childKeys.push(propertyName);
                         }
                         // Synthetic .triggered for hooked functions, so
@@ -3299,6 +3301,63 @@ class Main {
     // Output Formatting (ported from Main.as)
     // ========================================================================
 
+    // Flash built-in property defaults. Properties whose value matches the
+    // documented default are hidden during child enumeration to reduce
+    // noise in Memory Explorer and wildcard DSL queries. Direct name
+    // access (`stage.foo._quality`) still resolves normally.
+    //
+    // Modeled on AVM2Firmware/Evaluate.hx:150–241. AS2 has no describeType
+    // so we can't distinguish Flash-declared vs game-declared at runtime;
+    // instead we hardcode the built-in names we know about and grow the
+    // list as noise shows up.
+    private static var flashPropDefaults:Object = null;
+    private static var flashPropSkip:Object = null;
+
+    private static function initFlashDefaults():Void {
+        if (flashPropDefaults != null) return;
+        flashPropDefaults = {};
+        flashPropDefaults["_quality"] = "HIGH";
+        flashPropDefaults["_highquality"] = 1;
+        flashPropDefaults["_focusrect"] = null;
+        flashPropDefaults["_lockroot"] = false;
+        flashPropDefaults["_droptarget"] = "";
+        flashPropDefaults["_rotation"] = 0;
+        flashPropDefaults["_xscale"] = 100;
+        flashPropDefaults["_yscale"] = 100;
+        flashPropDefaults["_alpha"] = 100;
+        // _name is non-empty on children; hiding when it holds the root's
+        // "" keeps only the root degenerate case hidden.
+        flashPropDefaults["_name"] = "";
+        flashPropSkip = {};
+        // _url is the SWF URL, present on every MC with the same value —
+        // never useful game state regardless of what it resolves to.
+        flashPropSkip["_url"] = true;
+        // _target is the slash-notation path — always structural, never
+        // game state, regardless of value.
+        flashPropSkip["_target"] = true;
+        // __raflash is our firmware's own MC attached to the game root;
+        // always hide it so Memory Explorer shows pure game state.
+        flashPropSkip["__raflash"] = true;
+        // menu is inherited from MovieClip.prototype — every MC's .menu
+        // points to the same ContextMenu. Direct access still works.
+        flashPropSkip["menu"] = true;
+        // $version is the Flash Player version string, attached globally —
+        // not game state.
+        flashPropSkip["$version"] = true;
+    }
+
+    /**
+     * True if (name, val) should be hidden during child enumeration.
+     * Hides when the name is always-skip OR when it's a known built-in
+     * whose value matches its documented default.
+     */
+    private static function isHiddenBuiltinProp(name:String, val):Boolean {
+        initFlashDefaults();
+        if (flashPropSkip[name] == true) return true;
+        if (flashPropDefaults.hasOwnProperty(name) && val == flashPropDefaults[name]) return true;
+        return false;
+    }
+
     /**
      * Get built-in properties for a target object that don't appear in for...in iteration.
      * Returns an array of {name, value} pairs for properties that exist on the target.
@@ -3369,15 +3428,19 @@ class Main {
             if (typeof(value) == "movieclip") {
                 if (level == 0 && singular) {
                     for (var key:String in value) {
-                        output.push({value: key + ": " + formatOutput([value[key]], level + 1).output[0].value});
+                        var mcChild = value[key];
+                        if (isHiddenBuiltinProp(key, mcChild)) continue;
+                        output.push({value: key + ": " + formatOutput([mcChild], level + 1).output[0].value});
                     }
                     var mcBuiltins:Array = getBuiltinProperties(value);
                     for (var mb:Number = 0; mb < mcBuiltins.length; mb++) {
+                        if (isHiddenBuiltinProp(mcBuiltins[mb].name, mcBuiltins[mb].value)) continue;
                         output.push({value: mcBuiltins[mb].name + ": " + formatOutput([mcBuiltins[mb].value], level + 1).output[0].value});
                     }
                 } else {
                     var count:Number = 0;
                     for (var key:String in value) {
+                        if (isHiddenBuiltinProp(key, value[key])) continue;
                         count++;
                     }
                     output.push({value: "[MovieClip ..." + count + "]"});
@@ -3414,11 +3477,14 @@ class Main {
             } else if (typeof(value) == "object") {
                 if (level == 0 && singular) {
                     for (var key:String in value) {
-                        output.push({value: key + ": " + formatOutput([value[key]], level + 1).output[0].value});
+                        var objChild = value[key];
+                        if (isHiddenBuiltinProp(key, objChild)) continue;
+                        output.push({value: key + ": " + formatOutput([objChild], level + 1).output[0].value});
                     }
                 } else {
                     var count:Number = 0;
                     for (var key:String in value) {
+                        if (isHiddenBuiltinProp(key, value[key])) continue;
                         count++;
                     }
                     output.push({value: "[Object ..." + count + "]"});
