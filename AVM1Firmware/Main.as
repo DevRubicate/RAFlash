@@ -1319,6 +1319,11 @@ class Main {
         if (visited[key]) return null;
         visited[key] = true;
 
+        // AABB gate: the clip's bounds already encompass all descendant
+        // bounds, so if the cursor isn't inside, the whole subtree is a
+        // miss and we skip the 16k getInstanceAtDepth sweep entirely.
+        if (!clip.hitTest(x, y, false)) return null;
+
         var children:Array = collectClickableChildren(clip);
         for (var i:Number = 0; i < children.length; i++) {
             var child:Object = children[i];
