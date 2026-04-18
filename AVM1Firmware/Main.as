@@ -3422,6 +3422,10 @@ class Main {
         // $version is the Flash Player version string, attached globally —
         // not game state.
         flashPropSkip["$version"] = true;
+        // _parent points back up the display tree; showing it creates a
+        // visual cycle in the object view (and clutters drill-downs).
+        // Direct access via `.somechild._parent` still works.
+        flashPropSkip["_parent"] = true;
     }
 
     /**
@@ -3481,6 +3485,26 @@ class Main {
                 var mcValue = target[mcName];
                 if (mcValue !== undefined) {
                     result.push({name: mcName, value: mcValue});
+                }
+            }
+        } else if (target instanceof Button) {
+            // Per AS2 Button reference. Button-specific state + the
+            // display-object properties any DisplayObject exposes.
+            var btnProps:Array = [
+                "enabled", "useHandCursor", "tabEnabled", "tabIndex",
+                "trackAsMenu", "menu",
+                "blendMode", "cacheAsBitmap", "filters", "scale9Grid",
+                "_x", "_y", "_width", "_height", "_xscale", "_yscale",
+                "_alpha", "_visible", "_rotation",
+                "_name", "_target", "_url", "_parent",
+                "_xmouse", "_ymouse",
+                "_focusrect", "_highquality", "_quality"
+            ];
+            for (var bp:Number = 0; bp < btnProps.length; bp++) {
+                var bpName:String = btnProps[bp];
+                var bpValue = target[bpName];
+                if (bpValue !== undefined) {
+                    result.push({name: bpName, value: bpValue});
                 }
             }
         } else if (target instanceof TextField) {
@@ -3545,6 +3569,22 @@ class Main {
                         count++;
                     }
                     output.push({value: "[MovieClip ..." + count + "]"});
+                }
+            } else if (value instanceof Button) {
+                if (level == 0 && singular) {
+                    var btnBuiltins:Array = getBuiltinProperties(value);
+                    for (var bb:Number = 0; bb < btnBuiltins.length; bb++) {
+                        if (isHiddenBuiltinProp(btnBuiltins[bb].name, btnBuiltins[bb].value)) continue;
+                        output.push({value: btnBuiltins[bb].name + ": " + formatOutput([btnBuiltins[bb].value], level + 1).output[0].value});
+                    }
+                } else {
+                    var btnCount:Number = 0;
+                    var btnInlineBuiltins:Array = getBuiltinProperties(value);
+                    for (var bb2:Number = 0; bb2 < btnInlineBuiltins.length; bb2++) {
+                        if (isHiddenBuiltinProp(btnInlineBuiltins[bb2].name, btnInlineBuiltins[bb2].value)) continue;
+                        btnCount++;
+                    }
+                    output.push({value: "[Button ..." + btnCount + "]"});
                 }
             } else if (value instanceof TextField) {
                 if (level == 0 && singular) {
