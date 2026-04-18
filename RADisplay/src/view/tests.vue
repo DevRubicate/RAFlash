@@ -16,23 +16,35 @@
                     <li
                         v-for="file in files"
                         :key="file"
-                        :class="{ selected: file === selected }"
+                        :class="{ selected: file === selected, 'delete-pending': confirmingDelete === file }"
                         @click="selected = file"
                     >
-                        {{ file }}
+                        <span class="file-name">{{ file }}</span>
+                        <button
+                            v-if="confirmingDelete === file"
+                            class="file-delete confirm"
+                            @click.stop="doDelete(file)"
+                            title="Confirm delete"
+                        >Delete?</button>
+                        <button
+                            v-else
+                            class="file-delete"
+                            @click.stop="askDelete(file)"
+                            title="Delete file"
+                        >×</button>
                     </li>
                 </ul>
             </div>
 
             <div class="log-wrapper" v-if="steps.length > 0">
-                <div class="log-header">Steps</div>
+                <div class="log-header">{{ recording ? 'Recording' : 'Steps' }}</div>
                 <ul class="step-log" ref="stepLogEl">
                     <li
                         v-for="step in steps"
                         :key="step.index"
-                        :class="'phase-' + step.phase"
+                        :class="['phase-' + step.phase, { summary: step.isSummary }]"
                     >
-                        <span class="step-num">{{ step.index + 1 }}/{{ step.total }}</span>
+                        <span class="step-num">{{ step.index + 1 }}<span v-if="step.total">/{{ step.total }}</span></span>
                         <span class="step-icon">{{ phaseIcon(step.phase) }}</span>
                         <span class="step-source">{{ step.source }}</span>
                         <span class="step-ms" v-if="step.durationMs != null">{{ step.durationMs }}ms</span>
@@ -43,15 +55,40 @@
         </div>
 
         <div class="footer">
-            <button
-                class="play-button"
-                :disabled="!canPlay"
-                @click="play()"
-            >
-                <span v-if="running">Running...</span>
-                <span v-else>Play</span>
-            </button>
-            <div class="status" :class="statusClass">{{ statusText }}</div>
+            <template v-if="pendingSave">
+                <input
+                    class="filename-input"
+                    v-model="saveFilename"
+                    ref="saveInputEl"
+                    placeholder="filename"
+                    @keydown.enter="confirmSave()"
+                    @keydown.escape="cancelSave()"
+                />
+                <button class="confirm-button" :disabled="!saveFilename.trim()" @click="confirmSave()">Save</button>
+                <button class="cancel-button" @click="cancelSave()">Cancel</button>
+                <div class="status">Name the recording, or Cancel to discard.</div>
+            </template>
+            <template v-else>
+                <button
+                    class="play-button"
+                    :class="{ active: running }"
+                    :disabled="running ? false : !canPlay"
+                    @click="running ? stop() : play()"
+                >
+                    <span v-if="running">Stop</span>
+                    <span v-else>Play</span>
+                </button>
+                <button
+                    class="record-button"
+                    :class="{ active: recording }"
+                    :disabled="!canRecord"
+                    @click="toggleRecord()"
+                >
+                    <span v-if="recording">Stop Recording</span>
+                    <span v-else>Record</span>
+                </button>
+                <div class="status" :class="statusClass">{{ statusText }}</div>
+            </template>
         </div>
     </div>
 </template>
@@ -129,6 +166,11 @@
         border-bottom: 1px solid var(--c-border);
     }
 
+    .step-log,
+    .step-log * {
+        user-select: text;
+    }
+
     .step-log {
         list-style: none;
         margin: 0;
@@ -153,6 +195,15 @@
     .step-log li.phase-pass { color: #86efac; }
     .step-log li.phase-ok { color: var(--c-text); }
     .step-log li.phase-fail { color: #fca5a5; background: rgba(239, 68, 68, 0.08); }
+
+    .step-log li.summary {
+        margin-top: 0.25rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid var(--c-border);
+        font-weight: 600;
+    }
+
+    .step-log li.summary .step-num { visibility: hidden; }
 
     .step-num {
         font-variant-numeric: tabular-nums;
@@ -214,6 +265,9 @@
         cursor: pointer;
         border-radius: var(--radius-sm);
         transition: background var(--duration) var(--ease);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
     }
 
     .file-list li:hover {
@@ -225,17 +279,66 @@
         color: #c7d2fe;
     }
 
+    .file-list li.delete-pending {
+        background: rgba(239, 68, 68, 0.12);
+    }
+
+    .file-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .file-delete {
+        flex-shrink: 0;
+        background: transparent;
+        color: var(--c-text-muted);
+        border: none;
+        font-family: var(--font-sans);
+        font-size: 0.8125rem;
+        font-weight: 600;
+        padding: 0.125rem 0.375rem;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity var(--duration) var(--ease), background var(--duration) var(--ease), color var(--duration) var(--ease);
+    }
+
+    .file-list li:hover .file-delete {
+        opacity: 0.6;
+    }
+
+    .file-delete:hover {
+        opacity: 1 !important;
+        background: rgba(239, 68, 68, 0.2);
+        color: #fca5a5;
+    }
+
+    .file-delete.confirm {
+        opacity: 1;
+        background: #dc2626;
+        color: white;
+    }
+
+    .file-delete.confirm:hover {
+        background: #ef4444;
+    }
+
     .footer {
         flex-shrink: 0;
         display: flex;
         align-items: center;
-        gap: 0.75rem;
+        gap: 0.5rem;
         padding-top: 0.5rem;
         border-top: 1px solid var(--c-border);
     }
 
-    .play-button {
-        background: var(--c-primary);
+    .play-button,
+    .record-button,
+    .confirm-button,
+    .cancel-button {
         color: white;
         border: none;
         font-family: var(--font-sans);
@@ -244,16 +347,61 @@
         padding: 0.5rem 1.25rem;
         border-radius: var(--radius-md);
         cursor: pointer;
-        transition: opacity var(--duration) var(--ease);
+        transition: opacity var(--duration) var(--ease), background var(--duration) var(--ease);
     }
 
-    .play-button:disabled {
+    .play-button {
+        background: var(--c-primary);
+    }
+
+    .play-button.active {
+        background: #dc2626;
+    }
+
+    .record-button {
+        background: #374151;
+    }
+
+    .record-button.active {
+        background: #dc2626;
+    }
+
+    .confirm-button {
+        background: var(--c-primary);
+    }
+
+    .cancel-button {
+        background: #374151;
+    }
+
+    .play-button:disabled,
+    .record-button:disabled,
+    .confirm-button:disabled {
         opacity: 0.4;
         cursor: not-allowed;
     }
 
-    .play-button:not(:disabled):hover {
+    .play-button:not(:disabled):hover,
+    .record-button:not(:disabled):hover,
+    .confirm-button:not(:disabled):hover,
+    .cancel-button:hover {
         opacity: 0.85;
+    }
+
+    .filename-input {
+        flex: 0 0 240px;
+        background: var(--c-surface);
+        color: var(--c-text);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-md);
+        padding: 0.45rem 0.625rem;
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+    }
+
+    .filename-input:focus {
+        outline: none;
+        border-color: var(--c-primary);
     }
 
     .status {
@@ -269,12 +417,16 @@
     .status.failed {
         color: #fca5a5;
     }
+
+    .status.recording {
+        color: #fca5a5;
+    }
 </style>
 
 <script setup>
-    import { ref, computed } from 'vue';
-    import { Network }       from '../js/network.ts';
-    import { App }           from '../js/app.ts';
+    import { ref, computed, nextTick } from 'vue';
+    import { Network }                 from '../js/network.ts';
+    import { App }                     from '../js/app.ts';
 
     const files = ref([]);
     const selected = ref(null);
@@ -285,10 +437,20 @@
     const steps = ref([]);
     const stepLogEl = ref(null);
 
+    const recording = ref(false);
+    const pendingSave = ref(false);
+    const saveFilename = ref('');
+    const saveInputEl = ref(null);
+    const lastSaved = ref(null);
+
+    const confirmingDelete = ref(null);
+    let confirmingDeleteTimer = null;
+
     const phaseIcon = (phase) => {
         if (phase === 'pass') return '✓';
         if (phase === 'fail') return '✗';
         if (phase === 'ok') return '·';
+        if (phase === 'record') return '●';
         return '…';
     };
 
@@ -312,23 +474,55 @@
         scrollLogToBottom();
     });
 
+    Network.addEventListener('recordingStart', () => {
+        steps.value = [];
+        recording.value = true;
+        result.value = null;
+        lastSaved.value = null;
+    });
+
+    Network.addEventListener('recordingEvent', (data) => {
+        const source = data.kind === 'click'
+            ? `click ${data.path}`
+            : `assertTriggered ${data.id}${data.name ? ` (${data.name})` : ''}`;
+        const phase = data.kind === 'triggered' ? 'pass' : 'record';
+        steps.value.push({
+            index: data.index,
+            source,
+            phase,
+        });
+        scrollLogToBottom();
+    });
+
+    Network.addEventListener('recordingCancel', () => {
+        recording.value = false;
+    });
+
+    Network.addEventListener('recordingSaved', (data) => {
+        recording.value = false;
+        lastSaved.value = data.file;
+    });
+
     const canPlay = computed(() =>
-        !running.value && selected.value !== null && App.flashConnected,
+        !running.value && !recording.value && selected.value !== null && App.flashConnected,
+    );
+
+    const canRecord = computed(() =>
+        !running.value && App.flashConnected,
     );
 
     const statusText = computed(() => {
         if (!App.flashConnected) return 'Flash Player is not running — reload the game to run tests.';
+        if (recording.value) return 'Recording — click in the game to capture actions. Press Stop when done.';
         if (running.value) return 'Playing... game will reset and actions will execute.';
-        if (!result.value) return 'Select a test and press Play.';
-        const { passed, failed, total, error } = result.value;
-        if (failed === 0) return `Passed ${passed}/${total}`;
-        return `Failed ${failed}/${total} — ${error ?? ''}`;
+        if (lastSaved.value) return `Saved ${lastSaved.value}`;
+        if (result.value) return '';
+        return 'Select a test and press Play, or press Record to author a new one.';
     });
 
     const statusClass = computed(() => {
-        if (running.value || !App.flashConnected) return '';
-        if (!result.value) return '';
-        return result.value.failed === 0 ? 'passed' : 'failed';
+        if (recording.value) return 'recording';
+        return '';
     });
 
     const refreshList = async () => {
@@ -347,19 +541,102 @@
         if (!selected.value) return;
         running.value = true;
         result.value = null;
+        lastSaved.value = null;
         steps.value = [];
         try {
             const response = await Network.send({
                 command: 'playRatest',
                 params: { file: selected.value },
             });
-            if (response.success) {
-                result.value = response.params;
-            } else {
-                result.value = { passed: 0, failed: 1, total: 1, error: response.error ?? 'Unknown error' };
-            }
+            const res = response.success
+                ? response.params
+                : { passed: 0, failed: 1, total: 1, error: response.error ?? 'Unknown error' };
+            result.value = res;
+            const { passed, failed, total, error } = res;
+            const nextIndex = steps.value.length > 0
+                ? Math.max(...steps.value.map((s) => s.index)) + 1
+                : 0;
+            steps.value.push({
+                index: nextIndex,
+                phase: failed === 0 ? 'pass' : 'fail',
+                source: failed === 0
+                    ? `Passed ${passed}/${total}`
+                    : `Failed ${failed}/${total}${error ? ` — ${error}` : ''}`,
+                isSummary: true,
+            });
+            scrollLogToBottom();
         } finally {
             running.value = false;
+        }
+    };
+
+    const stop = async () => {
+        await Network.send({ command: 'abortRatest', params: {} });
+    };
+
+    const toggleRecord = async () => {
+        if (recording.value) {
+            // Open the filename prompt; the recording keeps running until the
+            // user confirms or cancels so they can still abandon gracefully.
+            const now = new Date();
+            const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+            saveFilename.value = `recording-${stamp}`;
+            pendingSave.value = true;
+            await nextTick();
+            if (saveInputEl.value) {
+                saveInputEl.value.focus();
+                saveInputEl.value.select();
+            }
+        } else {
+            const response = await Network.send({ command: 'startRecording', params: {} });
+            if (!response.success) {
+                result.value = { passed: 0, failed: 1, total: 1, error: response.error ?? 'startRecording failed' };
+            }
+        }
+    };
+
+    const confirmSave = async () => {
+        const name = saveFilename.value.trim();
+        if (!name) return;
+        const response = await Network.send({
+            command: 'stopRecording',
+            params: { filename: name },
+        });
+        pendingSave.value = false;
+        saveFilename.value = '';
+        if (response.success) {
+            await refreshList();
+            selected.value = response.params.file;
+        } else {
+            result.value = { passed: 0, failed: 1, total: 1, error: response.error ?? 'stopRecording failed' };
+        }
+    };
+
+    const cancelSave = async () => {
+        pendingSave.value = false;
+        saveFilename.value = '';
+        await Network.send({ command: 'cancelRecording', params: {} });
+    };
+
+    const askDelete = (file) => {
+        confirmingDelete.value = file;
+        if (confirmingDeleteTimer) clearTimeout(confirmingDeleteTimer);
+        // Auto-revert after 3s so an abandoned click doesn't stay armed.
+        confirmingDeleteTimer = setTimeout(() => {
+            confirmingDelete.value = null;
+        }, 3000);
+    };
+
+    const doDelete = async (file) => {
+        if (confirmingDeleteTimer) clearTimeout(confirmingDeleteTimer);
+        confirmingDelete.value = null;
+        const response = await Network.send({
+            command: 'deleteRatest',
+            params: { file },
+        });
+        if (response.success) {
+            if (selected.value === file) selected.value = null;
+            await refreshList();
         }
     };
 

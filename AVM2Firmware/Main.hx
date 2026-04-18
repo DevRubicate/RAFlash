@@ -11,6 +11,7 @@ import flash.events.IOErrorEvent;
 import flash.events.SecurityErrorEvent;
 import flash.events.ProgressEvent;
 import flash.events.KeyboardEvent;
+import flash.events.MouseEvent;
 import flash.ui.Keyboard;
 import flash.system.LoaderContext;
 import flash.system.ApplicationDomain;
@@ -60,6 +61,10 @@ class Main extends MovieClip {
     // Child mode: firmware was loaded by injected bytecode inside the game SWF
     // (game is root, firmware is child). Detected from loaderInfo URL query param.
     private var childMode:Bool = false;
+
+    // Recording state — toggled by setRecording command.
+    private var recording:Bool = false;
+    private var recordingMouseListener:MouseEvent->Void = null;
 
     // Default port, overridden by URL ?port= param in constructor
     private static var PORT:Int = 18081;
@@ -499,6 +504,15 @@ class Main extends MovieClip {
                 }
                 sendResponse(id, {success: true});
 
+            case "setRecording":
+                recording = (params.recording == true);
+                if (recording) {
+                    setupRecordingListener();
+                } else {
+                    teardownRecordingListener();
+                }
+                sendResponse(id, {success: true});
+
             case "loadCompiledAvm2":
                 // Load native-compiled achievement SWF (AVM2 bytecode)
                 var naUrl:String = params.url;
@@ -813,6 +827,58 @@ class Main extends MovieClip {
     private function log(msg:String):Void {
         trace("[AS3] " + msg);
         sendMessage("log", {message: msg});
+    }
+
+    // === Recording: capture user clicks and forward paths to the engine ===
+
+    private function setupRecordingListener():Void {
+        if (recordingMouseListener != null) return;
+        recordingMouseListener = function(e:MouseEvent):Void {
+            try {
+                if (!recording) return;
+                var target:flash.display.DisplayObject = cast e.target;
+                var path:String = buildStagePath(target);
+                if (path != null) {
+                    sendMessage("userInput", {kind: "click", path: path});
+                }
+            } catch (err:Dynamic) {
+                log("recording MOUSE_DOWN error: " + Std.string(err));
+            }
+        };
+        // Capture on MOUSE_DOWN (not UP): click handlers on the target often
+        // remove the element (e.g., PLAY button advancing from a title
+        // screen), so by MOUSE_UP time event.target may be gone or
+        // redirected. Capture phase so we see the real target before any
+        // game handler calls stopPropagation.
+        stage.addEventListener(MouseEvent.MOUSE_DOWN, recordingMouseListener, true);
+    }
+
+    private function teardownRecordingListener():Void {
+        if (recordingMouseListener == null) return;
+        stage.removeEventListener(MouseEvent.MOUSE_DOWN, recordingMouseListener, true);
+        recordingMouseListener = null;
+    }
+
+    /**
+     * Walk parent chain from target up to gameRoot, emitting "stage.a.b.c".
+     * Returns null if gameRoot is never reached (click was on firmware chrome).
+     */
+    private function buildStagePath(target:flash.display.DisplayObject):String {
+        if (target == null || gameRoot == null) return null;
+        var segments:Array<String> = [];
+        var current:flash.display.DisplayObject = target;
+        var guard:Int = 0;
+        var reachedGameRoot:Bool = false;
+        while (current != null && guard++ < 50) {
+            if (current == gameRoot) { reachedGameRoot = true; break; }
+            var n:String = current.name;
+            if (n == null || n == "") break;
+            segments.unshift(n);
+            current = current.parent;
+        }
+        if (!reachedGameRoot) return null;
+        if (segments.length == 0) return "stage";
+        return "stage." + segments.join(".");
     }
 
     // === Entry Point ===

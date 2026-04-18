@@ -61,6 +61,11 @@ export const App: AppState = reactive({
         Network.addEventListener('flashDisconnected', () => {
             App.flashConnected = false;
         });
+        // Fires when the engine relaunches Flash (e.g. Reset Game brutal
+        // restart) and the new firmware has reached gameLoaded.
+        Network.addEventListener('flashConnected', () => {
+            App.flashConnected = true;
+        });
     },
 
     getFakeId(): number {

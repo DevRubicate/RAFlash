@@ -20,8 +20,20 @@ type SendToFirmware = (
     reconnectTimeout?: number,
 ) => Promise<Record<string, unknown>>;
 
+/**
+ * Fallback activation for DefineButton2 with BUTTONCONDACTION handlers.
+ * AS2 exposes no API to invoke those actions, so we focus the Button and
+ * post an Enter keystroke to the Flash Player window. Return true on
+ * success. Omit to opt out of the fallback (click() then throws if
+ * onRelease/onPress are absent).
+ */
+export type ActivateViaFocus = (path: string) => Promise<boolean>;
+
 export class LiveStagehand implements StagehandLike {
-    constructor(private readonly send: SendToFirmware) {}
+    constructor(
+        private readonly send: SendToFirmware,
+        private readonly activateViaFocus?: ActivateViaFocus,
+    ) {}
 
     async evaluate<T = unknown>(formula: string): Promise<T> {
         const compiled = Formula.compile(formula);
@@ -44,8 +56,30 @@ export class LiveStagehand implements StagehandLike {
         return extractValue(resp.result) as T;
     }
 
-    click(path: string): Promise<unknown> {
-        return this.invoke(path, "onRelease");
+    async click(path: string): Promise<unknown> {
+        // Fast path: AS2-assigned onRelease or onPress.
+        const compiled = Formula.compile(path);
+        const methods = ["onRelease", "onPress"];
+        let lastError: string | undefined;
+        for (const method of methods) {
+            const resp = await this.send("invokeMethod", { pathFormula: compiled, method, args: [] });
+            if (resp.success) return extractValue(resp.result);
+            lastError = resp.error as string | undefined;
+            // Only a "Not a function" failure means "try the next strategy".
+            // Anything else (path not found, firmware error) is final.
+            if (!lastError || lastError.indexOf("Not a function") !== 0) {
+                throw new Error(`click(${path}) failed: ${lastError}`);
+            }
+        }
+        // Fallback: DefineButton2 with a BUTTONCONDACTION can only be
+        // triggered through Flash's event routing. We focus the element
+        // and send an Enter keystroke via PostMessage, which triggers the
+        // on(release) condition just like a real mouse-up would.
+        if (this.activateViaFocus) {
+            const ok = await this.activateViaFocus(path);
+            if (ok) return undefined;
+        }
+        throw new Error(`click(${path}) failed: no onRelease/onPress handler and focus activation unavailable`);
     }
 
     async tick(n = 1): Promise<void> {

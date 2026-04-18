@@ -72,6 +72,11 @@ class Main {
     private static var benchmarkingActive:Boolean = false;
     private static var interpreterFastPath:Boolean = true;
 
+    // Recording state — toggled by setRecording command.
+    // When true, onMouseUp listener forwards click paths to the engine.
+    private static var recording:Boolean = false;
+    private static var recordingMouseListener:Object = null;
+
 
     // Delta values storage - keyed by requirement ID
     // Format: { reqId: { prevA: value, prevB: value } }
@@ -1101,6 +1106,29 @@ class Main {
                 sendResponse(id, { success: true, result: imFormatted });
                 break;
 
+            case "focusElement":
+                _stageContext[0] = gameRoot;
+                var feFormula:Array = params.pathFormula;
+                var feResult:Array = evaluate(feFormula, 1, feFormula.length, _stageContext, _stageKeys);
+                if (feResult != null && feResult.length > 0) {
+                    Selection.setFocus(feResult[0]);
+                    sendResponse(id, { success: true });
+                } else {
+                    sendResponse(id, { success: false, error: "Path not found" });
+                }
+                break;
+
+            case "setRecording":
+                recording = (params.recording == true);
+                sendMessage("log", { message: "[recording] setRecording -> " + recording + " (gameRoot=" + (gameRoot == null ? "null" : "set") + ")" });
+                if (recording) {
+                    setupRecordingListener();
+                } else {
+                    teardownRecordingListener();
+                }
+                sendResponse(id, { success: true });
+                break;
+
             case "loadCompiledAvm1":
                 var naUrl:String = String(params.url);
                 var naIndices:Array = params.compiledIndices;
@@ -1185,6 +1213,237 @@ class Main {
      */
     public static function log(message:String):Void {
         sendMessage("log", { message: message });
+    }
+
+    // ========================================================================
+    // Recording: capture user clicks and forward paths to the engine
+    // ========================================================================
+
+    private static function setupRecordingListener():Void {
+        if (recordingMouseListener != null) return;
+        recordingMouseListener = {};
+        // Capture on mouseDown, not mouseUp: the clicked element's own
+        // handler (onRelease / IDE-compiled button action) typically runs
+        // before our Mouse.addListener.onMouseUp, and that handler often
+        // removes the element (e.g., a PLAY button that advances from the
+        // title screen). By the time mouseUp arrives, hitTest finds nothing.
+        recordingMouseListener.onMouseDown = function():Void {
+            try {
+                if (!Main.recording) return;
+                var x:Number = _level0._xmouse;
+                var y:Number = _level0._ymouse;
+                if (Main.gameRoot == null) return;
+                var target:Object = Main.findClickedTargetRec(Main.gameRoot, x, y);
+                if (target == null) {
+                    Main.sendMessage("userInput", { kind: "click", path: null, x: x, y: y });
+                    return;
+                }
+                var path:String = Main.buildStagePath(target);
+                Main.sendMessage("userInput", { kind: "click", path: path, x: x, y: y });
+            } catch (e:Error) { Main.logError("recording onMouseDown", e); }
+        };
+        Mouse.addListener(recordingMouseListener);
+        sendMessage("log", { message: "[recording] mouse listener attached" });
+    }
+
+    private static function teardownRecordingListener():Void {
+        if (recordingMouseListener == null) return;
+        Mouse.removeListener(recordingMouseListener);
+        recordingMouseListener = null;
+    }
+
+    /**
+     * Find the best clickable target under stage coords (x, y).
+     *
+     * Preference order:
+     *   1. Deepest MovieClip/Button with an explicit onRelease or onPress —
+     *      these are cleanly replayable via `click <path>`.
+     *   2. Deepest hit MovieClip/Button regardless of handler — many older
+     *      games use IDE-compiled Button handlers, frame-script hitTest
+     *      polling, or global Mouse.addListener logic; those have no
+     *      inspectable handler but the user still clicked something. We
+     *      capture the visual target and let the user edit the .ratest if
+     *      playback can't drive it via onRelease.
+     */
+    public static function findClickedTargetRec(clip:Object, x:Number, y:Number):Object {
+        var visited:Object = {};
+        var explicit:Object = findClickedHandler(clip, x, y, visited, 0);
+        if (explicit != null) return explicit;
+        // Fresh visited set for the lenient pass so it can revisit MCs the
+        // handler pass walked through (it rejects nodes without handlers,
+        // but the same nodes may be valid lenient targets).
+        visited = {};
+        return findClickedLenient(clip, x, y, visited, 0);
+    }
+
+    private static function findClickedHandler(clip:Object, x:Number, y:Number, visited:Object, depth:Number):Object {
+        if (clip == null || depth > 20) return null;
+        var key:String = String(clip._target);
+        if (visited[key]) return null;
+        visited[key] = true;
+
+        // Pass 1: for-in children (fast path — covers the common case).
+        var seen:Object = {};
+        var forIn:Array = collectClickableChildren_forIn(clip, seen);
+        for (var i:Number = 0; i < forIn.length; i++) {
+            var hit:Object = tryHandlerChild(forIn[i], x, y, visited, depth);
+            if (hit != null) return hit;
+        }
+        // Pass 2: depth sweep — only runs if Pass 1 found no hit. Catches
+        // DontEnum Buttons (DefineButton2 symbols placed on the timeline).
+        var swept:Array = collectClickableChildren_depthSweep(clip, seen);
+        for (var k:Number = 0; k < swept.length; k++) {
+            var hit2:Object = tryHandlerChild(swept[k], x, y, visited, depth);
+            if (hit2 != null) return hit2;
+        }
+        if ((typeof(clip.onRelease) == "function" || typeof(clip.onPress) == "function")
+            && pointInChildStageBounds(clip, x, y)) return clip;
+        return null;
+    }
+
+    private static function tryHandlerChild(child:Object, x:Number, y:Number, visited:Object, depth:Number):Object {
+        if (!pointInChildStageBounds(child, x, y)) return null;
+        if (child instanceof MovieClip) {
+            var found:Object = findClickedHandler(child, x, y, visited, depth + 1);
+            if (found != null) return found;
+        }
+        if (typeof(child.onRelease) == "function" || typeof(child.onPress) == "function") return child;
+        // Button symbols are clickable regardless of handler presence
+        // (their on(release) is baked into DefineButton2, not AS2).
+        if (child instanceof Button) return child;
+        return null;
+    }
+
+    private static function findClickedLenient(clip:Object, x:Number, y:Number, visited:Object, depth:Number):Object {
+        if (clip == null || depth > 20) return null;
+        var key:String = String(clip._target);
+        if (visited[key]) return null;
+        visited[key] = true;
+
+        var seen:Object = {};
+        var forIn:Array = collectClickableChildren_forIn(clip, seen);
+        for (var i:Number = 0; i < forIn.length; i++) {
+            var hit:Object = tryLenientChild(forIn[i], x, y, visited, depth);
+            if (hit != null) return hit;
+        }
+        var swept:Array = collectClickableChildren_depthSweep(clip, seen);
+        for (var k:Number = 0; k < swept.length; k++) {
+            var hit2:Object = tryLenientChild(swept[k], x, y, visited, depth);
+            if (hit2 != null) return hit2;
+        }
+        return null;
+    }
+
+    private static function tryLenientChild(child:Object, x:Number, y:Number, visited:Object, depth:Number):Object {
+        if (!pointInChildStageBounds(child, x, y)) return null;
+        if (child instanceof MovieClip) {
+            var found:Object = findClickedLenient(child, x, y, visited, depth + 1);
+            if (found != null) return found;
+        }
+        return child;
+    }
+
+    /**
+     * True iff stage coords (x, y) hit child.
+     *
+     * MovieClips: `MovieClip.hitTest(x, y, true)` is shape-accurate.
+     *
+     * Buttons: AS2 Buttons expose no `getBounds`, and the 3-arg form of
+     * `hitTest(x, y, flag)` returns undefined — only `hitTest(target)` is
+     * supported. So we compute the bounding box in the parent's coordinate
+     * space from `_x, _y, _width, _height`, then project to stage coords
+     * via `_parent.localToGlobal`. Min/max of the two transformed corners
+     * handles scaled/rotated parents as an axis-aligned bbox (looser than
+     * the rotated shape for rotated parents, but acceptable for clicks).
+     */
+    private static function pointInChildStageBounds(child:Object, x:Number, y:Number):Boolean {
+        if (child == null) return false;
+        if (child instanceof MovieClip) {
+            return child.hitTest(x, y, true) == true;
+        }
+        if (child instanceof Button) {
+            var p:Object = child._parent;
+            if (p == null) return false;
+            var tl:Object = { x: child._x, y: child._y };
+            var br:Object = { x: child._x + child._width, y: child._y + child._height };
+            p.localToGlobal(tl);
+            p.localToGlobal(br);
+            var minX:Number = (tl.x < br.x) ? tl.x : br.x;
+            var maxX:Number = (tl.x > br.x) ? tl.x : br.x;
+            var minY:Number = (tl.y < br.y) ? tl.y : br.y;
+            var maxY:Number = (tl.y > br.y) ? tl.y : br.y;
+            return x >= minX && x <= maxX && y >= minY && y <= maxY;
+        }
+        return false;
+    }
+
+    /**
+     * Pass 1 collector — enumerable MovieClip/Button children of `parent`
+     * via `for...in`, sorted by _depth descending (topmost first). Marks
+     * names into `seen` so Pass 2 can skip them.
+     *
+     * Fast — this is the only enumeration that runs in the common case,
+     * when the click lands on an enumerable child (or its subtree).
+     */
+    private static function collectClickableChildren_forIn(parent:Object, seen:Object):Array {
+        if (parent == null) return [];
+        var out:Array = [];
+        for (var nm:String in parent) {
+            var fc:Object = parent[nm];
+            if (fc instanceof MovieClip || fc instanceof Button) {
+                seen[nm] = true;
+                out.push(fc);
+            }
+        }
+        out.sortOn("_depth", Array.DESCENDING | Array.NUMERIC);
+        return out;
+    }
+
+    /**
+     * Pass 2 collector — 16k depth sweep via `getInstanceAtDepth`, bounded
+     * to the IDE-placed timeline range [-16384, 0). Catches DontEnum
+     * Buttons (DefineButton2 symbols) that `for...in` hides. Skips names
+     * already in `seen`. Sorted by _depth descending.
+     *
+     * This is the expensive path. Called only when Pass 1 produced no hit
+     * for the current MC, so per-click the sweep runs at most once per
+     * recursion level — and usually not at all.
+     */
+    private static function collectClickableChildren_depthSweep(parent:Object, seen:Object):Array {
+        if (parent == null || parent.getInstanceAtDepth == undefined) return [];
+        var out:Array = [];
+        for (var d:Number = -16384; d < 0; d++) {
+            var child:Object = parent.getInstanceAtDepth(d);
+            if (child == null) continue;
+            var cname:String = String(child._name);
+            if (seen[cname]) continue;
+            if (child instanceof MovieClip || child instanceof Button) {
+                seen[cname] = true;
+                out.push(child);
+            }
+        }
+        out.sortOn("_depth", Array.DESCENDING | Array.NUMERIC);
+        return out;
+    }
+
+    /**
+     * Walk _parent chain from a clip up to gameRoot, emitting "stage.a.b.c".
+     * Segments come from _name. Returns null if the chain is broken.
+     */
+    public static function buildStagePath(clip:Object):String {
+        if (clip == null) return null;
+        var segments:Array = [];
+        var current:Object = clip;
+        var guard:Number = 0;
+        while (current != null && current != gameRoot && current != _level0) {
+            if (guard++ > 50) break; // runaway parent chain
+            var n:String = String(current._name);
+            if (n == null || n == "" || n == "undefined") break;
+            segments.unshift(n);
+            current = current._parent;
+        }
+        if (segments.length == 0) return "stage";
+        return "stage." + segments.join(".");
     }
 
     // ========================================================================
@@ -2611,6 +2870,44 @@ class Main {
                                 result.push("ERROR");
                                 continue;
                             }
+                            // Synthetic .allChildren on MovieClips: returns
+                            // a plain object keyed by child name, union of
+                            // for...in and a timeline-range depth sweep,
+                            // filtered to display-list children. Keying by
+                            // name lets Memory Explorer's tree view show
+                            // "instance58: [Button]" naturally, and lets
+                            // further DSL access like
+                            // `stage.a.allChildren.instance58` work as a
+                            // regular key filter.
+                            //
+                            // Opt-in (~16k depth lookups per access) so the
+                            // per-frame evaluator isn't slowed.
+                            if (propName == "allChildren"
+                                    && targets[j] instanceof MovieClip) {
+                                var acMc:MovieClip = targets[j];
+                                var acObj:Object = {};
+                                for (var acName:String in acMc) {
+                                    var acVal:Object = acMc[acName];
+                                    if (acVal instanceof MovieClip
+                                            || acVal instanceof Button
+                                            || acVal instanceof TextField) {
+                                        acObj[acName] = acVal;
+                                    }
+                                }
+                                for (var acD:Number = -16384; acD < 0; acD++) {
+                                    var acChild:Object = acMc.getInstanceAtDepth(acD);
+                                    if (acChild == null) continue;
+                                    if (!(acChild instanceof MovieClip)
+                                            && !(acChild instanceof Button)
+                                            && !(acChild instanceof TextField)) continue;
+                                    var acCn:String = String(acChild._name);
+                                    if (acObj[acCn] == undefined) {
+                                        acObj[acCn] = acChild;
+                                    }
+                                }
+                                result.push(acObj);
+                                continue;
+                            }
                             var value = targets[j][propName];
                             if (value !== undefined) {
                                 result.push(wrapHook(targets[j], propName, value));
@@ -2630,6 +2927,15 @@ class Main {
                         var childThis = [];
                         var childKeys = [];
 
+                        // NOTE: for...in misses Button children of
+                        // MovieClips (they're marked DontEnum by Flash),
+                        // so wildcard DSL queries like `stage.*` won't see
+                        // Buttons. Deep-depth enumeration is tempting but
+                        // too expensive for the per-frame hot path — can
+                        // push 1M+ iterations/frame and hang Flash. The
+                        // fast path above handles explicit name access
+                        // (`stage.foo.myButton`) via bracket lookup, which
+                        // DOES resolve Buttons, so practical cases work.
                         for (var propertyName:String in target) {
                             childThis.push(target[propertyName]);
                             childKeys.push(propertyName);

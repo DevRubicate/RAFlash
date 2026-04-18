@@ -87,6 +87,10 @@ const user32 = isWindows ? Deno.dlopen("user32.dll", {
         parameters: ["pointer", "u32", "pointer", "pointer"],
         result: "pointer",
     },
+    PostMessageW: {
+        parameters: ["pointer", "u32", "pointer", "pointer"],
+        result: "i32",
+    },
     LoadImageW: {
         parameters: ["pointer", "buffer", "u32", "i32", "i32", "u32"],
         result: "pointer",
@@ -221,6 +225,34 @@ export class WindowManager {
             width: right - left,
             height: bottom - top,
         };
+    }
+
+    /**
+     * Post a simulated keystroke (WM_KEYDOWN + WM_KEYUP) to the window
+     * belonging to the given process. Does NOT move the cursor or steal
+     * focus — messages are queued into the target window's input queue
+     * and processed by its WndProc as if the user had typed the key.
+     * Returns true if the messages were queued.
+     */
+    static postKeypress(pid: number, vkCode: number): boolean {
+        if (!isWindows || !user32) return false;
+        const hwnd = this.findWindowByPid(pid);
+        if (!hwnd) return false;
+
+        const WM_KEYDOWN = 0x0100;
+        const WM_KEYUP = 0x0101;
+
+        // lParam bitfield per Win32 docs:
+        //   bits  0-15: repeat count (we use 1)
+        //   bit     30: previous key state (1 for WM_KEYUP)
+        //   bit     31: transition state   (1 for WM_KEYUP)
+        const lParamDown = Deno.UnsafePointer.create(1n);
+        const lParamUp = Deno.UnsafePointer.create(0xC0000001n);
+        const wParam = Deno.UnsafePointer.create(BigInt(vkCode));
+
+        user32.symbols.PostMessageW(hwnd, WM_KEYDOWN, wParam, lParamDown);
+        user32.symbols.PostMessageW(hwnd, WM_KEYUP, wParam, lParamUp);
+        return true;
     }
 
     /**

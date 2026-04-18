@@ -1640,6 +1640,16 @@ function emitLog(source: string, level: string, message: string): void {
  */
 const gameLoadedWaiters = new Set<() => void>();
 
+type RecordingEvent =
+    | { kind: "click"; path: string; timestamp: number }
+    | { kind: "triggered"; id: number; name?: string; timestamp: number };
+
+let recordingActive = false;
+let recordingBuffer: RecordingEvent[] = [];
+let recordingStartTime: number | null = null;
+
+let playbackAbort = false;
+
 /**
  * Resolve with `true` when the firmware next emits `gameLoaded`, or
  * `false` if that doesn't happen within `timeoutMs`. Used by
@@ -1667,23 +1677,36 @@ function waitForGameLoaded(timeoutMs: number): Promise<boolean> {
  * runtime state. Shared by the `resetGame` devtools command and the
  * `playRatest` harness so a test run always starts from a clean slate.
  *
- * Waits for the firmware's `gameLoaded` event before returning so callers
- * can assume the game is ready for commands — without this, commands sent
- * between the resetGame ACK and the post-reload setup race with firmware
- * init and kill the XMLSocket.
+ * Implementation: kill the Flash Player process and let the main loop's
+ * `pendingRelaunch` path bring up a fresh instance with the same game.
+ *
+ * Why so brutal? `loadMovie` within the same Flash process would be
+ * faster, but Flash Player's per-process auto-instance counter keeps
+ * growing across resets — "stage.instance13836" becomes
+ * "stage.instance14066" the next time the same timeline clip is loaded,
+ * invalidating recorded paths. Compiled achievement SWFs and other
+ * process-local state also linger. A clean process guarantees stable
+ * names and a true clean slate.
+ *
+ * Waits for the new firmware to emit `gameLoaded` before returning so
+ * callers can assume the game is ready for commands.
  */
 async function performResetGame(): Promise<Record<string, unknown>> {
     if (gameResetting) {
         return { success: false, error: "Reset already in progress" };
     }
+    if (!AppData.gamePath) {
+        return { success: false, error: "No game loaded" };
+    }
     gameResetting = true;
     try {
-        const gameUrl = AppData.data.gameConfig.originUrl ? resolveGameUrl().url : null;
-        emitLog("engine", "info", "Resetting game...");
+        emitLog("engine", "info", "Resetting game (restarting Flash Player)...");
 
-        // Partially-accumulated hits would falsely trigger on frame 1 of
-        // the fresh game when their conditions evaluate against the old
-        // hit counts.
+        // Clear accumulated hits / primed state in AppData before the new
+        // firmware boots. The new firmware receives the cleaned state
+        // during setup, so partial hit counts can't falsely trigger on
+        // frame 1 of the fresh run. No firmware editData needed — the
+        // old firmware is about to die with its process.
         const resetEdits: Array<[string, unknown]> = [];
         const assets = AppData.data.assets;
         for (let i = 0; i < assets.length; i++) {
@@ -1704,29 +1727,24 @@ async function performResetGame(): Promise<Record<string, unknown>> {
                 }
             }
         }
-
         if (resetEdits.length > 0) {
-            const resetDiff: Diff = { edited: resetEdits };
-            broadcastToDevtools("editData", resetDiff);
-            sendToFirmware("editData", { changes: resetDiff }, 0).catch(() => {});
+            broadcastToDevtools("editData", { edited: resetEdits } as Diff);
         }
 
-        // Register the waiter BEFORE sending so there's no window where
-        // gameLoaded can fire between send and registration.
-        const gameLoadedPromise = waitForGameLoaded(10000);
+        // Register the waiter BEFORE killing so we're armed for the new
+        // firmware's first gameLoaded. Relaunch takes 2–5 seconds.
+        const gameLoadedPromise = waitForGameLoaded(20000);
 
-        const response = await sendToFirmware("resetGame", { gameUrl });
-        if (!response.success) {
-            return response;
-        }
+        pendingRelaunch = AppData.gamePath;
+        try { flashProcess?.kill(); } catch { /* already exited */ }
 
         const loaded = await gameLoadedPromise;
         if (!loaded) {
-            emitLog("engine", "warn", "Game reset timed out waiting for gameLoaded (10s)");
-            return { success: false, error: "Game did not finish loading within 10s" };
+            emitLog("engine", "warn", "Game reset timed out waiting for relaunch (20s)");
+            return { success: false, error: "Flash Player did not finish relaunching within 20s" };
         }
         emitLog("engine", "info", "Game reset complete");
-        return response;
+        return { success: true };
     } finally {
         gameResetting = false;
     }
@@ -2659,15 +2677,43 @@ async function handleApiRequest(
 
             emitLog("ratest", "info", `Running ${name} (${parsed.steps.length} steps)`);
             broadcastToDevtools("ratestStart", { file: name, total: parsed.steps.length });
+            playbackAbort = false;
 
             const resetResp = await performResetGame();
             if (!resetResp.success) {
                 return { success: false, error: `resetGame: ${resetResp.error ?? "unknown error"}` };
             }
 
-            const page = new LiveStagehand(sendToFirmware);
+            const page = new LiveStagehand(sendToFirmware, async (path: string) => {
+                // Click fallback for DefineButton2 / BUTTONCONDACTION: focus
+                // the element via Selection.setFocus, then post Enter to
+                // the Flash Player window. No cursor movement.
+                const pid = flashPlayerPid;
+                if (pid == null) return false;
+                const compiledPath = compileFormula(path);
+                const focusResp = await sendToFirmware("focusElement", { pathFormula: compiledPath });
+                if (!focusResp.success) {
+                    emitLog("ratest", "warn", `focus activation: ${focusResp.error}`);
+                    return false;
+                }
+                // Tiny gap so Flash commits the focus state before the key arrives.
+                await new Promise((r) => setTimeout(r, 30));
+                const VK_RETURN = 0x0D;
+                return WindowManager.postKeypress(pid, VK_RETURN);
+            });
             const results: Array<{ name: string; passed: boolean; error?: string; durationMs: number }> = [];
+            let aborted = false;
             for (let i = 0; i < parsed.steps.length; i++) {
+                if (playbackAbort) {
+                    aborted = true;
+                    results.push({
+                        name: "playback",
+                        passed: false,
+                        error: "Aborted by user",
+                        durationMs: 0,
+                    });
+                    break;
+                }
                 const step = parsed.steps[i];
                 const before = results.length;
                 broadcastToDevtools("ratestStep", {
@@ -2705,12 +2751,18 @@ async function handleApiRequest(
                 }
             }
 
+            playbackAbort = false;
             const passed = results.filter((r) => r.passed).length;
             const failed = results.filter((r) => !r.passed).length;
             const firstError = results.find((r) => !r.passed);
-            const summary = firstError
-                ? `${passed} passed, ${failed} failed — ${firstError.name}: ${firstError.error}`
-                : `${passed} passed`;
+            let summary: string;
+            if (aborted) {
+                summary = `${passed} passed, ${failed} failed — aborted by user`;
+            } else if (firstError) {
+                summary = `${passed} passed, ${failed} failed — ${firstError.name}: ${firstError.error}`;
+            } else {
+                summary = `${passed} passed`;
+            }
             emitLog("ratest", failed === 0 ? "info" : "warn", `${name}: ${summary}`);
             return {
                 success: true,
@@ -2721,6 +2773,114 @@ async function handleApiRequest(
                     error: firstError ? `${firstError.name}: ${firstError.error}` : undefined,
                 },
             };
+        }
+
+        case "abortRatest": {
+            // Idempotent: setting the flag when nothing's running is harmless —
+            // it resets at the start of the next playRatest.
+            playbackAbort = true;
+            return { success: true };
+        }
+
+        case "deleteRatest": {
+            if (!AppData.gameHash) return { success: false, error: "No game loaded" };
+            const name = String(input.params.file || "");
+            if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
+                return { success: false, error: `Invalid .ratest filename: ${name}` };
+            }
+            const filepath = `RACache/ratests/${AppData.gameHash}/${name}`;
+            try {
+                await Deno.remove(filepath);
+            } catch (e) {
+                return { success: false, error: `delete ${filepath}: ${(e as Error).message}` };
+            }
+            emitLog("ratest", "info", `Deleted ${name}`);
+            return { success: true };
+        }
+
+        case "startRecording": {
+            if (!AppData.gameHash) return { success: false, error: "No game loaded" };
+            if (!flashConnected) return { success: false, error: "Flash Player is not running — reload the game to record" };
+            if (recordingActive) return { success: false, error: "A recording is already in progress" };
+
+            // Match playRatest: reset every asset to ACTIVE so triggers
+            // during the recording produce state-transition diffs we can tap.
+            const stateEdits: Array<[string, unknown]> = [];
+            for (let i = 0; i < AppData.data.assets.length; i++) {
+                const asset = AppData.data.assets[i];
+                if (asset.state !== "ACTIVE") {
+                    asset.state = "ACTIVE";
+                    stateEdits.push([`assets/${i}/state`, "ACTIVE"]);
+                }
+            }
+            if (stateEdits.length > 0) {
+                const stateDiff: Diff = { edited: stateEdits };
+                broadcastToDevtools("editData", stateDiff);
+                sendToFirmware("editData", { changes: stateDiff }, 0).catch(() => {});
+            }
+
+            recordingBuffer = [];
+            recordingActive = true;
+            broadcastToDevtools("recordingStart", {});
+            emitLog("ratest", "info", "Recording started — resetting game");
+
+            const resetResp = await performResetGame();
+            if (!resetResp.success) {
+                recordingActive = false;
+                broadcastToDevtools("recordingCancel", {});
+                return { success: false, error: `resetGame: ${resetResp.error ?? "unknown error"}` };
+            }
+
+            const r = await sendToFirmware("setRecording", { recording: true });
+            if (!r.success) {
+                recordingActive = false;
+                broadcastToDevtools("recordingCancel", {});
+                return r;
+            }
+            // Clock starts here so any wait before the first click (loading
+            // bars, intro anims, player hesitation) is preserved as an
+            // initial `pause` step on serialization.
+            recordingStartTime = Date.now();
+            return { success: true };
+        }
+
+        case "cancelRecording": {
+            if (!recordingActive) return { success: false, error: "Not recording" };
+            recordingActive = false;
+            recordingBuffer = [];
+            recordingStartTime = null;
+            sendToFirmware("setRecording", { recording: false }).catch(() => {});
+            broadcastToDevtools("recordingCancel", {});
+            emitLog("ratest", "info", "Recording cancelled");
+            return { success: true };
+        }
+
+        case "stopRecording": {
+            if (!recordingActive) return { success: false, error: "Not recording" };
+            const filename = String(input.params.filename || "").trim();
+            if (!filename) return { success: false, error: "filename required" };
+            if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) {
+                return { success: false, error: "Invalid filename" };
+            }
+            recordingActive = false;
+            sendToFirmware("setRecording", { recording: false }).catch(() => {});
+
+            const { serializeRatest } = await import("./ratestWriter.ts");
+            const content = serializeRatest(recordingBuffer, AppData.gameHash!, recordingStartTime);
+            const safeName = filename.endsWith(".ratest") ? filename : `${filename}.ratest`;
+            const dir = `RACache/ratests/${AppData.gameHash}`;
+            try {
+                await Deno.mkdir(dir, { recursive: true });
+                await Deno.writeTextFile(`${dir}/${safeName}`, content);
+            } catch (e) {
+                return { success: false, error: `write: ${(e as Error).message}` };
+            }
+            const stepCount = recordingBuffer.length;
+            recordingBuffer = [];
+            recordingStartTime = null;
+            emitLog("ratest", "info", `Recording saved: ${safeName} (${stepCount} events)`);
+            broadcastToDevtools("recordingSaved", { file: safeName, stepCount });
+            return { success: true, params: { file: safeName, stepCount } };
         }
 
         // Memory Watch commands
@@ -3266,6 +3426,10 @@ function handleFirmwareData(data: string): void {
                 emitLog("firmware", "info", fwMsg);
             } else if (parsed.type === "gameLoaded") {
                 emitLog("engine", "info", "Game loaded");
+                // After a Flash Player restart, devtools previously received
+                // `flashDisconnected` and flipped App.flashConnected=false.
+                // Re-arm it now that the new firmware is fully up.
+                broadcastToDevtools("flashConnected", {});
                 // Wake any performResetGame callers waiting for the
                 // post-reset firmware to finish initializing.
                 const waiters = Array.from(gameLoadedWaiters);
@@ -3338,6 +3502,28 @@ function handleFirmwareData(data: string): void {
                 if (parsed.data?.keyCode === 123) {
                     openDevtoolsMenu();
                 }
+            } else if (parsed.type === "userInput") {
+                if (recordingActive && parsed.data?.kind === "click") {
+                    if (typeof parsed.data.path === "string") {
+                        const event: RecordingEvent = {
+                            kind: "click",
+                            path: parsed.data.path,
+                            timestamp: Date.now(),
+                        };
+                        recordingBuffer.push(event);
+                        broadcastToDevtools("recordingEvent", {
+                            index: recordingBuffer.length - 1,
+                            ...event,
+                        });
+                    } else {
+                        // Firmware saw a click but couldn't resolve a clickable
+                        // target under the cursor. Surface it so the user can
+                        // see which interactions recording missed.
+                        const x = parsed.data.x;
+                        const y = parsed.data.y;
+                        emitLog("ratest", "warn", `Recording: click at (${x}, ${y}) didn't match any clickable target`);
+                    }
+                }
             } else if (parsed.type === "editData") {
                 // Process firmware changes and propagate to all devtools
                 const changes = parsed.data?.changes || parsed.data;
@@ -3358,6 +3544,32 @@ function handleFirmwareData(data: string): void {
                             }
                         }
                         UserProfile.saveUser().catch(e => console.error("Failed to save user profile:", e));
+                    }
+
+                    // Tap triggered-state transitions for the active recording.
+                    // Separate from the UserProfile loop so recording works
+                    // regardless of profile state.
+                    if (recordingActive && fullDiff.edited) {
+                        for (const [path, value] of fullDiff.edited) {
+                            const match = path.match(/^assets\/(\d+)\/state$/);
+                            if (match && value === "TRIGGERED") {
+                                const index = parseInt(match[1]);
+                                const asset = AppData.data.assets[index];
+                                if (asset) {
+                                    const event: RecordingEvent = {
+                                        kind: "triggered",
+                                        id: asset.id as number,
+                                        name: asset.name as string | undefined,
+                                        timestamp: Date.now(),
+                                    };
+                                    recordingBuffer.push(event);
+                                    broadcastToDevtools("recordingEvent", {
+                                        index: recordingBuffer.length - 1,
+                                        ...event,
+                                    });
+                                }
+                            }
+                        }
                     }
 
                     // Broadcast fullDiff to all devtools clients
@@ -3655,9 +3867,11 @@ async function main(): Promise<void> {
         // After that game closes we exit instead of falling back to the picker
         // — drag-drop is a "launch one game" verb, not "enter the launcher".
         let launchedFromArg = false;
+        let isRelaunch = false;
         if (pendingRelaunch) {
             pickerResult = { gamePath: pendingRelaunch, user: selectedUserName || settings.lastUser };
             pendingRelaunch = null;
+            isRelaunch = true;
         } else if (initialDrop) {
             pickerResult = { gamePath: initialDrop.gamePath, user: settings.lastUser };
             initialDrop = null;  // Subsequent iterations always use the picker
@@ -3675,8 +3889,13 @@ async function main(): Promise<void> {
 
         const { gamePath, user } = pickerResult;
 
-        // Close non-persistent windows (e.g. Settings) before launching the game
-        await HTMLWindow.shutdown();
+        // Close non-persistent windows (e.g. Settings) before launching the
+        // game. Skip during a brutal-reset relaunch — the user is restarting
+        // the same game, so their open devtools windows (Tests panel, etc.)
+        // should survive the Flash restart rather than vanish under them.
+        if (!isRelaunch) {
+            await HTMLWindow.shutdown();
+        }
 
         // Resolve the game path (handle relative paths)
         let resolvedGamePath = gamePath;
