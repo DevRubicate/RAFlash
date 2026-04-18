@@ -2139,7 +2139,7 @@ class Main {
                     log("Stack underflow for " + token + " (need 2, have " + stack.length + ")");
                     return null;
                 }
-            } else if (token == "NOT" || token == "READ_GLOBAL" || token == "LEN") {
+            } else if (token == "NOT" || token == "READ_GLOBAL" || token == "LEN" || token == "TYPE") {
                 if (stack.length < 1) {
                     log("Stack underflow for " + token + " (need 1, have 0)");
                     return null;
@@ -2779,6 +2779,19 @@ class Main {
                     stack.push([flat.length]);
                     break;
                 }
+                case "TYPE": {
+                    // type(x) — returns a human-readable class name for each
+                    // element of x. Maps AS2 typeof quirks and instanceof
+                    // checks to canonical names ("MovieClip", "Button",
+                    // "TextField", "Number", etc.) usable in predicates.
+                    var tArr = stack.pop();
+                    var typeOut = [];
+                    for (var j = 0; j < tArr.length; ++j) {
+                        typeOut.push(typeNameOf(tArr[j]));
+                    }
+                    stack.push(typeOut);
+                    break;
+                }
                 case "READ_GLOBAL": {
                     var identifiers = stack.pop();
                     if (identifiers.length == 1) {
@@ -3416,6 +3429,29 @@ class Main {
      * Hides when the name is always-skip OR when it's a known built-in
      * whose value matches its documented default.
      */
+    /**
+     * Canonical type name for a value, used by the DSL's `type()` function.
+     * Maps AS2 typeof quirks (`"movieclip"`) and common instanceof checks
+     * to title-cased class names. Unknown objects fall through to "Object"
+     * rather than "[object Object]".
+     */
+    private static function typeNameOf(v):String {
+        if (v === null) return "Null";
+        if (v === undefined) return "Undefined";
+        var t:String = typeof(v);
+        if (t == "number") return "Number";
+        if (t == "string") return "String";
+        if (t == "boolean") return "Boolean";
+        if (t == "function") return "Function";
+        if (t == "movieclip") return "MovieClip";
+        // t == "object" — disambiguate via instanceof.
+        if (v instanceof Array) return "Array";
+        if (v instanceof Button) return "Button";
+        if (v instanceof TextField) return "TextField";
+        if (v instanceof Date) return "Date";
+        return "Object";
+    }
+
     private static function isHiddenBuiltinProp(name:String, val):Boolean {
         initFlashDefaults();
         if (flashPropSkip[name] == true) return true;

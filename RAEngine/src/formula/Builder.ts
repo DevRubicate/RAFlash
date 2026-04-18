@@ -32,6 +32,7 @@ import { XorUnit }                      from './unit/XorUnit.ts';
 import { TernaryUnit }                  from './unit/TernaryUnit.ts';
 import { RememberedUnit }               from './unit/RememberedUnit.ts';
 import { LenUnit }                      from './unit/LenUnit.ts';
+import { TypeUnit }                     from './unit/TypeUnit.ts';
 
 export class Builder {
     input: Node;
@@ -480,6 +481,19 @@ export class Builder {
                         );
                     }
                     const element = new LenUnit(null);
+                    element.children.push(
+                        Builder.convert(node.children[0]),
+                    );
+                    element.children[0].parent = element;
+                    return element;
+                }
+                if (funcName === 'type') {
+                    if (node.children.length !== 1) {
+                        throw new Error(
+                            `type() expects 1 argument, got ${node.children.length}`,
+                        );
+                    }
+                    const element = new TypeUnit(null);
                     element.children.push(
                         Builder.convert(node.children[0]),
                     );

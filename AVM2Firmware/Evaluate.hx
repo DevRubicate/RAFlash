@@ -492,6 +492,17 @@ class Evaluate {
                     }
                 }
                 stack.push([flat.length]);
+            } else if (token == "TYPE") {
+                // type(x) — returns a human-readable class name for each
+                // element of x. Uses getQualifiedClassName and strips the
+                // namespace; normalizes SimpleButton -> "Button" so DSL
+                // predicates work uniformly across AVM1 and AVM2.
+                var tArr = safePop(stack);
+                var typeOut:Array<Dynamic> = [];
+                for (el in tArr) {
+                    typeOut.push(typeNameOf(el));
+                }
+                stack.push(typeOut);
             } else if (token == "READ_GLOBAL") {
                 var identifiers = safePop(stack);
                 if (identifiers.length == 1) {
@@ -1126,6 +1137,34 @@ class Evaluate {
         }
 
         return true;
+    }
+
+    /**
+     * Canonical type name for a value, used by the DSL's `type()` function.
+     * Uses flash.utils.getQualifiedClassName and strips the namespace
+     * prefix. Normalizes a few common class names so DSL predicates work
+     * uniformly across AVM1 and AVM2 — notably SimpleButton -> "Button"
+     * (AS2 calls the equivalent symbol Button).
+     */
+    public static function typeNameOf(v:Dynamic):String {
+        if (v == null) return "Null";
+        #if flash
+        try {
+            var qcn:String = untyped __global__["flash.utils.getQualifiedClassName"](v);
+            var colonIdx:Int = qcn.lastIndexOf("::");
+            var className:String = (colonIdx >= 0) ? qcn.substr(colonIdx + 2) : qcn;
+            if (className == "SimpleButton") return "Button";
+            if (className == "int" || className == "uint") return "Number";
+            return className;
+        } catch (e:Dynamic) {}
+        #end
+        // Cross-target fallback (non-Flash builds / exotic values).
+        if (Std.isOfType(v, Bool)) return "Boolean";
+        if (Std.isOfType(v, Int) || Std.isOfType(v, Float)) return "Number";
+        if (Std.isOfType(v, String)) return "String";
+        if (Std.isOfType(v, Array)) return "Array";
+        if (Reflect.isFunction(v)) return "Function";
+        return "Object";
     }
 
     // === Private Helpers ===
