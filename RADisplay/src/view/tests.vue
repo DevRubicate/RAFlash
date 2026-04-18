@@ -16,21 +16,39 @@
                         v-for="file in files"
                         :key="file"
                         :class="{ selected: file === selected, 'delete-pending': confirmingDelete === file }"
-                        @click="selected = file"
+                        @click="renamingFile === file ? null : (selected = file)"
                     >
-                        <span class="file-name">{{ file }}</span>
-                        <button
-                            v-if="confirmingDelete === file"
-                            class="file-delete confirm"
-                            @click.stop="doDelete(file)"
-                            title="Confirm delete"
-                        >Delete?</button>
-                        <button
-                            v-else
-                            class="file-delete"
-                            @click.stop="askDelete(file)"
-                            title="Delete file"
-                        >×</button>
+                        <input
+                            v-if="renamingFile === file"
+                            class="rename-input"
+                            v-model="renameValue"
+                            :ref="setRenameInputRef"
+                            @keydown.enter.stop="confirmRename()"
+                            @keydown.escape.stop="cancelRename()"
+                            @blur="confirmRename()"
+                            @click.stop
+                        />
+                        <span v-else class="file-name">{{ file }}</span>
+                        <template v-if="renamingFile !== file">
+                            <button
+                                v-if="confirmingDelete !== file"
+                                class="file-rename"
+                                @click.stop="askRename(file)"
+                                title="Rename file"
+                            >✎</button>
+                            <button
+                                v-if="confirmingDelete === file"
+                                class="file-delete confirm"
+                                @click.stop="doDelete(file)"
+                                title="Confirm delete"
+                            >Delete?</button>
+                            <button
+                                v-else
+                                class="file-delete"
+                                @click.stop="askDelete(file)"
+                                title="Delete file"
+                            >×</button>
+                        </template>
                     </li>
                 </ul>
             </div>
@@ -43,7 +61,7 @@
                         :key="step.index"
                         :class="['phase-' + step.phase, { summary: step.isSummary }]"
                     >
-                        <span class="step-num">{{ step.index + 1 }}<span v-if="step.total">/{{ step.total }}</span></span>
+                        <span class="step-num">{{ step.index + 1 }}</span>
                         <span class="step-icon">{{ phaseIcon(step.phase) }}</span>
                         <span class="step-source">{{ step.source }}</span>
                         <span class="step-ms" v-if="step.durationMs != null">{{ step.durationMs }}ms</span>
@@ -209,7 +227,7 @@
         color: var(--c-text);
         border-radius: var(--radius-sm);
         display: grid;
-        grid-template-columns: 3.5rem 1.25rem 1fr auto;
+        grid-template-columns: 1.75rem 1.25rem 1fr auto;
         gap: 0.4rem;
         align-items: baseline;
     }
@@ -299,7 +317,7 @@
 
     .file-list li.selected {
         background: rgba(99, 102, 241, 0.25);
-        color: #c7d2fe;
+        color: #ffffff;
     }
 
     .file-list li.delete-pending {
@@ -347,6 +365,44 @@
 
     .file-delete.confirm:hover {
         background: #ef4444;
+    }
+
+    .file-rename {
+        flex-shrink: 0;
+        background: transparent;
+        color: var(--c-text-muted);
+        border: none;
+        font-family: var(--font-sans);
+        font-size: 0.8125rem;
+        font-weight: 600;
+        padding: 0.125rem 0.375rem;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity var(--duration) var(--ease), background var(--duration) var(--ease), color var(--duration) var(--ease);
+    }
+
+    .file-list li:hover .file-rename {
+        opacity: 0.6;
+    }
+
+    .file-rename:hover {
+        opacity: 1 !important;
+        background: rgba(99, 102, 241, 0.2);
+        color: #c7d2fe;
+    }
+
+    .rename-input {
+        flex: 1;
+        min-width: 0;
+        background: var(--c-bg, #111);
+        color: var(--c-text);
+        border: 1px solid var(--c-primary);
+        border-radius: var(--radius-sm);
+        padding: 0.2rem 0.375rem;
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+        outline: none;
     }
 
     .footer {
@@ -561,6 +617,11 @@
 
     const confirmingDelete = ref(null);
     let confirmingDeleteTimer = null;
+
+    const renamingFile = ref(null);
+    const renameValue = ref('');
+    const renameInputEl = ref(null);
+    const setRenameInputRef = (el) => { if (el) renameInputEl.value = el; };
 
     const phaseIcon = (phase) => {
         if (phase === 'pass') return '✅';
@@ -783,6 +844,42 @@
         pendingSave.value = false;
         saveFilename.value = '';
         await Network.send({ command: 'cancelRecording', params: {} });
+    };
+
+    const askRename = async (file) => {
+        if (confirmingDeleteTimer) clearTimeout(confirmingDeleteTimer);
+        confirmingDelete.value = null;
+        renameValue.value = file.replace(/\.ratest$/, '');
+        renamingFile.value = file;
+        await nextTick();
+        if (renameInputEl.value) {
+            renameInputEl.value.focus();
+            renameInputEl.value.select();
+        }
+    };
+
+    const confirmRename = async () => {
+        const from = renamingFile.value;
+        if (!from) return;
+        const raw = renameValue.value.trim();
+        renamingFile.value = null;
+        renameValue.value = '';
+        if (!raw) return;
+        const to = raw.endsWith('.ratest') ? raw : `${raw}.ratest`;
+        if (to === from) return;
+        const response = await Network.send({
+            command: 'renameRatest',
+            params: { from, to },
+        });
+        if (response.success) {
+            if (selected.value === from) selected.value = to;
+            await refreshList();
+        }
+    };
+
+    const cancelRename = () => {
+        renamingFile.value = null;
+        renameValue.value = '';
     };
 
     const askDelete = (file) => {

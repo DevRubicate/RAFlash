@@ -2840,6 +2840,32 @@ async function handleApiRequest(
             return { success: true };
         }
 
+        case "renameRatest": {
+            if (!AppData.gameHash) return { success: false, error: "No game loaded" };
+            const from = String(input.params.from || "");
+            const to = String(input.params.to || "");
+            const invalid = (n: string) => !n || n.includes("/") || n.includes("\\") || n.includes("..");
+            if (invalid(from)) return { success: false, error: `Invalid source filename: ${from}` };
+            if (invalid(to)) return { success: false, error: `Invalid destination filename: ${to}` };
+            if (!to.endsWith(".ratest")) return { success: false, error: `Destination must end in .ratest: ${to}` };
+            if (from === to) return { success: true };
+            const fromPath = `RACache/ratests/${AppData.gameHash}/${from}`;
+            const toPath = `RACache/ratests/${AppData.gameHash}/${to}`;
+            try {
+                // Refuse to clobber an existing file — Deno.rename would silently overwrite.
+                try {
+                    await Deno.stat(toPath);
+                    return { success: false, error: `${to} already exists` };
+                } catch (e) {
+                    if (!(e instanceof Deno.errors.NotFound)) throw e;
+                }
+                await Deno.rename(fromPath, toPath);
+            } catch (e) {
+                return { success: false, error: `rename ${from} → ${to}: ${(e as Error).message}` };
+            }
+            return { success: true };
+        }
+
         case "startRecording": {
             if (!AppData.gameHash) return { success: false, error: "No game loaded" };
             if (!flashConnected) return { success: false, error: "Flash Player is not running — reload the game to record" };
