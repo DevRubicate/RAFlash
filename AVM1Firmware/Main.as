@@ -1114,12 +1114,16 @@ class Main {
                 _stageContext[0] = gameRoot;
                 var feFormula:Array = params.pathFormula;
                 var feResult:Array = evaluate(feFormula, 1, feFormula.length, _stageContext, _stageKeys);
-                if (feResult != null && feResult.length > 0) {
-                    Selection.setFocus(feResult[0]);
-                    sendResponse(id, { success: true });
-                } else {
+                if (feResult == null || feResult.length == 0) {
                     sendResponse(id, { success: false, error: "Path not found" });
+                    break;
                 }
+                if (feResult.length > 1) {
+                    sendResponse(id, { success: false, error: "Path matched " + feResult.length + " elements, expected 1" });
+                    break;
+                }
+                Selection.setFocus(feResult[0]);
+                sendResponse(id, { success: true });
                 break;
 
             case "setRecording":
@@ -1259,92 +1263,68 @@ class Main {
     /**
      * Find the best clickable target under stage coords (x, y).
      *
-     * Preference order:
-     *   1. Deepest MovieClip/Button with an explicit onRelease or onPress —
-     *      these are cleanly replayable via `click <path>`.
-     *   2. Deepest hit MovieClip/Button regardless of handler — many older
-     *      games use IDE-compiled Button handlers, frame-script hitTest
-     *      polling, or global Mouse.addListener logic; those have no
-     *      inspectable handler but the user still clicked something. We
-     *      capture the visual target and let the user edit the .ratest if
-     *      playback can't drive it via onRelease.
+     * Collects every MovieClip/Button whose stage bounds contain (x, y)
+     * (recursing into MovieClip subtrees), then returns the candidate with
+     * the smallest bounding-box area — i.e. the most specific visual hit.
+     * This avoids picking huge "background" Buttons that visually sit
+     * behind the element the user actually clicked.
      */
     public static function findClickedTargetRec(clip:Object, x:Number, y:Number):Object {
-        var visited:Object = {};
-        var explicit:Object = findClickedHandler(clip, x, y, visited, 0);
-        if (explicit != null) return explicit;
-        // Fresh visited set for the lenient pass so it can revisit MCs the
-        // handler pass walked through (it rejects nodes without handlers,
-        // but the same nodes may be valid lenient targets).
-        visited = {};
-        return findClickedLenient(clip, x, y, visited, 0);
+        var candidates:Array = [];
+        collectClickCandidates(clip, x, y, candidates, {}, 0);
+        return pickSmallestCandidate(candidates);
     }
 
-    private static function findClickedHandler(clip:Object, x:Number, y:Number, visited:Object, depth:Number):Object {
-        if (clip == null || depth > 20) return null;
+    private static function collectClickCandidates(clip:Object, x:Number, y:Number, out:Array, visited:Object, depth:Number):Void {
+        if (clip == null || depth > 20) return;
         var key:String = String(clip._target);
-        if (visited[key]) return null;
-        visited[key] = true;
-
-        // Pass 1: for-in children (fast path — covers the common case).
-        var seen:Object = {};
-        var forIn:Array = collectClickableChildren_forIn(clip, seen);
-        for (var i:Number = 0; i < forIn.length; i++) {
-            var hit:Object = tryHandlerChild(forIn[i], x, y, visited, depth);
-            if (hit != null) return hit;
-        }
-        // Pass 2: depth sweep — only runs if Pass 1 found no hit. Catches
-        // DontEnum Buttons (DefineButton2 symbols placed on the timeline).
-        var swept:Array = collectClickableChildren_depthSweep(clip, seen);
-        for (var k:Number = 0; k < swept.length; k++) {
-            var hit2:Object = tryHandlerChild(swept[k], x, y, visited, depth);
-            if (hit2 != null) return hit2;
-        }
-        if ((typeof(clip.onRelease) == "function" || typeof(clip.onPress) == "function")
-            && pointInChildStageBounds(clip, x, y)) return clip;
-        return null;
-    }
-
-    private static function tryHandlerChild(child:Object, x:Number, y:Number, visited:Object, depth:Number):Object {
-        if (!pointInChildStageBounds(child, x, y)) return null;
-        if (child instanceof MovieClip) {
-            var found:Object = findClickedHandler(child, x, y, visited, depth + 1);
-            if (found != null) return found;
-        }
-        if (typeof(child.onRelease) == "function" || typeof(child.onPress) == "function") return child;
-        // Button symbols are clickable regardless of handler presence
-        // (their on(release) is baked into DefineButton2, not AS2).
-        if (child instanceof Button) return child;
-        return null;
-    }
-
-    private static function findClickedLenient(clip:Object, x:Number, y:Number, visited:Object, depth:Number):Object {
-        if (clip == null || depth > 20) return null;
-        var key:String = String(clip._target);
-        if (visited[key]) return null;
+        if (visited[key]) return;
         visited[key] = true;
 
         var seen:Object = {};
+        // Pass 1: enumerable MovieClip/Button children.
         var forIn:Array = collectClickableChildren_forIn(clip, seen);
         for (var i:Number = 0; i < forIn.length; i++) {
-            var hit:Object = tryLenientChild(forIn[i], x, y, visited, depth);
-            if (hit != null) return hit;
+            tryCollectCandidate(forIn[i], x, y, out, visited, depth);
         }
+        // Pass 2: depth sweep — catches DontEnum Buttons (DefineButton2
+        // symbols placed on the timeline, hidden from for...in).
         var swept:Array = collectClickableChildren_depthSweep(clip, seen);
         for (var k:Number = 0; k < swept.length; k++) {
-            var hit2:Object = tryLenientChild(swept[k], x, y, visited, depth);
-            if (hit2 != null) return hit2;
+            tryCollectCandidate(swept[k], x, y, out, visited, depth);
         }
-        return null;
     }
 
-    private static function tryLenientChild(child:Object, x:Number, y:Number, visited:Object, depth:Number):Object {
-        if (!pointInChildStageBounds(child, x, y)) return null;
+    private static function tryCollectCandidate(child:Object, x:Number, y:Number, out:Array, visited:Object, depth:Number):Void {
+        if (!pointInChildStageBounds(child, x, y)) return;
         if (child instanceof MovieClip) {
-            var found:Object = findClickedLenient(child, x, y, visited, depth + 1);
-            if (found != null) return found;
+            collectClickCandidates(child, x, y, out, visited, depth + 1);
         }
-        return child;
+        if (child instanceof MovieClip || child instanceof Button) {
+            out.push(child);
+        }
+    }
+
+    private static function pickSmallestCandidate(candidates:Array):Object {
+        if (candidates.length == 0) return null;
+        var best:Object = candidates[0];
+        var bestArea:Number = clipArea(best);
+        for (var i:Number = 1; i < candidates.length; i++) {
+            var c:Object = candidates[i];
+            var a:Number = clipArea(c);
+            if (a < bestArea) {
+                best = c;
+                bestArea = a;
+            }
+        }
+        return best;
+    }
+
+    private static function clipArea(clip:Object):Number {
+        var w:Number = Number(clip._width);
+        var h:Number = Number(clip._height);
+        if (isNaN(w) || isNaN(h) || w < 0 || h < 0) return Number.POSITIVE_INFINITY;
+        return w * h;
     }
 
     /**
