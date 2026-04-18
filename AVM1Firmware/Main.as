@@ -3502,6 +3502,9 @@ class Main {
                     result.push({name: mcName, value: mcValue});
                 }
             }
+            if (typeof(target.getDepth) == "function") {
+                result.push({name: "_depth", value: target.getDepth()});
+            }
         } else if (target instanceof Button) {
             // Per AS2 Button reference. Button-specific state + the
             // display-object properties any DisplayObject exposes.
@@ -3521,6 +3524,9 @@ class Main {
                 if (bpValue !== undefined) {
                     result.push({name: bpName, value: bpValue});
                 }
+            }
+            if (typeof(target.getDepth) == "function") {
+                result.push({name: "_depth", value: target.getDepth()});
             }
         } else if (target instanceof TextField) {
             // Per AS2 TextField reference
@@ -3552,6 +3558,9 @@ class Main {
                 if (tfValue !== undefined) {
                     result.push({name: tfName, value: tfValue});
                 }
+            }
+            if (typeof(target.getDepth) == "function") {
+                result.push({name: "_depth", value: target.getDepth()});
             }
         }
         return result;
