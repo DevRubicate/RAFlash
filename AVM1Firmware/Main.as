@@ -1093,6 +1093,10 @@ class Main {
                     sendResponse(id, { success: false, error: "Path not found" });
                     break;
                 }
+                if (imResult.length > 1) {
+                    sendResponse(id, { success: false, error: "Path matched " + imResult.length + " elements, expected 1" });
+                    break;
+                }
                 var imTarget:Object = imResult[0];
                 var imMethod:String = String(params.method);
                 var imFn:Function = imTarget[imMethod];
@@ -1428,7 +1432,9 @@ class Main {
 
     /**
      * Walk _parent chain from a clip up to gameRoot, emitting "stage.a.b.c".
-     * Segments come from _name. Returns null if the chain is broken.
+     * Segments come from _name, except when Flash auto-assigned a volatile
+     * "instance<N>" name — those get replaced with a type+coord filter so
+     * the path survives across runs where N isn't stable.
      */
     public static function buildStagePath(clip:Object):String {
         if (clip == null) return null;
@@ -1439,11 +1445,33 @@ class Main {
             if (guard++ > 50) break; // runaway parent chain
             var n:String = String(current._name);
             if (n == null || n == "" || n == "undefined") break;
-            segments.unshift(n);
+            segments.unshift(buildPathSegment(current, n));
             current = current._parent;
         }
         if (segments.length == 0) return "stage";
-        return "stage." + segments.join(".");
+        var out:String = "stage";
+        for (var i:Number = 0; i < segments.length; i++) {
+            var seg:String = segments[i];
+            out += (seg.charAt(0) == "[") ? seg : ("." + seg);
+        }
+        return out;
+    }
+
+    private static function buildPathSegment(clip:Object, name:String):String {
+        if (!isAutoInstanceName(name)) return name;
+        var tn:String = typeNameOf(clip);
+        return "[type(this) == '" + tn + "' && ._x == " + Number(clip._x)
+            + " && ._y == " + Number(clip._y) + "]";
+    }
+
+    private static function isAutoInstanceName(n:String):Boolean {
+        if (n == null || n.length <= 8) return false;
+        if (n.substr(0, 8) != "instance") return false;
+        for (var i:Number = 8; i < n.length; i++) {
+            var code:Number = n.charCodeAt(i);
+            if (code < 48 || code > 57) return false;
+        }
+        return true;
     }
 
     // ========================================================================
