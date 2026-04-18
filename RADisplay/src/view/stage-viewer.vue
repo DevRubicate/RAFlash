@@ -29,6 +29,7 @@
                         :class="{ selected: !row.node.placeholder && row.node.path === selectedPath, placeholder: row.node.placeholder }"
                         :style="{ paddingLeft: (0.5 + row.depth * 1.25) + 'rem' }"
                         @click="row.node.placeholder ? null : selectNode(row.node)"
+                        @contextmenu="row.node.placeholder ? null : openContextMenu(row.node, $event)"
                     >
                         <span
                             v-if="!row.node.placeholder && !filterText.trim() && row.node.children.length > 0"
@@ -86,6 +87,19 @@
             spellcheck="false"
             v-if="tree"
         />
+
+        <div
+            v-if="contextMenu"
+            class="context-menu"
+            :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+            @mousedown.stop
+            @click.stop
+            @contextmenu.prevent
+        >
+            <button class="context-menu-item" @click="copyStructure()">
+                Copy structure into clipboard
+            </button>
+        </div>
     </div>
 </template>
 
@@ -318,10 +332,42 @@
         color: var(--c-text);
         word-break: break-all;
     }
+
+    /* === Context menu === */
+    .context-menu {
+        position: fixed;
+        z-index: 1000;
+        background-color: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-sm);
+        box-shadow: var(--shadow-xs);
+        padding: 0.25rem;
+        min-width: 12rem;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .context-menu-item {
+        background: none;
+        border: none;
+        text-align: left;
+        padding: 0.375rem 0.625rem;
+        font-family: var(--font-sans);
+        font-size: 0.8125rem;
+        color: var(--c-text);
+        cursor: pointer;
+        border-radius: var(--radius-sm);
+        transition: background-color 80ms var(--ease);
+    }
+
+    .context-menu-item:hover {
+        background-color: var(--c-primary-soft);
+        color: var(--c-primary-text);
+    }
 </style>
 
 <script setup>
-    import { ref, computed, watch, nextTick } from 'vue';
+    import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
     import { Network } from '../js/network.ts';
     import { App }     from '../js/app.ts';
 
@@ -334,6 +380,7 @@
     const selectedLoading = ref(false);
     const filterText = ref('');
     const treeListRef = ref(null);
+    const contextMenu = ref(null);
 
     const extractKey = (str) => {
         const idx = str.indexOf(': ');
@@ -501,6 +548,48 @@
         await loadTree();
         if (tree.value) await selectNode(tree.value);
     };
+
+    const openContextMenu = (node, event) => {
+        event.preventDefault();
+        contextMenu.value = { x: event.clientX, y: event.clientY, node };
+    };
+
+    const buildAsciiTree = (node, depth) => {
+        const indent = '    '.repeat(depth);
+        let out = indent + '[' + node.typeLabel + '] ' + node.key + '\n';
+        for (const child of node.children) out += buildAsciiTree(child, depth + 1);
+        return out;
+    };
+
+    const copyStructure = async () => {
+        if (!contextMenu.value) return;
+        const node = contextMenu.value.node;
+        const text = buildAsciiTree(node, 0);
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch (err) {
+            console.error('Failed to copy structure:', err);
+        }
+        contextMenu.value = null;
+    };
+
+    const onDocumentMouseDown = () => {
+        if (contextMenu.value) contextMenu.value = null;
+    };
+
+    const onDocumentKeyDown = (e) => {
+        if (e.key === 'Escape' && contextMenu.value) contextMenu.value = null;
+    };
+
+    onMounted(() => {
+        document.addEventListener('mousedown', onDocumentMouseDown);
+        document.addEventListener('keydown', onDocumentKeyDown);
+    });
+
+    onBeforeUnmount(() => {
+        document.removeEventListener('mousedown', onDocumentMouseDown);
+        document.removeEventListener('keydown', onDocumentKeyDown);
+    });
 
     watch(filterText, async () => {
         await nextTick();
