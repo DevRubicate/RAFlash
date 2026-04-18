@@ -76,6 +76,7 @@ class Main {
     // When true, onMouseUp listener forwards click paths to the engine.
     private static var recording:Boolean = false;
     private static var recordingMouseListener:Object = null;
+    private static var pickingMouseListener:Object = null;
 
 
     // Delta values storage - keyed by requirement ID
@@ -1137,6 +1138,15 @@ class Main {
                 sendResponse(id, { success: true });
                 break;
 
+            case "setPicking":
+                if (params.picking == true) {
+                    setupPickingListener();
+                } else {
+                    teardownPickingListener();
+                }
+                sendResponse(id, { success: true });
+                break;
+
             case "loadCompiledAvm1":
                 var naUrl:String = String(params.url);
                 var naIndices:Array = params.compiledIndices;
@@ -1258,6 +1268,35 @@ class Main {
         if (recordingMouseListener == null) return;
         Mouse.removeListener(recordingMouseListener);
         recordingMouseListener = null;
+    }
+
+    /**
+     * One-shot "element picker" analog to browser devtools. Captures the
+     * next mouseDown, resolves the clicked target the same way recording
+     * does, forwards the result to the engine, and auto-detaches — so the
+     * user can inspect a path without committing to a full recording.
+     */
+    private static function setupPickingListener():Void {
+        if (pickingMouseListener != null) return;
+        pickingMouseListener = {};
+        pickingMouseListener.onMouseDown = function():Void {
+            try {
+                if (Main.gameRoot == null) return;
+                var x:Number = _level0._xmouse;
+                var y:Number = _level0._ymouse;
+                var target:Object = Main.findClickedTargetRec(Main.gameRoot, x, y);
+                var path:String = (target == null) ? null : Main.buildStagePath(target);
+                Main.sendMessage("userInput", { kind: "pick", path: path, x: x, y: y });
+                Main.teardownPickingListener();
+            } catch (e:Error) { Main.logError("picking onMouseDown", e); }
+        };
+        Mouse.addListener(pickingMouseListener);
+    }
+
+    public static function teardownPickingListener():Void {
+        if (pickingMouseListener == null) return;
+        Mouse.removeListener(pickingMouseListener);
+        pickingMouseListener = null;
     }
 
     /**

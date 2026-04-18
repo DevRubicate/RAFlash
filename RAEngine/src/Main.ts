@@ -2879,6 +2879,16 @@ async function handleApiRequest(
             return { success: true };
         }
 
+        case "startPicking": {
+            if (!AppData.gameHash) return { success: false, error: "No game loaded" };
+            if (!flashConnected) return { success: false, error: "Flash Player is not running — reload the game to pick elements" };
+            return await sendToFirmware("setPicking", { picking: true });
+        }
+
+        case "stopPicking": {
+            return await sendToFirmware("setPicking", { picking: false });
+        }
+
         case "stopRecording": {
             if (!recordingActive) return { success: false, error: "Not recording" };
             const filename = String(input.params.filename || "").trim();
@@ -3527,7 +3537,13 @@ function handleFirmwareData(data: string): void {
                     openDevtoolsMenu();
                 }
             } else if (parsed.type === "userInput") {
-                if (recordingActive && parsed.data?.kind === "click") {
+                if (parsed.data?.kind === "pick") {
+                    broadcastToDevtools("pickResult", {
+                        path: typeof parsed.data.path === "string" ? parsed.data.path : null,
+                        x: parsed.data.x,
+                        y: parsed.data.y,
+                    });
+                } else if (recordingActive && parsed.data?.kind === "click") {
                     if (typeof parsed.data.path === "string") {
                         const event: RecordingEvent = {
                             kind: "click",

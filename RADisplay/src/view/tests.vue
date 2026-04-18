@@ -87,7 +87,31 @@
                     <span v-else>Record</span>
                 </button>
                 <div class="status" :class="statusClass">{{ statusText }}</div>
+                <button
+                    class="pick-button"
+                    :class="{ active: picking }"
+                    :disabled="picking ? false : !canPick"
+                    @click="togglePick()"
+                    title="Click, then click in the game to see what path is detected"
+                >
+                    <span v-if="picking">Cancel Pick</span>
+                    <span v-else>Pick</span>
+                </button>
             </template>
+        </div>
+
+        <div v-if="pickResult" class="pick-modal-backdrop" @click="pickResult = null">
+            <div class="pick-modal" @click.stop>
+                <div class="pick-modal-title">
+                    {{ pickResult.path ? 'Detected click target' : 'No target detected' }}
+                </div>
+                <div v-if="pickResult.path" class="pick-modal-path">{{ pickResult.path }}</div>
+                <div v-else class="pick-modal-empty">Click at ({{ pickResult.x }}, {{ pickResult.y }}) didn't hit any clickable element.</div>
+                <div class="pick-modal-actions">
+                    <button v-if="pickResult.path" class="pick-copy" @click="copyPickPath()">{{ copied ? 'Copied' : 'Copy' }}</button>
+                    <button class="pick-close" @click="pickResult = null">Close</button>
+                </div>
+            </div>
         </div>
     </div>
 </template>
@@ -336,6 +360,7 @@
 
     .play-button,
     .record-button,
+    .pick-button,
     .confirm-button,
     .cancel-button {
         color: white;
@@ -365,6 +390,92 @@
         background: #dc2626;
     }
 
+    .pick-button {
+        background: #374151;
+    }
+
+    .pick-button.active {
+        background: var(--c-primary);
+    }
+
+    .pick-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+    }
+
+    .pick-modal {
+        min-width: 320px;
+        max-width: 80%;
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-md);
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    }
+
+    .pick-modal-title {
+        font-weight: 600;
+        font-size: 0.875rem;
+        color: var(--c-text);
+    }
+
+    .pick-modal-path {
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        color: var(--c-text);
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-sm);
+        padding: 0.5rem 0.625rem;
+        word-break: break-all;
+        user-select: text;
+    }
+
+    .pick-modal-empty {
+        font-size: 0.8125rem;
+        color: var(--c-text-muted);
+    }
+
+    .pick-modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+    }
+
+    .pick-copy,
+    .pick-close {
+        color: white;
+        border: none;
+        font-family: var(--font-sans);
+        font-size: 0.8125rem;
+        font-weight: 600;
+        padding: 0.4rem 1rem;
+        border-radius: var(--radius-md);
+        cursor: pointer;
+        transition: opacity var(--duration) var(--ease);
+    }
+
+    .pick-copy {
+        background: var(--c-primary);
+    }
+
+    .pick-close {
+        background: #374151;
+    }
+
+    .pick-copy:hover,
+    .pick-close:hover {
+        opacity: 0.85;
+    }
+
     .confirm-button {
         background: var(--c-primary);
     }
@@ -375,6 +486,7 @@
 
     .play-button:disabled,
     .record-button:disabled,
+    .pick-button:disabled,
     .confirm-button:disabled {
         opacity: 0.4;
         cursor: not-allowed;
@@ -382,6 +494,7 @@
 
     .play-button:not(:disabled):hover,
     .record-button:not(:disabled):hover,
+    .pick-button:not(:disabled):hover,
     .confirm-button:not(:disabled):hover,
     .cancel-button:hover {
         opacity: 0.85;
@@ -441,6 +554,10 @@
     const saveFilename = ref('');
     const saveInputEl = ref(null);
     const lastSaved = ref(null);
+
+    const picking = ref(false);
+    const pickResult = ref(null);
+    const copied = ref(false);
 
     const confirmingDelete = ref(null);
     let confirmingDeleteTimer = null;
@@ -502,6 +619,12 @@
         lastSaved.value = data.file;
     });
 
+    Network.addEventListener('pickResult', (data) => {
+        picking.value = false;
+        copied.value = false;
+        pickResult.value = data;
+    });
+
     watch(selected, async (file) => {
         if (running.value || recording.value) return;
         if (!file) {
@@ -522,22 +645,52 @@
     );
 
     const canRecord = computed(() =>
-        !running.value && App.flashConnected,
+        !running.value && !picking.value && App.flashConnected,
+    );
+
+    const canPick = computed(() =>
+        !running.value && !recording.value && App.flashConnected,
     );
 
     const statusText = computed(() => {
         if (!App.flashConnected) return 'Flash Player is not running — reload the game to run tests.';
+        if (picking.value) return 'Picking — click something in the game to see its detected path.';
         if (recording.value) return 'Recording — click in the game to capture actions. Press Stop when done.';
         if (running.value) return 'Playing... game will reset and actions will execute.';
         if (lastSaved.value) return `Saved ${lastSaved.value}`;
-        if (result.value) return '';
-        return 'Select a test and press Play, or press Record to author a new one.';
+        return '';
     });
 
     const statusClass = computed(() => {
         if (recording.value) return 'recording';
+        if (picking.value) return 'recording';
         return '';
     });
+
+    const togglePick = async () => {
+        if (picking.value) {
+            picking.value = false;
+            await Network.send({ command: 'stopPicking', params: {} });
+        } else {
+            const response = await Network.send({ command: 'startPicking', params: {} });
+            if (response.success) {
+                picking.value = true;
+                pickResult.value = null;
+            } else {
+                result.value = { passed: 0, failed: 1, total: 1, error: response.error ?? 'startPicking failed' };
+            }
+        }
+    };
+
+    const copyPickPath = async () => {
+        if (!pickResult.value?.path) return;
+        try {
+            await navigator.clipboard.writeText(pickResult.value.path);
+            copied.value = true;
+        } catch {
+            copied.value = false;
+        }
+    };
 
     const refreshList = async () => {
         const response = await Network.send({ command: 'listRatests', params: {} });
