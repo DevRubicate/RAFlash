@@ -106,6 +106,7 @@
                                 <td>
                                     {{ res.value }}
                                     <button v-if="isEditable(res.value) && App.flashConnected" class="edit-btn" @click.stop="openEdit(res.value)" title="Edit value">&#9998;</button>
+                                    <button v-else-if="isFocusable(res.value) && App.flashConnected" class="eye-btn" @click.stop="focusObject(res.value)" title="Focus this object in the game">&#128065;</button>
                                 </td>
                             </tr>
                         </tbody>
@@ -393,8 +394,9 @@
         font-size: 0.8125rem;
     }
 
-    /* === Edit Button === */
-    .edit-btn {
+    /* === Row Action Buttons === */
+    .edit-btn,
+    .eye-btn {
         float: right;
         background: none;
         border: none;
@@ -406,8 +408,10 @@
         transition: opacity var(--duration) var(--ease);
     }
 
-    tr:hover .edit-btn { opacity: 1; }
-    .edit-btn:hover { color: var(--c-primary); }
+    tr:hover .edit-btn,
+    tr:hover .eye-btn { opacity: 1; }
+    .edit-btn:hover,
+    .eye-btn:hover { color: var(--c-primary); }
 
     /* === Edit Popup === */
     .edit-overlay {
@@ -638,7 +642,8 @@
         evaluate();
     };
 
-    const specialPattern = /^\[(?:Function|TextField|Date|MovieClip|Object|Array)\b/;
+    const specialPattern = /^\[(?:Function|TextField|Date|MovieClip|Object|Array|Button)\b/;
+    const focusablePattern = /^\[(?:MovieClip|Button|TextField)\b/;
 
     const isEditable = (rowValue) => {
         const str = String(rowValue);
@@ -646,6 +651,14 @@
         if (key === null) return false;
         const value = str.substring(str.indexOf(': ') + 2);
         return !specialPattern.test(value);
+    };
+
+    const isFocusable = (rowValue) => {
+        const str = String(rowValue);
+        const key = extractKey(str);
+        if (key === null) return false;
+        const value = str.substring(str.indexOf(': ') + 2);
+        return focusablePattern.test(value);
     };
 
     const extractValue = (rowValue) => {
@@ -680,6 +693,20 @@
         });
         editState.value = null;
         evaluate();
+    };
+
+    const focusObject = async (rowValue) => {
+        const str = String(rowValue);
+        const key = extractKey(str);
+        if (key === null) return;
+        const currentInput = memoryInput.value.trim();
+        const fullPath = /^\d+$/.test(key)
+            ? currentInput + '[' + key + ']'
+            : currentInput + '.' + key;
+        await Network.send({
+            command: 'focusElement',
+            params: { path: fullPath },
+        });
     };
 
     const buildFrequencyMap = (results) => {

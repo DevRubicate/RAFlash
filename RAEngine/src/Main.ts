@@ -2607,6 +2607,15 @@ async function handleApiRequest(
             return await performResetGame();
         }
 
+        case "focusElement": {
+            if (!AppData.gameHash) return { success: false, error: "No game loaded" };
+            if (!flashConnected) return { success: false, error: "Flash Player is not running" };
+            const path = String(input.params.path || "");
+            if (!path) return { success: false, error: "focusElement requires path" };
+            const compiled = compileFormula(path);
+            return await sendToFirmware("focusElement", { pathFormula: compiled });
+        }
+
         case "invokeMethod": {
             const path = String(input.params.path || "");
             const method = String(input.params.method || "");
