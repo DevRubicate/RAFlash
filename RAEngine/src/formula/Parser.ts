@@ -769,58 +769,52 @@ class Parser {
                             break;
                         }
                         case TokenType.DOT: {
-                            // There is a DOT operator where we would not expect a DOT operator. This might either
-                            // be a syntax error or an implicit "this." expression. To figure out which it is we will
-                            // examine the queue to see if this is at the very start of the queue.
-
-                            if(this.currentNode.queue.length != 0) {
-                                // The queue was not empty, so this is a syntax error, as the DOT operator was not at the
-                                // start of the expression.
-                                throw new ParseError(
-                                    `Unexpected %s in expression`,
-                                    this.peakToken(),
-                                );
-                            } else {
-                                // The queue was empty, so this is an implicit "this." expression.
-                                this.currentNode.addQueue(
-                                    new Node(NODE_TYPE.READ_GLOBAL)
-                                        .addChild(
-                                            new Node(
-                                                NODE_TYPE.IDENTIFIER,
-                                                'this',
-                                            ),
+                            // Implicit "this." expression. CONSUME.EXPRESSION
+                            // is the state for parsing a fresh operand —
+                            // entered at the start of the whole expression
+                            // and again after every binary operator — so a
+                            // bare leading DOT here always means "this"
+                            // regardless of what's already in the queue.
+                            // Eg. `._x == 1 && ._y == 2` is valid: both
+                            // dots sit at operand boundaries.
+                            this.currentNode.addQueue(
+                                new Node(NODE_TYPE.READ_GLOBAL)
+                                    .addChild(
+                                        new Node(
+                                            NODE_TYPE.IDENTIFIER,
+                                            'this',
                                         ),
+                                    ),
+                            );
+
+                            // Once we are done with this dot access, we should continue parsing the expression
+                            // by looking for an operator (or end of expression)
+                            this.currentNode.addConsume(
+                                CONSUME.EXPRESSION_OPERATOR,
+                            );
+
+                            // Create the OBJECT_ACCESS_EXPRESSION node
+                            const objectAccessNode = new Node(NODE_TYPE.OBJECT_ACCESS_EXPRESSION)
+                                .addConsume(
+                                    CONSUME.IDENTIFIER_OR_START_BRACKET,
                                 );
 
-                                // Once we are done with this dot access, we should continue parsing the expression
-                                // by looking for an operator (or end of expression)
-                                this.currentNode.addConsume(
-                                    CONSUME.EXPRESSION_OPERATOR,
-                                );
+                            // Add the call node to the expression queue so that when we are done parsing the
+                            // object access node it's ready in the queue to be used as part of the expression.
+                            this.currentNode.addQueue(objectAccessNode);
 
-                                // Create the OBJECT_ACCESS_EXPRESSION node
-                                const objectAccessNode = new Node(NODE_TYPE.OBJECT_ACCESS_EXPRESSION)
-                                    .addConsume(
-                                        CONSUME.IDENTIFIER_OR_START_BRACKET,
-                                    );
+                            // Add the current node as the parent of the object access node so that once we are
+                            // done parsing the call node we go back to parsing this expression
+                            objectAccessNode.parent = this.currentNode;
 
-                                // Add the call node to the expression queue so that when we are done parsing the 
-                                // object access node it's ready in the queue to be used as part of the expression.
-                                this.currentNode.addQueue(objectAccessNode);
+                            // Change the currentNode to the object access node so we can begin consuming everything
+                            // it needs. Note that we have not added the object access node to the children of the
+                            // current node, because it is not supposed to be there. Instead it is treated as part
+                            // of the expression.
+                            this.currentNode = objectAccessNode;
 
-                                // Add the current node as the parent of the object access node so that once we are
-                                // done parsing the call node we go back to parsing this expression
-                                objectAccessNode.parent = this.currentNode;
-
-                                // Change the currentNode to the object access node so we can begin consuming everything
-                                // it needs. Note that we have not added the object access node to the children of the
-                                // current node, because it is not supposed to be there. Instead it is treated as part
-                                // of the expression.
-                                this.currentNode = objectAccessNode;
-
-                                // Move past the DOT token
-                                this.advanceToken();
-                            }
+                            // Move past the DOT token
+                            this.advanceToken();
                             break;
                         }
                         default:
