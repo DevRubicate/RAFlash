@@ -77,6 +77,7 @@ class Main {
     private static var recording:Boolean = false;
     private static var recordingMouseListener:Object = null;
     private static var pickingMouseListener:Object = null;
+    private static var hitProbe:MovieClip = null;
 
 
     // Delta values storage - keyed by requirement ID
@@ -1378,13 +1379,16 @@ class Main {
      *
      * MovieClips: `MovieClip.hitTest(x, y, true)` is shape-accurate.
      *
-     * Buttons: AS2 Buttons expose no `getBounds`, and the 3-arg form of
-     * `hitTest(x, y, flag)` returns undefined — only `hitTest(target)` is
-     * supported. So we compute the bounding box in the parent's coordinate
-     * space from `_x, _y, _width, _height`, then project to stage coords
-     * via `_parent.localToGlobal`. Min/max of the two transformed corners
-     * handles scaled/rotated parents as an axis-aligned bbox (looser than
-     * the rotated shape for rotated parents, but acceptable for clicks).
+     * Buttons: AS2 exposes no `getBounds` on Button and no way to read
+     * the symbol's registration offset, so we can't compute a bbox in
+     * code — any `_x + _width` math silently mis-sizes buttons whose
+     * author chose a non-top-left registration. Instead we move a
+     * persistent 1×1 probe MC to the click point and ask Flash via
+     * `probe.hitTest(button)`, which delegates to its internal bbox
+     * logic and respects whatever registration the symbol was authored
+     * with. Note the direction: `button.hitTest(probe)` silently returns
+     * false for MovieClip targets in AS2, so the reverse is the only
+     * reliable form.
      */
     private static function pointInChildStageBounds(child:Object, x:Number, y:Number):Boolean {
         if (child == null) return false;
@@ -1392,19 +1396,28 @@ class Main {
             return child.hitTest(x, y, true) == true;
         }
         if (child instanceof Button) {
-            var p:Object = child._parent;
-            if (p == null) return false;
-            var tl:Object = { x: child._x, y: child._y };
-            var br:Object = { x: child._x + child._width, y: child._y + child._height };
-            p.localToGlobal(tl);
-            p.localToGlobal(br);
-            var minX:Number = (tl.x < br.x) ? tl.x : br.x;
-            var maxX:Number = (tl.x > br.x) ? tl.x : br.x;
-            var minY:Number = (tl.y < br.y) ? tl.y : br.y;
-            var maxY:Number = (tl.y > br.y) ? tl.y : br.y;
-            return x >= minX && x <= maxX && y >= minY && y <= maxY;
+            var probe:MovieClip = getHitProbe();
+            if (probe == null) return false;
+            probe._x = x;
+            probe._y = y;
+            return probe.hitTest(child) == true;
         }
         return false;
+    }
+
+    private static function getHitProbe():MovieClip {
+        if (hitProbe == null || hitProbe._parent == null) {
+            hitProbe = _level0.createEmptyMovieClip("__raHitProbe", 1048575);
+            if (hitProbe == null) return null;
+            hitProbe._visible = false;
+            hitProbe.beginFill(0x000000);
+            hitProbe.moveTo(0, 0);
+            hitProbe.lineTo(1, 0);
+            hitProbe.lineTo(1, 1);
+            hitProbe.lineTo(0, 1);
+            hitProbe.endFill();
+        }
+        return hitProbe;
     }
 
     /**
