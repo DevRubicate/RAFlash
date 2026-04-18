@@ -2625,6 +2625,15 @@ async function handleApiRequest(
             return await sendToFirmware("focusElement", { pathFormula: compiled });
         }
 
+        case "dumpDisplayTree": {
+            if (!AppData.gameHash) return { success: false, error: "No game loaded" };
+            if (!flashConnected) return { success: false, error: "Flash Player is not running" };
+            const path = String(input.params.path || "stage");
+            const compiled = compileFormula(path);
+            const response = await sendToFirmware("dumpDisplayTree", { pathFormula: compiled, pathString: path });
+            return { success: response.success, error: response.error, params: response };
+        }
+
         case "invokeMethod": {
             const path = String(input.params.path || "");
             const method = String(input.params.method || "");

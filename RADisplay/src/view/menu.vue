@@ -21,6 +21,10 @@
                 <svg fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path></svg>
                 Memory Explorer
             </button>
+            <button class="menu-button" @click="openStageViewer()">
+                <svg fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"></path></svg>
+                Stage Viewer
+            </button>
             <button class="menu-button" @click="openMemorySearch()">
                 <svg fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 Memory Search
@@ -179,6 +183,10 @@
 
     const openMemoryExplorer = async () => {
         await Network.send({ command: 'showPopup', params: { url: 'internals/assets/memory-explorer.html', width: 800, height: 700, params: {}, parentWindowId: App.windowId } });
+    };
+
+    const openStageViewer = async () => {
+        await Network.send({ command: 'showPopup', params: { url: 'internals/assets/stage-viewer.html', width: 800, height: 700, params: {}, parentWindowId: App.windowId } });
     };
 
     const openMemorySearch = async () => {

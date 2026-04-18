@@ -130,6 +130,47 @@ class Main {
     private static var initialSetupDone:Boolean = false;
 
     /**
+     * Walk a DisplayObject subtree and return a nested description for the
+     * Stage Viewer. Children of MovieClips are sorted by _depth so z-order
+     * matches what the user sees on screen; non-container types return as
+     * leaves.
+     */
+    private static function buildDisplayTree(target:Object, path:String):Object {
+        var typeStr:String = "Object";
+        if (typeof(target) == "movieclip") typeStr = "MovieClip";
+        else if (target instanceof Button) typeStr = "Button";
+        else if (target instanceof TextField) typeStr = "TextField";
+
+        var children:Array = [];
+        if (typeof(target) == "movieclip") {
+            var mc:MovieClip = MovieClip(target);
+            var collected:Array = [];
+            for (var k:String in mc) {
+                if (k == "__raflash") continue;
+                var child:Object = mc[k];
+                var ct:String = typeof(child);
+                if (ct == "movieclip" || child instanceof Button || child instanceof TextField) {
+                    var depth:Number = 0;
+                    if (ct == "movieclip" && MovieClip(child).getDepth != undefined) {
+                        depth = MovieClip(child).getDepth();
+                    }
+                    collected.push({ key: k, child: child, depth: depth });
+                }
+            }
+            collected.sortOn("depth", Array.NUMERIC);
+            for (var ci:Number = 0; ci < collected.length; ci++) {
+                var entry:Object = collected[ci];
+                children.push(buildDisplayTree(entry.child, path + "." + entry.key));
+            }
+        }
+
+        var lastDot:Number = path.lastIndexOf(".");
+        var displayName:String = lastDot >= 0 ? path.substring(lastDot + 1) : path;
+
+        return { name: displayName, type: typeStr, path: path, children: children };
+    }
+
+    /**
      * Count enumerable game children of a MovieClip, ignoring our own
      * injected __raflash clip (which is always present in child mode and
      * shouldn't count as game content for the purposes of picking the right
@@ -1126,6 +1167,18 @@ class Main {
                 }
                 Selection.setFocus(feResult[0]);
                 sendResponse(id, { success: true });
+                break;
+
+            case "dumpDisplayTree":
+                _stageContext[0] = gameRoot;
+                var dumpFormula:Array = params.pathFormula;
+                var dumpPath:String = params.pathString != undefined ? String(params.pathString) : "stage";
+                var dumpResult:Array = evaluate(dumpFormula, 1, dumpFormula.length, _stageContext, _stageKeys);
+                if (dumpResult == null || dumpResult.length == 0) {
+                    sendResponse(id, { success: false, error: "Path not found" });
+                    break;
+                }
+                sendResponse(id, { success: true, tree: buildDisplayTree(dumpResult[0], dumpPath) });
                 break;
 
             case "setRecording":

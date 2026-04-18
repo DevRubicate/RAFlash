@@ -406,6 +406,19 @@ class Main extends MovieClip {
                 }
                 sendResponse(id, {success: true, results: results});
 
+            case "dumpDisplayTree":
+                if (gameRoot == null) { sendResponse(id, {success: false, error: "Game not loaded"}); return; }
+                if (params.pathFormula == null) { sendResponse(id, {success: false, error: "Missing pathFormula"}); return; }
+                var dumpPf:Array<Dynamic> = params.pathFormula;
+                var dumpPathString:String = params.pathString != null ? Std.string(params.pathString) : "stage";
+                Evaluate.ROOT_SENTINEL.__raflash_gameRoot = gameRoot;
+                var dumpResult = Evaluate.evaluate(dumpPf, 1, dumpPf.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
+                if (dumpResult == null || dumpResult.length == 0) {
+                    sendResponse(id, {success: false, error: "Invalid path"});
+                    return;
+                }
+                sendResponse(id, {success: true, tree: buildDisplayTree(dumpResult[0], dumpPathString)});
+
             case "editData":
                 if (params.changes == null) { sendResponse(id, {success: false, error: "Missing changes"}); return; }
                 var changes:Dynamic = params.changes;
@@ -863,6 +876,43 @@ class Main extends MovieClip {
      * Walk parent chain from target up to gameRoot, emitting "stage.a.b.c".
      * Returns null if gameRoot is never reached (click was on firmware chrome).
      */
+    private static function buildDisplayTree(target:Dynamic, path:String):Dynamic {
+        var typeStr:String = "Object";
+        if (Std.isOfType(target, flash.display.MovieClip)) typeStr = "MovieClip";
+        else if (Std.isOfType(target, flash.display.SimpleButton)) typeStr = "Button";
+        else if (Std.isOfType(target, flash.text.TextField)) typeStr = "TextField";
+        else if (Std.isOfType(target, flash.display.Sprite)) typeStr = "Sprite";
+        else if (Std.isOfType(target, flash.display.DisplayObjectContainer)) typeStr = "Container";
+        else if (Std.isOfType(target, flash.display.Bitmap)) typeStr = "Bitmap";
+        else if (Std.isOfType(target, flash.display.Shape)) typeStr = "Shape";
+
+        var childNodes:Array<Dynamic> = [];
+        if (Std.isOfType(target, flash.display.DisplayObjectContainer)) {
+            var container:flash.display.DisplayObjectContainer = cast target;
+            var n:Int = 0;
+            try { n = container.numChildren; } catch (e:Dynamic) { n = 0; }
+            var i:Int = 0;
+            while (i < n) {
+                var child:flash.display.DisplayObject = null;
+                try { child = container.getChildAt(i); } catch (e:Dynamic) { child = null; }
+                if (child != null) {
+                    var childName:String = null;
+                    try { childName = child.name; } catch (e:Dynamic) {}
+                    if (childName != null && childName != "" && childName != "__raflash") {
+                        var childPath:String = path + "." + childName;
+                        childNodes.push(buildDisplayTree(child, childPath));
+                    }
+                }
+                i++;
+            }
+        }
+
+        var lastDot:Int = path.lastIndexOf(".");
+        var displayName:String = lastDot >= 0 ? path.substr(lastDot + 1) : path;
+
+        return { name: displayName, type: typeStr, path: path, children: childNodes };
+    }
+
     private function buildStagePath(target:flash.display.DisplayObject):String {
         if (target == null || gameRoot == null) return null;
         var segments:Array<String> = [];
