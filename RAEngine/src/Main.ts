@@ -1361,6 +1361,7 @@ let gameWindowHeight = 600; // Will be updated from game SWF metadata
 let fileSelectedResolver: ((result: { gamePath: string; user: string }) => void) | null = null;
 let selectedUserName: string | null = null;
 let pendingRelaunch: string | null = null;  // Path to relaunch after current game closes
+let pendingRelaunchPosition: { x: number; y: number } | null = null;  // Window position to restore after Reset Game relaunches Flash
 let httpServer: Deno.HttpServer | null = null;
 
 // Native achievement compilation: per-achievement SWF (AVM1)
@@ -1736,6 +1737,14 @@ async function performResetGame(): Promise<Record<string, unknown>> {
         // Register the waiter BEFORE killing so we're armed for the new
         // firmware's first gameLoaded. Relaunch takes 2–5 seconds.
         const gameLoadedPromise = waitForGameLoaded(20000);
+
+        // Stash the current Flash Player window position so the relaunch
+        // path can put it back where the user had dragged it, instead of
+        // re-centering on screen.
+        if (Deno.build.os === "windows" && flashPlayerPid != null) {
+            const pos = WindowManager.getWindowPositionByPid(flashPlayerPid);
+            if (pos) pendingRelaunchPosition = { x: pos.x, y: pos.y };
+        }
 
         pendingRelaunch = AppData.gamePath;
         try { flashProcess?.kill(); } catch { /* already exited */ }
@@ -4113,10 +4122,14 @@ async function main(): Promise<void> {
             openDevtoolsMenu().catch(() => { /* best effort */ });
         }
 
-        // Resize and center Flash Player to match game dimensions (Windows only)
+        // Resize and center Flash Player to match game dimensions (Windows only).
+        // When Reset Game stashed a previous window position, place it there
+        // instead of centering so the user doesn't lose their placement.
         if (Deno.build.os === "windows") {
             const icoPath = join(Deno.cwd(), "assets", "icon.ico");
-            WindowManager.removeWindowChrome(flashProcess.pid, gameWindowWidth, gameWindowHeight, "RAFlash", 50, 10);
+            const restorePos = pendingRelaunchPosition ?? undefined;
+            pendingRelaunchPosition = null;
+            WindowManager.removeWindowChrome(flashProcess.pid, gameWindowWidth, gameWindowHeight, "RAFlash", 50, 10, restorePos);
             WindowManager.setProcessIcon(flashProcess.pid, icoPath);
         }
 

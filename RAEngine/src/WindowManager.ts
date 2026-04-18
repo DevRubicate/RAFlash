@@ -228,6 +228,23 @@ export class WindowManager {
     }
 
     /**
+     * Gets the position and size of the top-level window that belongs to a
+     * given process. Does not require the window to have been registered
+     * via `resizeAndCenterProcess` — used by Flash Player reset flow to
+     * remember where the user had dragged the window to.
+     */
+    static getWindowPositionByPid(pid: number): { x: number; y: number; width: number; height: number } | null {
+        if (!user32) return null;
+        const hwnd = this.findWindowByPid(pid);
+        if (!hwnd) return null;
+        const rectBuffer = new Int32Array(4);
+        const result = user32.symbols.GetWindowRect(hwnd, rectBuffer);
+        if (!result) return null;
+        const [left, top, right, bottom] = rectBuffer;
+        return { x: left, y: top, width: right - left, height: bottom - top };
+    }
+
+    /**
      * Post a simulated keystroke (WM_KEYDOWN + WM_KEYUP) to the window
      * belonging to the given process. Does NOT move the cursor or steal
      * focus — messages are queued into the target window's input queue
@@ -614,6 +631,9 @@ export class WindowManager {
      * @param height Content height to resize to after removing chrome.
      * @param maxRetries Maximum number of retries (default 50).
      * @param delayMs Delay between retries in ms (default 10).
+     * @param position Optional window position (outer-frame top-left) to
+     *        place the window at instead of centering it. Used by Reset
+     *        Game to restore the window to where the user had dragged it.
      */
     static async removeWindowChrome(
         pid: number,
@@ -621,7 +641,8 @@ export class WindowManager {
         height: number,
         title?: string,
         maxRetries = 50,
-        delayMs = 10
+        delayMs = 10,
+        position?: { x: number; y: number }
     ): Promise<boolean> {
         if (!isWindows || !user32) return false;
 
@@ -650,10 +671,18 @@ export class WindowManager {
                 const outerWidth = rect[2] - rect[0];
                 const outerHeight = rect[3] - rect[1];
 
-                // Apply style changes and resize to fit content
-                const screen = this.getScreenSize();
-                const x = Math.floor((screen.width - outerWidth) / 2);
-                const y = Math.floor((screen.height - outerHeight) / 2);
+                // Place the window at the caller-supplied position if any,
+                // otherwise center on screen.
+                let x: number;
+                let y: number;
+                if (position) {
+                    x = position.x;
+                    y = position.y;
+                } else {
+                    const screen = this.getScreenSize();
+                    x = Math.floor((screen.width - outerWidth) / 2);
+                    y = Math.floor((screen.height - outerHeight) / 2);
+                }
                 user32.symbols.SetWindowPos(
                     hwnd,
                     Deno.UnsafePointer.create(HWND_TOP),
