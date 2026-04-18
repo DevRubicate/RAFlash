@@ -10,7 +10,6 @@
             <div class="list-wrapper">
                 <div v-if="files.length === 0" class="empty-state">
                     <div>No <code>.ratest</code> files found for this game.</div>
-                    <div class="hint" v-if="dir">Drop them in <code>{{ dir }}</code></div>
                 </div>
                 <ul v-else class="file-list">
                     <li

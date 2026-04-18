@@ -2794,7 +2794,6 @@ async function handleApiRequest(
             } catch (e) {
                 return { success: false, error: `delete ${filepath}: ${(e as Error).message}` };
             }
-            emitLog("ratest", "info", `Deleted ${name}`);
             return { success: true };
         }
 
