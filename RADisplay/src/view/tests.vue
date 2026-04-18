@@ -88,28 +88,28 @@
                 </button>
                 <div class="status" :class="statusClass">{{ statusText }}</div>
                 <button
-                    class="pick-button"
-                    :class="{ active: picking }"
-                    :disabled="picking ? false : !canPick"
-                    @click="togglePick()"
+                    class="hit-test-button"
+                    :class="{ active: hitTesting }"
+                    :disabled="hitTesting ? false : !canHitTest"
+                    @click="toggleHitTest()"
                     title="Click, then click in the game to see what path is detected"
                 >
-                    <span v-if="picking">Cancel Pick</span>
-                    <span v-else>Pick</span>
+                    <span v-if="hitTesting">Cancel HitTest</span>
+                    <span v-else>HitTest</span>
                 </button>
             </template>
         </div>
 
-        <div v-if="pickResult" class="pick-modal-backdrop" @click="pickResult = null">
-            <div class="pick-modal" @click.stop>
-                <div class="pick-modal-title">
-                    {{ pickResult.path ? 'Detected click target' : 'No target detected' }}
+        <div v-if="hitTestResult" class="hit-test-modal-backdrop" @click="hitTestResult = null">
+            <div class="hit-test-modal" @click.stop>
+                <div class="hit-test-modal-title">
+                    {{ hitTestResult.path ? 'Detected click target' : 'No target detected' }}
                 </div>
-                <div v-if="pickResult.path" class="pick-modal-path">{{ pickResult.path }}</div>
-                <div v-else class="pick-modal-empty">Click at ({{ pickResult.x }}, {{ pickResult.y }}) didn't hit any clickable element.</div>
-                <div class="pick-modal-actions">
-                    <button v-if="pickResult.path" class="pick-copy" @click="copyPickPath()">{{ copied ? 'Copied' : 'Copy' }}</button>
-                    <button class="pick-close" @click="pickResult = null">Close</button>
+                <div v-if="hitTestResult.path" class="hit-test-modal-path">{{ hitTestResult.path }}</div>
+                <div v-else class="hit-test-modal-empty">Click at ({{ hitTestResult.x }}, {{ hitTestResult.y }}) didn't hit any clickable element.</div>
+                <div class="hit-test-modal-actions">
+                    <button v-if="hitTestResult.path" class="hit-test-copy" @click="copyHitTestPath()">{{ copied ? 'Copied' : 'Copy' }}</button>
+                    <button class="hit-test-close" @click="hitTestResult = null">Close</button>
                 </div>
             </div>
         </div>
@@ -360,7 +360,7 @@
 
     .play-button,
     .record-button,
-    .pick-button,
+    .hit-test-button,
     .confirm-button,
     .cancel-button {
         color: white;
@@ -390,15 +390,15 @@
         background: #dc2626;
     }
 
-    .pick-button {
+    .hit-test-button {
         background: #374151;
     }
 
-    .pick-button.active {
+    .hit-test-button.active {
         background: var(--c-primary);
     }
 
-    .pick-modal-backdrop {
+    .hit-test-modal-backdrop {
         position: fixed;
         inset: 0;
         background: rgba(0, 0, 0, 0.45);
@@ -408,7 +408,7 @@
         z-index: 10;
     }
 
-    .pick-modal {
+    .hit-test-modal {
         min-width: 320px;
         max-width: 80%;
         background: var(--c-surface);
@@ -421,13 +421,13 @@
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
     }
 
-    .pick-modal-title {
+    .hit-test-modal-title {
         font-weight: 600;
         font-size: 0.875rem;
         color: var(--c-text);
     }
 
-    .pick-modal-path {
+    .hit-test-modal-path {
         font-family: var(--font-mono);
         font-size: 0.75rem;
         color: var(--c-text);
@@ -439,19 +439,19 @@
         user-select: text;
     }
 
-    .pick-modal-empty {
+    .hit-test-modal-empty {
         font-size: 0.8125rem;
         color: var(--c-text-muted);
     }
 
-    .pick-modal-actions {
+    .hit-test-modal-actions {
         display: flex;
         justify-content: flex-end;
         gap: 0.5rem;
     }
 
-    .pick-copy,
-    .pick-close {
+    .hit-test-copy,
+    .hit-test-close {
         color: white;
         border: none;
         font-family: var(--font-sans);
@@ -463,16 +463,16 @@
         transition: opacity var(--duration) var(--ease);
     }
 
-    .pick-copy {
+    .hit-test-copy {
         background: var(--c-primary);
     }
 
-    .pick-close {
+    .hit-test-close {
         background: #374151;
     }
 
-    .pick-copy:hover,
-    .pick-close:hover {
+    .hit-test-copy:hover,
+    .hit-test-close:hover {
         opacity: 0.85;
     }
 
@@ -486,7 +486,7 @@
 
     .play-button:disabled,
     .record-button:disabled,
-    .pick-button:disabled,
+    .hit-test-button:disabled,
     .confirm-button:disabled {
         opacity: 0.4;
         cursor: not-allowed;
@@ -494,7 +494,7 @@
 
     .play-button:not(:disabled):hover,
     .record-button:not(:disabled):hover,
-    .pick-button:not(:disabled):hover,
+    .hit-test-button:not(:disabled):hover,
     .confirm-button:not(:disabled):hover,
     .cancel-button:hover {
         opacity: 0.85;
@@ -555,8 +555,8 @@
     const saveInputEl = ref(null);
     const lastSaved = ref(null);
 
-    const picking = ref(false);
-    const pickResult = ref(null);
+    const hitTesting = ref(false);
+    const hitTestResult = ref(null);
     const copied = ref(false);
 
     const confirmingDelete = ref(null);
@@ -619,10 +619,10 @@
         lastSaved.value = data.file;
     });
 
-    Network.addEventListener('pickResult', (data) => {
-        picking.value = false;
+    Network.addEventListener('hitTestResult', (data) => {
+        hitTesting.value = false;
         copied.value = false;
-        pickResult.value = data;
+        hitTestResult.value = data;
     });
 
     watch(selected, async (file) => {
@@ -645,16 +645,16 @@
     );
 
     const canRecord = computed(() =>
-        !running.value && !picking.value && App.flashConnected,
+        !running.value && !hitTesting.value && App.flashConnected,
     );
 
-    const canPick = computed(() =>
+    const canHitTest = computed(() =>
         !running.value && !recording.value && App.flashConnected,
     );
 
     const statusText = computed(() => {
         if (!App.flashConnected) return 'Flash Player is not running — reload the game to run tests.';
-        if (picking.value) return 'Picking — click something in the game to see its detected path.';
+        if (hitTesting.value) return 'HitTest — click something in the game to see its detected path.';
         if (recording.value) return 'Recording — click in the game to capture actions. Press Stop when done.';
         if (running.value) return 'Playing... game will reset and actions will execute.';
         if (lastSaved.value) return `Saved ${lastSaved.value}`;
@@ -663,29 +663,29 @@
 
     const statusClass = computed(() => {
         if (recording.value) return 'recording';
-        if (picking.value) return 'recording';
+        if (hitTesting.value) return 'recording';
         return '';
     });
 
-    const togglePick = async () => {
-        if (picking.value) {
-            picking.value = false;
-            await Network.send({ command: 'stopPicking', params: {} });
+    const toggleHitTest = async () => {
+        if (hitTesting.value) {
+            hitTesting.value = false;
+            await Network.send({ command: 'stopHitTest', params: {} });
         } else {
-            const response = await Network.send({ command: 'startPicking', params: {} });
+            const response = await Network.send({ command: 'startHitTest', params: {} });
             if (response.success) {
-                picking.value = true;
-                pickResult.value = null;
+                hitTesting.value = true;
+                hitTestResult.value = null;
             } else {
-                result.value = { passed: 0, failed: 1, total: 1, error: response.error ?? 'startPicking failed' };
+                result.value = { passed: 0, failed: 1, total: 1, error: response.error ?? 'startHitTest failed' };
             }
         }
     };
 
-    const copyPickPath = async () => {
-        if (!pickResult.value?.path) return;
+    const copyHitTestPath = async () => {
+        if (!hitTestResult.value?.path) return;
         try {
-            await navigator.clipboard.writeText(pickResult.value.path);
+            await navigator.clipboard.writeText(hitTestResult.value.path);
             copied.value = true;
         } catch {
             copied.value = false;

@@ -76,7 +76,7 @@ class Main {
     // When true, onMouseUp listener forwards click paths to the engine.
     private static var recording:Boolean = false;
     private static var recordingMouseListener:Object = null;
-    private static var pickingMouseListener:Object = null;
+    private static var hitTestMouseListener:Object = null;
     private static var hitProbe:MovieClip = null;
 
 
@@ -1139,11 +1139,11 @@ class Main {
                 sendResponse(id, { success: true });
                 break;
 
-            case "setPicking":
-                if (params.picking == true) {
-                    setupPickingListener();
+            case "setHitTest":
+                if (params.active == true) {
+                    setupHitTestListener();
                 } else {
-                    teardownPickingListener();
+                    teardownHitTestListener();
                 }
                 sendResponse(id, { success: true });
                 break;
@@ -1272,42 +1272,42 @@ class Main {
     }
 
     /**
-     * One-shot "element picker" analog to browser devtools. Captures the
-     * next mouseDown, resolves the clicked target the same way recording
-     * does, forwards the result to the engine, and auto-detaches — so the
-     * user can inspect a path without committing to a full recording.
+     * One-shot hit-test analog to a browser devtools element picker.
+     * Captures the next mouseDown, resolves the clicked target the same way
+     * recording does, forwards the result to the engine, and auto-detaches —
+     * so the user can inspect a path without committing to a full recording.
      */
-    private static function setupPickingListener():Void {
-        if (pickingMouseListener != null) return;
-        pickingMouseListener = {};
-        pickingMouseListener.onMouseDown = function():Void {
+    private static function setupHitTestListener():Void {
+        if (hitTestMouseListener != null) return;
+        hitTestMouseListener = {};
+        hitTestMouseListener.onMouseDown = function():Void {
             try {
                 if (Main.gameRoot == null) return;
                 var x:Number = _level0._xmouse;
                 var y:Number = _level0._ymouse;
                 var target:Object = Main.findClickedTargetRec(Main.gameRoot, x, y);
                 var path:String = (target == null) ? null : Main.buildStagePath(target);
-                Main.sendMessage("userInput", { kind: "pick", path: path, x: x, y: y });
-                Main.teardownPickingListener();
-            } catch (e:Error) { Main.logError("picking onMouseDown", e); }
+                Main.sendMessage("userInput", { kind: "hitTest", path: path, x: x, y: y });
+                Main.teardownHitTestListener();
+            } catch (e:Error) { Main.logError("hitTest onMouseDown", e); }
         };
-        Mouse.addListener(pickingMouseListener);
+        Mouse.addListener(hitTestMouseListener);
     }
 
-    public static function teardownPickingListener():Void {
-        if (pickingMouseListener == null) return;
-        Mouse.removeListener(pickingMouseListener);
-        pickingMouseListener = null;
+    public static function teardownHitTestListener():Void {
+        if (hitTestMouseListener == null) return;
+        Mouse.removeListener(hitTestMouseListener);
+        hitTestMouseListener = null;
     }
 
     /**
      * Find the clickable target under stage coords (x, y) by walking the
      * display tree in z-order (topmost-first). Within a container, children
-     * are scanned by getDepth() descending. For MovieClip children,
-     * descendants are probed before the MC's own body, because Flash renders
-     * descendants on top of their parent's shapes. First hit wins — matching
-     * Flash's own click routing, so a fullscreen dialog dimmer correctly
-     * wins over the small widgets behind it.
+     * are scanned by _depth descending. For MovieClip children, descendants
+     * are probed before the MC's own body, because Flash renders descendants
+     * on top of their parent's shapes. First hit wins — matching Flash's own
+     * click routing, so a fullscreen dialog dimmer correctly wins over the
+     * small widgets behind it.
      */
     public static function findClickedTargetRec(clip:Object, x:Number, y:Number):Object {
         return findTopmostHit(clip, x, y, {}, 0);

@@ -2897,14 +2897,14 @@ async function handleApiRequest(
             return { success: true };
         }
 
-        case "startPicking": {
+        case "startHitTest": {
             if (!AppData.gameHash) return { success: false, error: "No game loaded" };
-            if (!flashConnected) return { success: false, error: "Flash Player is not running — reload the game to pick elements" };
-            return await sendToFirmware("setPicking", { picking: true });
+            if (!flashConnected) return { success: false, error: "Flash Player is not running — reload the game to hit test elements" };
+            return await sendToFirmware("setHitTest", { active: true });
         }
 
-        case "stopPicking": {
-            return await sendToFirmware("setPicking", { picking: false });
+        case "stopHitTest": {
+            return await sendToFirmware("setHitTest", { active: false });
         }
 
         case "stopRecording": {
@@ -3555,8 +3555,8 @@ function handleFirmwareData(data: string): void {
                     openDevtoolsMenu();
                 }
             } else if (parsed.type === "userInput") {
-                if (parsed.data?.kind === "pick") {
-                    broadcastToDevtools("pickResult", {
+                if (parsed.data?.kind === "hitTest") {
+                    broadcastToDevtools("hitTestResult", {
                         path: typeof parsed.data.path === "string" ? parsed.data.path : null,
                         x: parsed.data.x,
                         y: parsed.data.y,
