@@ -185,7 +185,7 @@
         color: var(--c-text);
         border-radius: var(--radius-sm);
         display: grid;
-        grid-template-columns: 3.5rem 1rem 1fr auto;
+        grid-template-columns: 3.5rem 1.25rem 1fr auto;
         gap: 0.4rem;
         align-items: baseline;
     }
@@ -423,7 +423,7 @@
 </style>
 
 <script setup>
-    import { ref, computed, nextTick } from 'vue';
+    import { ref, computed, nextTick, watch } from 'vue';
     import { Network }                 from '../js/network.ts';
     import { App }                     from '../js/app.ts';
 
@@ -446,11 +446,11 @@
     let confirmingDeleteTimer = null;
 
     const phaseIcon = (phase) => {
-        if (phase === 'pass') return '✓';
-        if (phase === 'fail') return '✗';
-        if (phase === 'ok') return '·';
-        if (phase === 'record') return '●';
-        return '…';
+        if (phase === 'pass') return '✅';
+        if (phase === 'fail') return '❌';
+        if (phase === 'ok') return '▪️';
+        if (phase === 'record') return '🔴';
+        return '⏳';
     };
 
     const scrollLogToBottom = () => {
@@ -500,6 +500,21 @@
     Network.addEventListener('recordingSaved', (data) => {
         recording.value = false;
         lastSaved.value = data.file;
+    });
+
+    watch(selected, async (file) => {
+        if (running.value || recording.value) return;
+        if (!file) {
+            steps.value = [];
+            return;
+        }
+        const response = await Network.send({
+            command: 'previewRatest',
+            params: { file },
+        });
+        if (selected.value !== file) return;
+        if (running.value || recording.value) return;
+        steps.value = response.success ? (response.params.steps ?? []) : [];
     });
 
     const canPlay = computed(() =>

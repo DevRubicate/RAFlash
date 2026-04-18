@@ -2634,6 +2634,29 @@ async function handleApiRequest(
             return { success: true, params: { files, dir } };
         }
 
+        case "previewRatest": {
+            if (!AppData.gameHash) return { success: false, error: "No game loaded" };
+            const name = String(input.params.file || "");
+            if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
+                return { success: false, error: `Invalid .ratest filename: ${name}` };
+            }
+            const path = `RACache/ratests/${AppData.gameHash}/${name}`;
+            const { parseRatest } = await import("../../tests/ratest.ts");
+            try {
+                const text = await Deno.readTextFile(path);
+                const parsed = parseRatest(path, text);
+                const steps = parsed.steps.map((s, i) => ({
+                    index: i,
+                    total: parsed.steps.length,
+                    source: s.source,
+                    phase: "start",
+                }));
+                return { success: true, params: { steps } };
+            } catch (e) {
+                return { success: false, error: `parse ${path}: ${(e as Error).message}` };
+            }
+        }
+
         case "playRatest": {
             if (!AppData.gameHash) return { success: false, error: "No game loaded" };
             if (!flashConnected) return { success: false, error: "Flash Player is not running — reload the game to run tests" };
