@@ -1335,6 +1335,13 @@ class Main {
     }
 
     private static function tryCollectCandidate(child:Object, x:Number, y:Number, out:Array, visited:Object, depth:Number):Void {
+        // `_visible = false` elements don't render and don't receive clicks,
+        // so they can't be what the user hit. Pruning here also honors
+        // ancestor visibility — if a parent is hidden, we never descend.
+        // Note: `_alpha = 0` is NOT the same — AS2 routes clicks to
+        // fully-transparent elements (invisible-hitbox pattern), so we
+        // keep those as candidates.
+        if (child._visible == false) return;
         if (!pointInChildStageBounds(child, x, y)) return;
         if (child instanceof MovieClip) {
             collectClickCandidates(child, x, y, out, visited, depth + 1);
