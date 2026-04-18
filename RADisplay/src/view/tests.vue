@@ -118,8 +118,8 @@
             </template>
         </div>
 
-        <div v-if="hitTestResult" class="hit-test-modal-backdrop" @click="hitTestResult = null">
-            <div class="hit-test-modal" @click.stop>
+        <div v-if="hitTestResult" class="hit-test-modal-backdrop">
+            <div class="hit-test-modal">
                 <div class="hit-test-modal-title">
                     {{ hitTestResult.path ? 'Detected click target' : 'No target detected' }}
                 </div>
