@@ -641,8 +641,7 @@ class Evaluate {
 
                 var result:Array<Dynamic> = [];
 
-                // OPTIMIZATION: Detect simple numeric index pattern
-                // Pattern: VALUE <n> (length 2)
+                // OPTIMIZATION 1: numeric literal index — `[N]`.
                 if (amount == 2 && i + amount < formula.length && formula[i + 1] == "VALUE") {
                     var idx:Int = Std.parseInt(cast(formula[i + 2], String));
                     var j:Int = 0;
@@ -655,48 +654,89 @@ class Evaluate {
                     }
                     stack.push(result);
                     i += amount + 1;
-                } else {
-                    // Generic implementation: filter array elements by condition
-                    // Enumerate elements as (this=values, key=indices), evaluate
-                    // condition per-element, keep elements where result is true
+                } else if (amount == 6 && i + amount < formula.length &&
+                        formula[i + 1] == "IDENTIFIER" &&
+                        formula[i + 2] == "key" &&
+                        formula[i + 3] == "READ_GLOBAL" &&
+                        formula[i + 4] == "IDENTIFIER" &&
+                        formula[i + 6] == "EQUAL") {
+                    // OPTIMIZATION 2: `[key == name]` — equivalent to
+                    // `.name`. Keys are unique per parent, so one property
+                    // lookup suffices.
+                    var propName:String = cast formula[i + 5];
                     var j:Int = 0;
                     while (j < targets.length) {
                         var target:Dynamic = targets[j];
-
-                        var childThis:Array<Dynamic> = [];
-                        var childKeys:Array<Dynamic> = [];
+                        var value:Dynamic = readProperty(target, propName);
+                        if (value != null || hasProperty(target, propName)) {
+                            result.push(wrapHook(target, propName, value));
+                        }
+                        j++;
+                    }
+                    stack.push(result);
+                    i += amount + 1;
+                } else {
+                    // Generic per-row evaluation: for each child of each
+                    // target, evaluate the filter bytecode with
+                    // `this = [childValue]`, `key = [childKey]`. Collect
+                    // the child when the first-element result is true.
+                    //
+                    // Array-like targets (numeric `length`) iterate
+                    // indices 0..length-1. Object-like targets enumerate
+                    // via enumerateProperties. Filters that don't
+                    // reference `this`/`key` (e.g. `[5 == 5]`) work
+                    // naturally — each row evaluates the constant to true.
+                    var j:Int = 0;
+                    while (j < targets.length) {
+                        var target:Dynamic = targets[j];
 
                         if (Std.isOfType(target, Array)) {
                             var arr:Array<Dynamic> = cast target;
                             var ai:Int = 0;
                             while (ai < arr.length) {
-                                childThis.push(arr[ai]);
-                                childKeys.push(ai);
+                                var rThis:Array<Dynamic> = [arr[ai]];
+                                var rKey:Array<Dynamic> = [ai];
+                                var rowRes = evaluate(formula, i + 1, i + amount + 1, rThis, rKey, gameRoot);
+                                if (rowRes != null && rowRes.length > 0 && (rowRes[0] == true || rowRes[0] == 1)) {
+                                    result.push(arr[ai]);
+                                }
                                 ai++;
                             }
-                        } else {
-                            // For non-array targets, try numeric index access
+                        } else if (target != null) {
+                            var hasNumericLength:Bool = false;
+                            var lenN:Int = 0;
                             try {
-                                var len:Int = untyped target.length;
-                                var ai:Int = 0;
-                                while (ai < len) {
-                                    childThis.push(untyped target[ai]);
-                                    childKeys.push(ai);
-                                    ai++;
+                                var rawLen:Dynamic = untyped target.length;
+                                if (rawLen != null && (Std.isOfType(rawLen, Int) || Std.isOfType(rawLen, Float))) {
+                                    hasNumericLength = true;
+                                    lenN = Std.int(rawLen);
                                 }
                             } catch (e:Dynamic) {}
-                        }
-
-                        var filterResult = evaluate(formula, i + 1, i + amount + 1, childThis, childKeys, gameRoot);
-                        if (filterResult != null) {
-                            var k:Int = 0;
-                            while (k < filterResult.length) {
-                                if (filterResult[k] == true || filterResult[k] == 1) {
-                                    if (k < childThis.length) {
-                                        result.push(childThis[k]);
+                            if (hasNumericLength) {
+                                var ai:Int = 0;
+                                while (ai < lenN) {
+                                    var rThis2:Array<Dynamic> = [untyped target[ai]];
+                                    var rKey2:Array<Dynamic> = [ai];
+                                    var rowRes2 = evaluate(formula, i + 1, i + amount + 1, rThis2, rKey2, gameRoot);
+                                    if (rowRes2 != null && rowRes2.length > 0 && (rowRes2[0] == true || rowRes2[0] == 1)) {
+                                        result.push(untyped target[ai]);
                                     }
+                                    ai++;
                                 }
-                                k++;
+                            } else {
+                                var props = enumerateProperties(target);
+                                var values:Array<Dynamic> = props.values;
+                                var keys:Array<Dynamic> = props.keys;
+                                var p:Int = 0;
+                                while (p < keys.length) {
+                                    var rThis3:Array<Dynamic> = [values[p]];
+                                    var rKey3:Array<Dynamic> = [keys[p]];
+                                    var rowRes3 = evaluate(formula, i + 1, i + amount + 1, rThis3, rKey3, gameRoot);
+                                    if (rowRes3 != null && rowRes3.length > 0 && (rowRes3[0] == true || rowRes3[0] == 1)) {
+                                        result.push(values[p]);
+                                    }
+                                    p++;
+                                }
                             }
                         }
                         j++;

@@ -2985,8 +2985,7 @@ class Main {
 
                     var result = [];
 
-                    // OPTIMIZATION: Detect simple numeric index pattern
-                    // Pattern: VALUE <n> (length 2)
+                    // OPTIMIZATION 1: numeric literal index — `[N]`.
                     if (amount == 2 && formula[i + 2] == "VALUE") {
                         var idx:Number = formula[i + 3];
                         for (var j = 0; j < targets.length; ++j) {
@@ -3000,28 +2999,94 @@ class Main {
                         i += amount + 1;
                         break;
                     }
+
+                    // OPTIMIZATION 2: `[key == name]` — equivalent to
+                    // `.name`. Keys are unique per parent, so one property
+                    // lookup suffices instead of iterating all children.
+                    if (amount == 6 && i + amount + 2 <= end &&
+                            formula[i + 2] == "IDENTIFIER" &&
+                            formula[i + 3] == "key" &&
+                            formula[i + 4] == "READ_GLOBAL" &&
+                            formula[i + 5] == "IDENTIFIER" &&
+                            formula[i + 7] == "EQUAL") {
+                        var propName:String = formula[i + 6];
+                        for (var j = 0; j < targets.length; ++j) {
+                            var value2 = targets[j][propName];
+                            if (value2 !== undefined) {
+                                result.push(wrapHook(targets[j], propName, value2));
+                            }
+                        }
+                        arrAccessOptimized++;
+                        stack.push(result);
+                        i += amount + 1;
+                        break;
+                    }
+
                     arrAccessGeneric++;
 
-                    // Generic implementation: filter array elements by condition
-                    // Enumerate elements as (this=values, key=indices), evaluate
-                    // condition per-element, keep elements where result is true
+                    // Generic per-row evaluation: for each child of each
+                    // target, evaluate the filter bytecode with
+                    // `this = [childValue]`, `key = [childKey]`. Collect
+                    // the child when the first-element filter result is
+                    // true.
+                    //
+                    // Array-like targets (numeric `length`) iterate
+                    // indices 0..length-1. Object-like targets enumerate
+                    // own properties via for...in — so expressions like
+                    // `stage[this._x == 167]` filter an MC's children by
+                    // predicate. Filters that don't reference `this`/`key`
+                    // (e.g. `[5 == 5]`) work naturally under this model.
                     for (var j = 0; j < targets.length; ++j) {
                         var target = targets[j];
-
-                        var childThis = [];
-                        var childKeys = [];
-
-                        for (var k = 0; k < target.length; ++k) {
-                            childThis.push(target[k]);
-                            childKeys.push(k);
-                        }
-
-                        var filteredResult = evaluate(formula, i + 2, i + amount + 2, childThis, childKeys);
-                        if (filteredResult == null) filteredResult = [];
-
-                        for (var k = 0; k < filteredResult.length; ++k) {
-                            if (filteredResult[k] == true) {
-                                result.push(wrapHook(target, childKeys[k], target[childKeys[k]]));
+                        var targetType:String = typeof(target);
+                        if (typeof(target.length) == "number") {
+                            var tLen:Number = target.length;
+                            for (var k = 0; k < tLen; ++k) {
+                                var rThis:Array = [target[k]];
+                                var rKey:Array = [k];
+                                var rowResult = evaluate(formula, i + 2, i + amount + 2, rThis, rKey);
+                                if (rowResult != null && rowResult.length > 0 && rowResult[0] == true) {
+                                    result.push(wrapHook(target, k, target[k]));
+                                }
+                            }
+                        } else if (target != null &&
+                                targetType != "number" &&
+                                targetType != "string" &&
+                                targetType != "boolean" &&
+                                targetType != "function" &&
+                                targetType != "undefined") {
+                            // Canonical enumeration for object-like targets:
+                            // for...in enumerables + MC/TextField built-ins
+                            // (via getBuiltinProperties), with the same
+                            // isHiddenBuiltinProp filter the UI's formatOutput
+                            // applies. This makes `stage[true]` iterate the
+                            // exact same collection that `stage` displays, so
+                            // filter results stay predictable and match the
+                            // object view.
+                            //
+                            // Denylist of primitive typeofs (rather than
+                            // allowlisting "object"/"movieclip") accepts MCs
+                            // and any future display type.
+                            var allNames:Array = [];
+                            var allValues:Array = [];
+                            for (var nm:String in target) {
+                                if (isHiddenBuiltinProp(nm, target[nm])) continue;
+                                allNames.push(nm);
+                                allValues.push(target[nm]);
+                            }
+                            var builtins:Array = getBuiltinProperties(target);
+                            for (var b:Number = 0; b < builtins.length; b++) {
+                                if (isHiddenBuiltinProp(builtins[b].name, builtins[b].value)) continue;
+                                allNames.push(builtins[b].name);
+                                allValues.push(builtins[b].value);
+                            }
+                            for (var p:Number = 0; p < allNames.length; p++) {
+                                var rThis2:Array = [allValues[p]];
+                                var rKey2:Array = [allNames[p]];
+                                var rowResult2 = evaluate(formula, i + 2, i + amount + 2, rThis2, rKey2);
+                                if (rowResult2 != null && rowResult2.length > 0 && rowResult2[0] == true) {
+                                    result.push(wrapHook(target, allNames[p], allValues[p]));
+                                }
                             }
                         }
                     }
