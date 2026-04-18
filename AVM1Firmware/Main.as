@@ -1301,77 +1301,74 @@ class Main {
     }
 
     /**
-     * Find the best clickable target under stage coords (x, y).
-     *
-     * Collects every MovieClip/Button whose stage bounds contain (x, y)
-     * (recursing into MovieClip subtrees), then returns the candidate with
-     * the smallest bounding-box area — i.e. the most specific visual hit.
-     * This avoids picking huge "background" Buttons that visually sit
-     * behind the element the user actually clicked.
+     * Find the clickable target under stage coords (x, y) by walking the
+     * display tree in z-order (topmost-first). Within a container, children
+     * are scanned by getDepth() descending. For MovieClip children,
+     * descendants are probed before the MC's own body, because Flash renders
+     * descendants on top of their parent's shapes. First hit wins — matching
+     * Flash's own click routing, so a fullscreen dialog dimmer correctly
+     * wins over the small widgets behind it.
      */
     public static function findClickedTargetRec(clip:Object, x:Number, y:Number):Object {
-        var candidates:Array = [];
-        collectClickCandidates(clip, x, y, candidates, {}, 0);
-        return pickSmallestCandidate(candidates);
+        return findTopmostHit(clip, x, y, {}, 0);
     }
 
-    private static function collectClickCandidates(clip:Object, x:Number, y:Number, out:Array, visited:Object, depth:Number):Void {
-        if (clip == null || depth > 20) return;
+    private static function findTopmostHit(clip:Object, x:Number, y:Number, visited:Object, depth:Number):Object {
+        if (clip == null || depth > 20) return null;
         var key:String = String(clip._target);
-        if (visited[key]) return;
+        if (visited[key]) return null;
         visited[key] = true;
 
-        var seen:Object = {};
-        // Pass 1: enumerable MovieClip/Button children.
-        var forIn:Array = collectClickableChildren_forIn(clip, seen);
-        for (var i:Number = 0; i < forIn.length; i++) {
-            tryCollectCandidate(forIn[i], x, y, out, visited, depth);
-        }
-        // Pass 2: depth sweep — catches DontEnum Buttons (DefineButton2
-        // symbols placed on the timeline, hidden from for...in).
-        var swept:Array = collectClickableChildren_depthSweep(clip, seen);
-        for (var k:Number = 0; k < swept.length; k++) {
-            tryCollectCandidate(swept[k], x, y, out, visited, depth);
-        }
-    }
-
-    private static function tryCollectCandidate(child:Object, x:Number, y:Number, out:Array, visited:Object, depth:Number):Void {
-        // `_visible = false` elements don't render and don't receive clicks,
-        // so they can't be what the user hit. Pruning here also honors
-        // ancestor visibility — if a parent is hidden, we never descend.
-        // Note: `_alpha = 0` is NOT the same — AS2 routes clicks to
-        // fully-transparent elements (invisible-hitbox pattern), so we
-        // keep those as candidates.
-        if (child._visible == false) return;
-        if (!pointInChildStageBounds(child, x, y)) return;
-        if (child instanceof MovieClip) {
-            collectClickCandidates(child, x, y, out, visited, depth + 1);
-        }
-        if (child instanceof MovieClip || child instanceof Button) {
-            out.push(child);
-        }
-    }
-
-    private static function pickSmallestCandidate(candidates:Array):Object {
-        if (candidates.length == 0) return null;
-        var best:Object = candidates[0];
-        var bestArea:Number = clipArea(best);
-        for (var i:Number = 1; i < candidates.length; i++) {
-            var c:Object = candidates[i];
-            var a:Number = clipArea(c);
-            if (a < bestArea) {
-                best = c;
-                bestArea = a;
+        var children:Array = collectClickableChildren(clip);
+        for (var i:Number = 0; i < children.length; i++) {
+            var child:Object = children[i];
+            // `_visible = false` elements don't render and don't receive
+            // clicks. Pruning here also honors ancestor visibility.
+            // `_alpha = 0` is NOT filtered — AS2 routes clicks to
+            // fully-transparent elements (invisible-hitbox pattern).
+            if (child._visible == false) continue;
+            if (child instanceof MovieClip) {
+                var sub:Object = findTopmostHit(child, x, y, visited, depth + 1);
+                if (sub != null) return sub;
+                if (pointInChildStageBounds(child, x, y)) return child;
+            } else if (child instanceof Button) {
+                if (pointInChildStageBounds(child, x, y)) return child;
             }
         }
-        return best;
+        return null;
     }
 
-    private static function clipArea(clip:Object):Number {
-        var w:Number = Number(clip._width);
-        var h:Number = Number(clip._height);
-        if (isNaN(w) || isNaN(h) || w < 0 || h < 0) return Number.POSITIVE_INFINITY;
-        return w * h;
+    /**
+     * All MovieClip/Button children of `parent`, merged from `for...in` and
+     * a timeline depth sweep (the sweep catches DontEnum DefineButton2
+     * Buttons that for...in hides), sorted by getDepth() descending.
+     * Note: AS2 has no readable `_depth` property — only `getDepth()`.
+     */
+    private static function collectClickableChildren(parent:Object):Array {
+        if (parent == null) return [];
+        var seen:Object = {};
+        var out:Array = [];
+        for (var nm:String in parent) {
+            var fc:Object = parent[nm];
+            if (fc instanceof MovieClip || fc instanceof Button) {
+                seen[nm] = true;
+                out.push(fc);
+            }
+        }
+        if (parent.getInstanceAtDepth != undefined) {
+            for (var d:Number = -16384; d < 0; d++) {
+                var child:Object = parent.getInstanceAtDepth(d);
+                if (child == null) continue;
+                var cname:String = String(child._name);
+                if (seen[cname]) continue;
+                if (child instanceof MovieClip || child instanceof Button) {
+                    seen[cname] = true;
+                    out.push(child);
+                }
+            }
+        }
+        out.sort(function(a, b):Number { return Number(b.getDepth()) - Number(a.getDepth()); });
+        return out;
     }
 
     /**
@@ -1418,55 +1415,6 @@ class Main {
             hitProbe.endFill();
         }
         return hitProbe;
-    }
-
-    /**
-     * Pass 1 collector — enumerable MovieClip/Button children of `parent`
-     * via `for...in`, sorted by _depth descending (topmost first). Marks
-     * names into `seen` so Pass 2 can skip them.
-     *
-     * Fast — this is the only enumeration that runs in the common case,
-     * when the click lands on an enumerable child (or its subtree).
-     */
-    private static function collectClickableChildren_forIn(parent:Object, seen:Object):Array {
-        if (parent == null) return [];
-        var out:Array = [];
-        for (var nm:String in parent) {
-            var fc:Object = parent[nm];
-            if (fc instanceof MovieClip || fc instanceof Button) {
-                seen[nm] = true;
-                out.push(fc);
-            }
-        }
-        out.sortOn("_depth", Array.DESCENDING | Array.NUMERIC);
-        return out;
-    }
-
-    /**
-     * Pass 2 collector — 16k depth sweep via `getInstanceAtDepth`, bounded
-     * to the IDE-placed timeline range [-16384, 0). Catches DontEnum
-     * Buttons (DefineButton2 symbols) that `for...in` hides. Skips names
-     * already in `seen`. Sorted by _depth descending.
-     *
-     * This is the expensive path. Called only when Pass 1 produced no hit
-     * for the current MC, so per-click the sweep runs at most once per
-     * recursion level — and usually not at all.
-     */
-    private static function collectClickableChildren_depthSweep(parent:Object, seen:Object):Array {
-        if (parent == null || parent.getInstanceAtDepth == undefined) return [];
-        var out:Array = [];
-        for (var d:Number = -16384; d < 0; d++) {
-            var child:Object = parent.getInstanceAtDepth(d);
-            if (child == null) continue;
-            var cname:String = String(child._name);
-            if (seen[cname]) continue;
-            if (child instanceof MovieClip || child instanceof Button) {
-                seen[cname] = true;
-                out.push(child);
-            }
-        }
-        out.sortOn("_depth", Array.DESCENDING | Array.NUMERIC);
-        return out;
     }
 
     /**
