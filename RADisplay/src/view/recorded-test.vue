@@ -15,8 +15,9 @@
                     <li
                         v-for="file in files"
                         :key="file"
-                        :class="{ selected: file === selected, 'delete-pending': confirmingDelete === file }"
+                        :class="{ selected: file === selected }"
                         @click="renamingFile === file ? null : (selected = file)"
+                        @contextmenu.prevent="renamingFile === file ? null : openContextMenu(file, $event)"
                     >
                         <input
                             v-if="renamingFile === file"
@@ -28,26 +29,13 @@
                             @blur="confirmRename()"
                             @click.stop
                         />
-                        <span v-else class="file-name">{{ file }}</span>
-                        <template v-if="renamingFile !== file">
+                        <template v-else>
+                            <span class="file-name">{{ file }}</span>
                             <button
-                                v-if="confirmingDelete !== file"
-                                class="file-rename"
-                                @click.stop="askRename(file)"
-                                title="Rename file"
-                            >✎</button>
-                            <button
-                                v-if="confirmingDelete === file"
-                                class="file-delete confirm"
-                                @click.stop="doDelete(file)"
-                                title="Confirm delete"
-                            >Delete?</button>
-                            <button
-                                v-else
-                                class="file-delete"
-                                @click.stop="askDelete(file)"
-                                title="Delete file"
-                            >×</button>
+                                class="file-menu"
+                                @click.stop="openContextMenu(file, $event)"
+                                title="Actions"
+                            >⋮</button>
                         </template>
                     </li>
                 </ul>
@@ -92,13 +80,11 @@
             </template>
             <template v-else>
                 <button
-                    class="play-button"
-                    :class="{ active: running }"
-                    :disabled="running ? false : !canPlay"
-                    @click="running ? stop() : play()"
+                    v-if="running"
+                    class="play-button active"
+                    @click="stop()"
                 >
-                    <span v-if="running">Stop</span>
-                    <span v-else>Play</span>
+                    Stop
                 </button>
                 <button
                     v-if="running"
@@ -118,13 +104,19 @@
                     Step
                 </button>
                 <button
-                    class="record-button"
-                    :class="{ active: recording }"
-                    :disabled="!canRecord"
-                    @click="toggleRecord()"
+                    v-if="recording"
+                    class="record-button active"
+                    @click="stopRecord()"
                 >
-                    <span v-if="recording">Stop Recording</span>
-                    <span v-else>Record</span>
+                    Stop Recording
+                </button>
+                <button
+                    v-if="!recording && !running"
+                    class="record-button"
+                    :disabled="!canRecord"
+                    @click="startNewRecord()"
+                >
+                    New Record
                 </button>
                 <div class="status" :class="statusClass">{{ statusText }}</div>
                 <button
@@ -142,6 +134,41 @@
                     Restart: {{ playbackRestart ? 'Yes' : 'No' }}
                 </button>
             </template>
+        </div>
+
+        <div
+            v-if="contextMenu"
+            class="context-menu-backdrop"
+            @mousedown="closeContextMenu()"
+            @contextmenu.prevent="closeContextMenu()"
+        >
+            <ul
+                class="context-menu"
+                :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+                @mousedown.stop
+                @contextmenu.prevent.stop
+            >
+                <li
+                    class="context-menu-item"
+                    :class="{ disabled: !canRunRatest }"
+                    @click="canRunRatest && contextPlay()"
+                >Play</li>
+                <li
+                    class="context-menu-item"
+                    :class="{ disabled: !canStartRecording }"
+                    @click="canStartRecording && contextContinueRecord()"
+                >Continue Recording</li>
+                <li
+                    class="context-menu-item"
+                    :class="{ disabled: running || recording }"
+                    @click="!(running || recording) && contextRename()"
+                >Rename</li>
+                <li
+                    class="context-menu-item danger"
+                    :class="{ disabled: running || recording }"
+                    @click="!(running || recording) && contextDelete()"
+                >Delete</li>
+            </ul>
         </div>
 
         <div v-if="delayModalOpen" class="hit-test-modal-backdrop" @click.self="cancelDelayModal()">
@@ -374,10 +401,6 @@
         color: #ffffff;
     }
 
-    .file-list li.delete-pending {
-        background: rgba(239, 68, 68, 0.12);
-    }
-
     .file-name {
         flex: 1;
         min-width: 0;
@@ -386,64 +409,76 @@
         white-space: nowrap;
     }
 
-    .file-delete {
+    .file-menu {
         flex-shrink: 0;
         background: transparent;
         color: var(--c-text-muted);
         border: none;
         font-family: var(--font-sans);
-        font-size: 0.8125rem;
-        font-weight: 600;
+        font-size: 1rem;
+        line-height: 1;
+        font-weight: 700;
         padding: 0.125rem 0.375rem;
         border-radius: var(--radius-sm);
         cursor: pointer;
-        opacity: 0;
+        opacity: 0.5;
         transition: opacity var(--duration) var(--ease), background var(--duration) var(--ease), color var(--duration) var(--ease);
     }
 
-    .file-list li:hover .file-delete {
-        opacity: 0.6;
+    .file-list li:hover .file-menu {
+        opacity: 0.85;
     }
 
-    .file-delete:hover {
+    .file-menu:hover {
         opacity: 1 !important;
-        background: rgba(239, 68, 68, 0.2);
+        background: rgba(99, 102, 241, 0.2);
+        color: var(--c-text);
+    }
+
+    .context-menu-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+    }
+
+    .context-menu {
+        position: fixed;
+        list-style: none;
+        margin: 0;
+        padding: 0.25rem;
+        min-width: 180px;
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-md);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+        z-index: 101;
+    }
+
+    .context-menu-item {
+        padding: 0.45rem 0.75rem;
+        font-family: var(--font-sans);
+        font-size: 0.8125rem;
+        color: var(--c-text);
+        cursor: pointer;
+        border-radius: var(--radius-sm);
+        user-select: none;
+    }
+
+    .context-menu-item:hover:not(.disabled) {
+        background: rgba(99, 102, 241, 0.2);
+    }
+
+    .context-menu-item.disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    .context-menu-item.danger {
         color: #fca5a5;
     }
 
-    .file-delete.confirm {
-        opacity: 1;
-        background: #dc2626;
-        color: white;
-    }
-
-    .file-delete.confirm:hover {
-        background: #ef4444;
-    }
-
-    .file-rename {
-        flex-shrink: 0;
-        background: transparent;
-        color: var(--c-text-muted);
-        border: none;
-        font-family: var(--font-sans);
-        font-size: 0.8125rem;
-        font-weight: 600;
-        padding: 0.125rem 0.375rem;
-        border-radius: var(--radius-sm);
-        cursor: pointer;
-        opacity: 0;
-        transition: opacity var(--duration) var(--ease), background var(--duration) var(--ease), color var(--duration) var(--ease);
-    }
-
-    .file-list li:hover .file-rename {
-        opacity: 0.6;
-    }
-
-    .file-rename:hover {
-        opacity: 1 !important;
-        background: rgba(99, 102, 241, 0.2);
-        color: #c7d2fe;
+    .context-menu-item.danger:hover:not(.disabled) {
+        background: rgba(239, 68, 68, 0.18);
     }
 
     .rename-input {
@@ -656,6 +691,7 @@
     const stepLogEl = ref(null);
 
     const recording = ref(false);
+    const continueMode = ref(false);
     const pendingSave = ref(false);
     const saveFilename = ref('');
     const saveInputEl = ref(null);
@@ -670,8 +706,7 @@
     const delayDraft = ref(200);
     const delayInputEl = ref(null);
 
-    const confirmingDelete = ref(null);
-    let confirmingDeleteTimer = null;
+    const contextMenu = ref(null);
 
     const renamingFile = ref(null);
     const renameValue = ref('');
@@ -735,9 +770,13 @@
         scrollLogToBottom();
     });
 
-    Network.addEventListener('recordingStart', () => {
-        steps.value = [];
+    Network.addEventListener('recordingStart', (data) => {
+        // In continue mode keep the previewed steps so the user sees the
+        // existing recording with the new captures appended below.
+        const appending = !!data?.appendTo;
+        if (!appending) steps.value = [];
         recording.value = true;
+        continueMode.value = appending;
         result.value = null;
         lastSaved.value = null;
     });
@@ -747,8 +786,13 @@
             ? `click ${data.path}`
             : `assertTriggered ${data.id}${data.name ? ` (${data.name})` : ''}`;
         const phase = data.kind === 'triggered' ? 'pass' : 'record';
+        // Backend indices restart at 0 for each recording session, so when
+        // appending we offset past whatever was already in the step list.
+        const nextIndex = steps.value.length > 0
+            ? Math.max(...steps.value.map((s) => s.index)) + 1
+            : data.index;
         steps.value.push({
-            index: data.index,
+            index: nextIndex,
             source,
             phase,
         });
@@ -757,10 +801,12 @@
 
     Network.addEventListener('recordingCancel', () => {
         recording.value = false;
+        continueMode.value = false;
     });
 
     Network.addEventListener('recordingSaved', (data) => {
         recording.value = false;
+        continueMode.value = false;
         lastSaved.value = data.file;
     });
 
@@ -779,17 +825,26 @@
         steps.value = response.success ? (response.params.steps ?? []) : [];
     });
 
-    const canPlay = computed(() =>
-        !running.value && !recording.value && selected.value !== null && App.flashConnected,
-    );
-
     const canRecord = computed(() =>
         !running.value && App.flashConnected,
     );
 
+    // Context-menu items act on the right-clicked file rather than
+    // `selected`, so the gates here don't depend on selection.
+    const canRunRatest = computed(() =>
+        !running.value && !recording.value && App.flashConnected,
+    );
+
+    const canStartRecording = computed(() =>
+        !running.value && !recording.value && App.flashConnected,
+    );
+
     const statusText = computed(() => {
         if (!App.flashConnected) return 'Flash Player is not running — reload the game to run recorded tests.';
-        if (recording.value) return 'Recording — click in the game to capture actions. Press Stop when done.';
+        if (recording.value) {
+            if (continueMode.value) return `Recording — appending to ${selected.value}. Press Stop when done.`;
+            return 'Recording — click in the game to capture actions. Press Stop when done.';
+        }
         if (running.value) return 'Playing... game will reset and actions will execute.';
         if (lastSaved.value) return `Saved ${lastSaved.value}`;
         return '';
@@ -828,8 +883,10 @@
         }
     };
 
-    const play = () => {
-        if (!selected.value) return;
+    const play = (file) => {
+        const target = file ?? selected.value;
+        if (!target) return;
+        if (selected.value !== target) selected.value = target;
         running.value = true;
         paused.value = false;
         result.value = null;
@@ -841,7 +898,7 @@
         // actually finishes.
         Network.send({
             command: 'playRatest',
-            params: { file: selected.value },
+            params: { file: target },
         }).catch((err) => console.error('playRatest failed:', err));
     };
 
@@ -900,8 +957,35 @@
         await Network.send({ command: 'saveSettings', params: { settings: next } });
     };
 
-    const toggleRecord = async () => {
-        if (recording.value) {
+    const startNewRecord = async () => {
+        const response = await Network.send({ command: 'startRecording', params: {} });
+        if (!response.success) {
+            result.value = { passed: 0, failed: 1, total: 1, error: response.error ?? 'startRecording failed' };
+        }
+    };
+
+    const startContinueRecord = async (file) => {
+        if (selected.value !== file) selected.value = file;
+        const response = await Network.send({
+            command: 'startRecording',
+            params: { appendTo: file },
+        });
+        if (!response.success) {
+            result.value = { passed: 0, failed: 1, total: 1, error: response.error ?? 'startRecording failed' };
+        }
+    };
+
+    const stopRecord = async () => {
+        if (continueMode.value) {
+            // Filename is locked in by startRecording — save straight to it.
+            const response = await Network.send({
+                command: 'stopRecording',
+                params: {},
+            });
+            if (!response.success) {
+                result.value = { passed: 0, failed: 1, total: 1, error: response.error ?? 'stopRecording failed' };
+            }
+        } else {
             // Open the filename prompt; the recording keeps running until the
             // user confirms or cancels so they can still abandon gracefully.
             const now = new Date();
@@ -912,11 +996,6 @@
             if (saveInputEl.value) {
                 saveInputEl.value.focus();
                 saveInputEl.value.select();
-            }
-        } else {
-            const response = await Network.send({ command: 'startRecording', params: {} });
-            if (!response.success) {
-                result.value = { passed: 0, failed: 1, total: 1, error: response.error ?? 'startRecording failed' };
             }
         }
     };
@@ -945,8 +1024,6 @@
     };
 
     const askRename = async (file) => {
-        if (confirmingDeleteTimer) clearTimeout(confirmingDeleteTimer);
-        confirmingDelete.value = null;
         renameValue.value = file.replace(/\.ratest$/, '');
         renamingFile.value = file;
         await nextTick();
@@ -980,18 +1057,7 @@
         renameValue.value = '';
     };
 
-    const askDelete = (file) => {
-        confirmingDelete.value = file;
-        if (confirmingDeleteTimer) clearTimeout(confirmingDeleteTimer);
-        // Auto-revert after 3s so an abandoned click doesn't stay armed.
-        confirmingDeleteTimer = setTimeout(() => {
-            confirmingDelete.value = null;
-        }, 3000);
-    };
-
     const doDelete = async (file) => {
-        if (confirmingDeleteTimer) clearTimeout(confirmingDeleteTimer);
-        confirmingDelete.value = null;
         const response = await Network.send({
             command: 'deleteRatest',
             params: { file },
@@ -1000,6 +1066,39 @@
             if (selected.value === file) selected.value = null;
             await refreshList();
         }
+    };
+
+    const openContextMenu = (file, event) => {
+        selected.value = file;
+        contextMenu.value = { file, x: event.clientX, y: event.clientY };
+    };
+
+    const closeContextMenu = () => {
+        contextMenu.value = null;
+    };
+
+    const contextPlay = () => {
+        const file = contextMenu.value?.file;
+        closeContextMenu();
+        if (file) play(file);
+    };
+
+    const contextContinueRecord = () => {
+        const file = contextMenu.value?.file;
+        closeContextMenu();
+        if (file) startContinueRecord(file);
+    };
+
+    const contextRename = () => {
+        const file = contextMenu.value?.file;
+        closeContextMenu();
+        if (file) askRename(file);
+    };
+
+    const contextDelete = () => {
+        const file = contextMenu.value?.file;
+        closeContextMenu();
+        if (file) doDelete(file);
     };
 
     App.initialize().then(async () => {

@@ -23,7 +23,17 @@ export function serializeRatest(
     const lines: string[] = [];
     lines.push(`hash ${gameHash}`);
     lines.push("");
+    appendEventLines(lines, events);
+    return lines.join("\n") + "\n";
+}
 
+export function serializeRatestEvents(events: RecordingEvent[]): string {
+    const lines: string[] = [];
+    appendEventLines(lines, events);
+    return lines.join("\n") + "\n";
+}
+
+function appendEventLines(lines: string[], events: RecordingEvent[]): void {
     // No per-step pauses: inter-step timing is handled by the
     // global `playbackDelayMs` setting, applied by the runner between
     // every step. Keeping the recording itself pause-free means the
@@ -39,6 +49,4 @@ export function serializeRatest(
                 break;
         }
     }
-
-    return lines.join("\n") + "\n";
 }
