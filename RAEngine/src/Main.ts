@@ -2701,15 +2701,15 @@ async function handleApiRequest(
         case "playRatest": {
             // On every exit path we must broadcast ratestEnd so the UI
             // can reset its running state. The client can't rely on this
-            // request's HTTP response — long tests exceed the network
-            // layer's 30s request timeout, so the response may resolve
-            // with an error while the run is still in progress.
+            // request's HTTP response — long recorded test runs exceed the
+            // network layer's 30s request timeout, so the response may
+            // resolve with an error while the run is still in progress.
             const earlyFail = (error: string): { success: false; error: string } => {
                 broadcastToDevtools("ratestEnd", { passed: 0, failed: 1, total: 1, error, aborted: false });
                 return { success: false, error };
             };
             if (!AppData.gameHash) return earlyFail("No game loaded");
-            if (!flashConnected) return earlyFail("Flash Player is not running — reload the game to run tests");
+            if (!flashConnected) return earlyFail("Flash Player is not running — reload the game to run recorded tests");
             const name = String(input.params.file || "");
             if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
                 return earlyFail(`Invalid .ratest filename: ${name}`);

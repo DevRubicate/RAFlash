@@ -1,7 +1,7 @@
 <template>
     <div class="container" v-if="App.ready">
         <div class="header">
-            <div class="title">Tests</div>
+            <div class="title">Recorded Test</div>
             <div class="hash" v-if="gameHash">{{ gameHash }}</div>
             <div class="hash-missing" v-else>No game loaded</div>
         </div>
@@ -699,7 +699,7 @@
     // Completion signal: the engine emits this for every playRatest
     // attempt — successful runs, failures, aborts, and early errors.
     // UI state flips here (not on the playRatest HTTP response) because
-    // long tests exceed the 30s request timeout.
+    // long recorded test runs exceed the 30s request timeout.
     Network.addEventListener('ratestEnd', (data) => {
         const res = {
             passed: data.passed ?? 0,
@@ -788,7 +788,7 @@
     );
 
     const statusText = computed(() => {
-        if (!App.flashConnected) return 'Flash Player is not running — reload the game to run tests.';
+        if (!App.flashConnected) return 'Flash Player is not running — reload the game to run recorded tests.';
         if (recording.value) return 'Recording — click in the game to capture actions. Press Stop when done.';
         if (running.value) return 'Playing... game will reset and actions will execute.';
         if (lastSaved.value) return `Saved ${lastSaved.value}`;

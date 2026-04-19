@@ -30,7 +30,7 @@ export default defineConfig({
         'settings': resolve(__dirname, 'src/html/settings.html'),
         'resource-explorer': resolve(__dirname, 'src/html/resource-explorer.html'),
         'stage-viewer': resolve(__dirname, 'src/html/stage-viewer.html'),
-        'tests': resolve(__dirname, 'src/html/tests.html'),
+        'recorded-test': resolve(__dirname, 'src/html/recorded-test.html'),
       },
     },
   },
