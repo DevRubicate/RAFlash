@@ -86,7 +86,8 @@
                     <li
                         v-for="{ step, originalIndex } in displayedSteps"
                         :key="step.uid"
-                        :class="{ summary: step.isSummary }"
+                        :ref="(el) => { if (el && step.uid === currentPlayingUid) playingRowEl = el }"
+                        :class="{ summary: step.isSummary, playing: step.uid === currentPlayingUid }"
                     >
                         <span class="step-num">{{ originalIndex + 1 }}</span>
                         <span class="step-source">
@@ -481,6 +482,11 @@
         padding-top: 0.5rem;
         border-top: 1px solid var(--c-border);
         font-weight: 600;
+    }
+
+    .step-log li.playing {
+        background: var(--c-primary-soft);
+        box-shadow: inset 2px 0 0 var(--c-primary);
     }
 
     .step-log li.summary .step-num { visibility: hidden; }
@@ -984,6 +990,13 @@
     // (to "just after the now-running step") and each time a capture is
     // inserted (so multiple captures at the same pause stack in order).
     let rerecordInsertPosition = 0;
+    // uid of the step currently executing. Used to highlight the row and
+    // scroll it into view during rerecord, where the full list exists
+    // up-front and nothing else would indicate which step is live.
+    const currentPlayingUid = ref(null);
+    // Last-seen DOM node for the playing row, populated via :ref in the
+    // template. Lets us call scrollIntoView without re-querying.
+    let playingRowEl = null;
     // The file the current `steps` belong to, if any. Set by previewRatest
     // (selecting a file), by startContinueRecord (explicit pre-load),
     // and by saveRatest (after a successful save). null means a brand-new
@@ -1170,18 +1183,26 @@
         });
     };
 
+    // Scroll the currently-playing row into view. The :ref callback that
+    // tracks playingRowEl fires on re-render, so nextTick guarantees
+    // the node for the step we just marked playing actually exists
+    // before we try to scroll to it.
+    const scrollPlayingIntoView = async () => {
+        await nextTick();
+        if (playingRowEl && typeof playingRowEl.scrollIntoView === 'function') {
+            playingRowEl.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+        }
+    };
+
     Network.addEventListener('ratestStart', (data) => {
-        // Rerecord preserves the loaded steps — those ARE the scaffold
-        // the playback iterates over, and they'll be mutated in place
-        // with insertions. For regular playback we clear and let
-        // ratestStep events repopulate from scratch.
+        // The initiating play()/rerecord() call has already pre-loaded
+        // the steps and snapshotted playbackUids so the full script is
+        // visible before the first ratestStep arrives. All we do here
+        // is flip the rerecord flag so the insert logic knows the
+        // difference.
         if (data?.rerecord) {
             rerecording.value = true;
-            playbackUids.value = steps.value.map((s) => s.uid);
-            rerecordInsertPosition = 0;
-            return;
         }
-        steps.value = [];
     });
 
     // Completion signal: the engine emits this for every playRatest
@@ -1208,41 +1229,31 @@
             playbackUids.value = [];
             rerecordInsertPosition = 0;
         }
+        currentPlayingUid.value = null;
+        playingRowEl = null;
     });
 
     Network.addEventListener('ratestStep', (data) => {
         // The engine fires two events per step — `start` before running,
-        // then `pass`/`fail`/`ok` (with durationMs/error) after. On the
-        // first we append, on the second we update in place. play() wipes
-        // the log before kickoff so indices always begin at 0.
+        // then `pass`/`fail`/`ok` (with durationMs/error) after. Backend
+        // indices refer to the scaffold captured at playback start;
+        // local positions may drift during rerecord as captures get
+        // spliced in, so we always route updates through the uid
+        // snapshot set up by play()/rerecord().
         const i = data.index;
         if (typeof i !== 'number' || i < 0) return;
         const { index, ...rest } = data;
         void index;
-        if (rerecording.value) {
-            // Backend indices refer to the playback scaffold at start;
-            // local positions may have shifted because of inserts. Route
-            // the update through the uid snapshot so the right row
-            // updates even after splices.
-            const targetUid = playbackUids.value[i];
-            if (targetUid !== undefined) {
-                const pos = steps.value.findIndex((s) => s.uid === targetUid);
-                if (pos >= 0) {
-                    steps.value[pos] = { ...steps.value[pos], ...rest };
-                    if (rest.phase === 'start') {
-                        rerecordInsertPosition = pos + 1;
-                    }
-                }
-            }
-            scrollLogToBottom();
-            return;
+        const targetUid = playbackUids.value[i];
+        if (targetUid === undefined) return;
+        const pos = steps.value.findIndex((s) => s.uid === targetUid);
+        if (pos < 0) return;
+        steps.value[pos] = { ...steps.value[pos], ...rest };
+        if (rest.phase === 'start') {
+            currentPlayingUid.value = targetUid;
+            if (rerecording.value) rerecordInsertPosition = pos + 1;
+            scrollPlayingIntoView();
         }
-        if (i < steps.value.length) {
-            steps.value[i] = { ...steps.value[i], ...rest };
-        } else {
-            steps.value.push(newStep(rest));
-        }
-        scrollLogToBottom();
     });
 
     Network.addEventListener('recordingStart', (data) => {
@@ -1418,13 +1429,47 @@
         }
     };
 
-    const play = (file) => {
+    // Shared prelude for play() and rerecord(): ensure `steps` holds the
+    // on-disk script with stable uids, snapshot those uids so the
+    // backend's ratestStep indices can be mapped back to rows even if
+    // the list mutates during rerecord, and reset the highlight state.
+    // Returns true on success.
+    const preparePlayback = async (target) => {
+        if (isEphemeral(target)) {
+            showError(`Save "${displayName(target)}" before playing it.`);
+            return false;
+        }
+        if (loadedFromFile.value !== target || selected.value !== target) {
+            const previewResp = await Network.send({
+                command: 'previewRatest',
+                params: { file: target },
+            });
+            if (!previewResp.success) {
+                showError(`Couldn't load ${target}: ${previewResp.error ?? 'unknown error'}`);
+                return false;
+            }
+            stashCurrentIfDirty();
+            steps.value = (previewResp.params.steps ?? []).map((s) => newStep({
+                source: s.source,
+                phase: 'start',
+            }));
+            loadedFromFile.value = target;
+            selected.value = target;
+            unsavedRecording.value = false;
+        }
+        playbackUids.value = steps.value.map((s) => s.uid);
+        rerecordInsertPosition = 0;
+        currentPlayingUid.value = null;
+        playingRowEl = null;
+        return true;
+    };
+
+    const play = async (file) => {
         const target = file ?? selected.value;
         if (!target) return;
-        if (selected.value !== target) selected.value = target;
+        if (!(await preparePlayback(target))) return;
         running.value = true;
         paused.value = false;
-        steps.value = [];
         // Fire-and-forget: completion is signalled via the 'ratestEnd'
         // event, because the network layer's 30s request timeout would
         // otherwise resolve this promise long before a long test run
@@ -1438,32 +1483,7 @@
     const rerecord = async (file) => {
         const target = file ?? selected.value;
         if (!target) return;
-        // Ephemerals have no on-disk content to play back — guard to
-        // match contextPlay's behavior.
-        if (isEphemeral(target)) {
-            showError(`Save "${displayName(target)}" before rerecording it.`);
-            return;
-        }
-        // Pre-load the script so its steps (with stable uids) are present
-        // in the view before playback starts broadcasting ratestStart.
-        // Matches the startContinueRecord loading pattern.
-        if (loadedFromFile.value !== target || selected.value !== target) {
-            const previewResp = await Network.send({
-                command: 'previewRatest',
-                params: { file: target },
-            });
-            if (!previewResp.success) {
-                showError(`Couldn't load ${target}: ${previewResp.error ?? 'unknown error'}`);
-                return;
-            }
-            steps.value = (previewResp.params.steps ?? []).map((s) => newStep({
-                source: s.source,
-                phase: 'start',
-            }));
-            loadedFromFile.value = target;
-            selected.value = target;
-            unsavedRecording.value = false;
-        }
+        if (!(await preparePlayback(target))) return;
         running.value = true;
         paused.value = false;
         Network.send({
