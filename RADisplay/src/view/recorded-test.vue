@@ -84,24 +84,24 @@
                 </div>
                 <ul class="step-log" ref="stepLogEl">
                     <li
-                        v-for="(step, idx) in steps"
+                        v-for="{ step, originalIndex } in displayedSteps"
                         :key="step.uid"
                         :class="{ summary: step.isSummary }"
                     >
-                        <span class="step-num">{{ idx + 1 }}</span>
+                        <span class="step-num">{{ originalIndex + 1 }}</span>
                         <span class="step-source">
                             {{ step.source }}<span class="step-label" v-if="step.label"> — {{ step.label }}</span>
                         </span>
                         <span class="step-actions" v-if="!step.isSummary && canEditSteps">
                             <button
                                 class="step-action"
-                                :disabled="idx === 0"
+                                :disabled="originalIndex === 0"
                                 @click="moveStep(step.uid, -1)"
                                 title="Move up"
                             >▲</button>
                             <button
                                 class="step-action"
-                                :disabled="idx >= steps.length - 1 || steps[idx + 1]?.isSummary"
+                                :disabled="originalIndex >= steps.length - 1 || steps[originalIndex + 1]?.isSummary"
                                 @click="moveStep(step.uid, 1)"
                                 title="Move down"
                             >▼</button>
@@ -119,6 +119,19 @@
                         <div class="step-error" v-if="step.error">{{ step.error }}</div>
                     </li>
                 </ul>
+                <div class="step-filter-row">
+                    <input
+                        class="step-filter"
+                        v-model="filterText"
+                        placeholder="Filter steps..."
+                    />
+                    <button
+                        v-if="filterText"
+                        class="step-filter-clear"
+                        @click="filterText = ''"
+                        title="Clear filter"
+                    >✕</button>
+                </div>
             </div>
         </div>
 
@@ -209,6 +222,11 @@
                     :class="{ disabled: !canStartRecording }"
                     @click="canStartRecording && contextContinueRecord()"
                 >Continue Recording</li>
+                <li
+                    class="context-menu-item"
+                    :class="{ disabled: !canStartRecording }"
+                    @click="canStartRecording && contextRerecord()"
+                >Rerecord</li>
                 <li
                     class="context-menu-item"
                     :class="{ disabled: running || recording }"
@@ -403,6 +421,47 @@
         padding: 0.25rem;
         overflow-y: auto;
         flex: 1;
+    }
+
+    .step-filter-row {
+        display: flex;
+        gap: 0.25rem;
+        align-items: stretch;
+        padding: 0.3rem 0.4rem;
+        border-top: 1px solid var(--c-border);
+        background: var(--c-surface);
+    }
+
+    .step-filter {
+        flex: 1;
+        min-width: 0;
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        padding: 0.3rem 0.5rem;
+        background: var(--c-bg);
+        color: var(--c-text);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-sm);
+        outline: none;
+    }
+
+    .step-filter:focus {
+        border-color: var(--c-primary);
+    }
+
+    .step-filter-clear {
+        background: transparent;
+        color: var(--c-text-muted);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-sm);
+        font-size: 0.75rem;
+        padding: 0 0.5rem;
+        cursor: pointer;
+    }
+
+    .step-filter-clear:hover {
+        color: var(--c-text);
+        background: var(--c-primary-soft);
     }
 
     .step-log li {
@@ -892,7 +951,39 @@
     let nextStepUid = 1;
     const newStep = (props) => ({ uid: nextStepUid++, ...props });
 
+    // Substring filter applied to the step log. Case-insensitive, matches
+    // against source and label. Empty string means no filtering. Survives
+    // file-switches intentionally — the user might be hunting for a
+    // pattern across recordings.
+    const filterText = ref('');
+    const displayedSteps = computed(() => {
+        const q = filterText.value.trim().toLowerCase();
+        const tagged = steps.value.map((step, originalIndex) => ({ step, originalIndex }));
+        if (!q) return tagged;
+        return tagged.filter(({ step }) => {
+            // Summary rows are runtime status, not editable content; keep
+            // them visible regardless so the user always sees the outcome.
+            if (step.isSummary) return true;
+            const haystack = `${step.source ?? ''} ${step.label ?? ''}`.toLowerCase();
+            return haystack.includes(q);
+        });
+    });
+
     const recording = ref(false);
+    // Rerecord mode: plays back an existing file while also capturing
+    // new events (clicks during pause, unexpected achievements) and
+    // splicing them into the local `steps` view at the current playback
+    // position. The user then clicks Save to commit the modifications.
+    const rerecording = ref(false);
+    // Uid snapshot of `steps` at rerecord start, indexed by the backend
+    // playback's step index. Lets us map a ratestStep(i) event to the
+    // right local row after insertions have shifted frontend positions.
+    const playbackUids = ref([]);
+    // Frontend index where the next captured line during rerecord should
+    // land. Updated each time the backend broadcasts a step-start event
+    // (to "just after the now-running step") and each time a capture is
+    // inserted (so multiple captures at the same pause stack in order).
+    let rerecordInsertPosition = 0;
     // The file the current `steps` belong to, if any. Set by previewRatest
     // (selecting a file), by startContinueRecord (explicit pre-load),
     // and by saveRatest (after a successful save). null means a brand-new
@@ -1079,10 +1170,17 @@
         });
     };
 
-    Network.addEventListener('ratestStart', () => {
-        // Fresh log for the incoming run. Works for both locally-initiated
-        // playback (play() already cleared) and runs kicked off by another
-        // devtools client we're mirroring.
+    Network.addEventListener('ratestStart', (data) => {
+        // Rerecord preserves the loaded steps — those ARE the scaffold
+        // the playback iterates over, and they'll be mutated in place
+        // with insertions. For regular playback we clear and let
+        // ratestStep events repopulate from scratch.
+        if (data?.rerecord) {
+            rerecording.value = true;
+            playbackUids.value = steps.value.map((s) => s.uid);
+            rerecordInsertPosition = 0;
+            return;
+        }
         steps.value = [];
     });
 
@@ -1105,6 +1203,11 @@
         scrollLogToBottom();
         running.value = false;
         paused.value = false;
+        if (rerecording.value) {
+            rerecording.value = false;
+            playbackUids.value = [];
+            rerecordInsertPosition = 0;
+        }
     });
 
     Network.addEventListener('ratestStep', (data) => {
@@ -1116,6 +1219,24 @@
         if (typeof i !== 'number' || i < 0) return;
         const { index, ...rest } = data;
         void index;
+        if (rerecording.value) {
+            // Backend indices refer to the playback scaffold at start;
+            // local positions may have shifted because of inserts. Route
+            // the update through the uid snapshot so the right row
+            // updates even after splices.
+            const targetUid = playbackUids.value[i];
+            if (targetUid !== undefined) {
+                const pos = steps.value.findIndex((s) => s.uid === targetUid);
+                if (pos >= 0) {
+                    steps.value[pos] = { ...steps.value[pos], ...rest };
+                    if (rest.phase === 'start') {
+                        rerecordInsertPosition = pos + 1;
+                    }
+                }
+            }
+            scrollLogToBottom();
+            return;
+        }
         if (i < steps.value.length) {
             steps.value[i] = { ...steps.value[i], ...rest };
         } else {
@@ -1142,11 +1263,24 @@
     Network.addEventListener('recordingLine', (data) => {
         const source = String(data?.source ?? '');
         if (!source) return;
-        steps.value.push(newStep({
+        const fresh = newStep({
             source,
             label: data?.label ?? null,
             phase: 'record',
-        }));
+        });
+        if (rerecording.value) {
+            // Splice into the scaffold at the current playback position
+            // (set by the last step-start we saw). Advance the insert
+            // marker so back-to-back captures keep their capture order
+            // instead of reversing.
+            const pos = Math.min(rerecordInsertPosition, steps.value.length);
+            const next = steps.value.slice();
+            next.splice(pos, 0, fresh);
+            steps.value = next;
+            rerecordInsertPosition = pos + 1;
+        } else {
+            steps.value.push(fresh);
+        }
         unsavedRecording.value = true;
         scrollLogToBottom();
     });
@@ -1299,6 +1433,47 @@
             command: 'playRatest',
             params: { file: target, achievementsEnabled: achievementsMode.value },
         }).catch((err) => console.error('playRatest failed:', err));
+    };
+
+    const rerecord = async (file) => {
+        const target = file ?? selected.value;
+        if (!target) return;
+        // Ephemerals have no on-disk content to play back — guard to
+        // match contextPlay's behavior.
+        if (isEphemeral(target)) {
+            showError(`Save "${displayName(target)}" before rerecording it.`);
+            return;
+        }
+        // Pre-load the script so its steps (with stable uids) are present
+        // in the view before playback starts broadcasting ratestStart.
+        // Matches the startContinueRecord loading pattern.
+        if (loadedFromFile.value !== target || selected.value !== target) {
+            const previewResp = await Network.send({
+                command: 'previewRatest',
+                params: { file: target },
+            });
+            if (!previewResp.success) {
+                showError(`Couldn't load ${target}: ${previewResp.error ?? 'unknown error'}`);
+                return;
+            }
+            steps.value = (previewResp.params.steps ?? []).map((s) => newStep({
+                source: s.source,
+                phase: 'start',
+            }));
+            loadedFromFile.value = target;
+            selected.value = target;
+            unsavedRecording.value = false;
+        }
+        running.value = true;
+        paused.value = false;
+        Network.send({
+            command: 'playRatest',
+            params: {
+                file: target,
+                achievementsEnabled: achievementsMode.value,
+                rerecordMode: true,
+            },
+        }).catch((err) => console.error('rerecord failed:', err));
     };
 
     const stop = async () => {
@@ -1678,6 +1853,12 @@
         const file = contextMenu.value?.file;
         closeContextMenu();
         if (file) startContinueRecord(file);
+    };
+
+    const contextRerecord = () => {
+        const file = contextMenu.value?.file;
+        closeContextMenu();
+        if (file) rerecord(file);
     };
 
     const contextRename = () => {

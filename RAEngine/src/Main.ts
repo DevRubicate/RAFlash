@@ -215,6 +215,29 @@ JSONDiff.watch(
     }
 );
 
+// Asset-state transitions to TRIGGERED during a recording or rerecord
+// session become `achievement <id>` splices in the captured script.
+// We use a watcher rather than inspecting fullDiff because the watcher
+// runs on the raw client diff — it fires whenever the firmware reports
+// a TRIGGERED transition, even if the backend's cached state was
+// already TRIGGERED (which happens on rerecord when a game has been
+// played before and performResetGame didn't clear the firmware's view
+// in time to produce a net state change).
+JSONDiff.watch('assets/*/state', (segments) => {
+    const asset = segments[segments.length - 2] as { id?: number; name?: string; state?: string } | undefined;
+    if (!asset || asset.state !== "TRIGGERED") return;
+    if (!recordingActive && !rerecordActive) return;
+    if (!recordingAchievementsEnabled) return;
+    if (typeof asset.id !== "number") return;
+    if (rerecordActive && rerecordExpectedAchievementIds.has(asset.id)) {
+        return;
+    }
+    broadcastToDevtools("recordingLine", {
+        source: `achievement ${asset.id}`,
+        label: asset.name ?? null,
+    });
+});
+
 const DEFAULT_PORT = 18080;
 
 let HTTP_PORT = DEFAULT_PORT;
@@ -1664,6 +1687,13 @@ let recordingActive = false;
 // lines. Set per-recording via the `achievementsEnabled` param of
 // startRecording. Defaults to true to match the UI's default toggle state.
 let recordingAchievementsEnabled = true;
+// Rerecord mode: a playback-with-overlay-capture run. Distinct from
+// recordingActive because click capture is gated on the playback pause
+// state (only paused clicks become recordingLine events) and asset
+// triggers only emit lines when they're NOT already asserted by an
+// existing `achievement <id>` step in the script being played.
+let rerecordActive = false;
+let rerecordExpectedAchievementIds: Set<number | string> = new Set();
 
 let playbackAbort = false;
 let playbackPaused = false;
@@ -2725,6 +2755,10 @@ async function handleApiRequest(
             // in the script are no-ops (skipped, not asserted). Defaults
             // to true if absent so external callers get assertion behavior.
             const achievementsEnabled = (input.params as { achievementsEnabled?: boolean })?.achievementsEnabled !== false;
+            // Rerecord overlays capture onto playback — clicks during
+            // pause and unexpected achievement triggers get spliced into
+            // the script as recordingLine events.
+            const rerecordMode = !!(input.params as { rerecordMode?: boolean })?.rerecordMode;
 
             let parsed: ReturnType<typeof parseRatest>;
             try {
@@ -2757,11 +2791,34 @@ async function handleApiRequest(
                 sendToFirmware("editData", { changes: stateDiff }, 0).catch(() => {});
             }
 
-            emitLog("ratest", "info", `Running ${name} (${parsed.steps.length} steps)`);
-            broadcastToDevtools("ratestStart", { file: name, total: parsed.steps.length });
+            emitLog("ratest", "info", `Running ${name} (${parsed.steps.length} steps)${rerecordMode ? " — rerecord" : ""}`);
+            broadcastToDevtools("ratestStart", { file: name, total: parsed.steps.length, rerecord: rerecordMode });
             playbackAbort = false;
             playbackPaused = false;
             playbackAdvance = false;
+
+            // Rerecord setup: enable click capture on the firmware (gated
+            // backend-side to pause-only), and pre-compute the set of
+            // already-asserted achievement IDs so the trigger tap can
+            // distinguish expected from unexpected fires.
+            if (rerecordMode) {
+                rerecordActive = true;
+                recordingAchievementsEnabled = achievementsEnabled;
+                rerecordExpectedAchievementIds = new Set();
+                for (const s of parsed.steps) {
+                    if (s.kind === "achievement") {
+                        rerecordExpectedAchievementIds.add(s.value as number | string);
+                    }
+                }
+                const rec = await sendToFirmware("setRecording", { recording: true });
+                if (!rec.success) {
+                    rerecordActive = false;
+                    rerecordExpectedAchievementIds = new Set();
+                    const error = `setRecording: ${rec.error ?? "unknown error"}`;
+                    broadcastToDevtools("ratestEnd", { passed: 0, failed: 1, total: 1, error, aborted: false });
+                    return { success: false, error };
+                }
+            }
 
             if (settings.playbackRestart) {
                 const resetResp = await performResetGame();
@@ -2901,6 +2958,23 @@ async function handleApiRequest(
             playbackAbort = false;
             playbackPaused = false;
             playbackAdvance = false;
+            // Let any late asset-trigger events from the final steps
+            // settle into recordingLine splices before tearing down
+            // capture. Without this grace window, an achievement that
+            // fires a few hundred milliseconds after the last click
+            // gets dropped because rerecordActive flips off first.
+            // Skip on abort — the user pressed Stop and wants it now.
+            if (rerecordMode && !aborted) {
+                await new Promise((r) => setTimeout(r, 1000));
+            }
+            // Tear down rerecord capture. We turn firmware click reporting
+            // back off; the flag gates the backend-side click handler too,
+            // so future stray click events don't leak into recordingLine.
+            if (rerecordMode) {
+                rerecordActive = false;
+                rerecordExpectedAchievementIds = new Set();
+                sendToFirmware("setRecording", { recording: false }).catch(() => {});
+            }
             const passed = results.filter((r) => r.passed).length;
             const failed = results.filter((r) => !r.passed).length;
             const firstError = results.find((r) => !r.passed);
@@ -3755,7 +3829,11 @@ function handleFirmwareData(data: string): void {
                         x: parsed.data.x,
                         y: parsed.data.y,
                     });
-                } else if (recordingActive && parsed.data?.kind === "click") {
+                } else if (parsed.data?.kind === "click" && (recordingActive || (rerecordActive && playbackPaused))) {
+                    // Capture clicks during a plain recording session
+                    // OR while rerecord playback is paused — pause is the
+                    // user's signal that a manual interaction should be
+                    // spliced into the recording at the current position.
                     if (typeof parsed.data.path === "string") {
                         // Emit canonical ratest lines: a `wait` so playback
                         // polls until the element exists, then the `click`.
@@ -3794,30 +3872,12 @@ function handleFirmwareData(data: string): void {
                         UserProfile.saveUser().catch(e => console.error("Failed to save user profile:", e));
                     }
 
-                    // Tap triggered-state transitions for the active recording.
-                    // Separate from the UserProfile loop so recording works
-                    // regardless of profile state. Gated on the per-session
-                    // achievements toggle so the user can record interaction
-                    // sequences without polluting the file with assertions.
-                    if (recordingActive && recordingAchievementsEnabled && fullDiff.edited) {
-                        for (const [path, value] of fullDiff.edited) {
-                            const match = path.match(/^assets\/(\d+)\/state$/);
-                            if (match && value === "TRIGGERED") {
-                                const index = parseInt(match[1]);
-                                const asset = AppData.data.assets[index];
-                                if (asset) {
-                                    // Emit `achievement <id>` — semantics:
-                                    // playback fires a 5s background watcher
-                                    // and reports pass/fail at end of test
-                                    // without blocking the timeline.
-                                    broadcastToDevtools("recordingLine", {
-                                        source: `achievement ${asset.id}`,
-                                        label: asset.name ?? null,
-                                    });
-                                }
-                            }
-                        }
-                    }
+                    // Note: asset-state → TRIGGERED captures for recording
+                    // and rerecord are handled by the global JSONDiff
+                    // watcher registered at module top. It fires on the
+                    // raw client diff, so it catches transitions even when
+                    // AppData's cached state already matched (a case that
+                    // bites rerecord specifically).
 
                     // Broadcast fullDiff to all devtools clients
                     broadcastToDevtools("editData", fullDiff);
