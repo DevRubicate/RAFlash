@@ -31,7 +31,10 @@
                     <li
                         v-for="file in files"
                         :key="file"
-                        :class="{ selected: file === selected }"
+                        :class="{
+                            selected: file === selected,
+                            'pending-rename': isPendingRename(file),
+                        }"
                         @click="renamingFile === file ? null : (selected = file)"
                         @contextmenu.prevent="renamingFile === file ? null : openContextMenu(file, $event)"
                     >
@@ -46,7 +49,10 @@
                             @click.stop
                         />
                         <template v-else>
-                            <span class="file-name">{{ file }}</span>
+                            <span
+                                class="file-name"
+                                :title="isPendingRename(file) ? `Pending rename from ${file}` : file"
+                            >{{ displayName(file) }}</span>
                             <button
                                 class="file-menu"
                                 @click.stop="openContextMenu(file, $event)"
@@ -98,9 +104,9 @@
                 <button
                     v-if="!recording && !running"
                     class="save-button"
-                    :disabled="!unsavedRecording"
+                    :disabled="!canSave"
                     @click="openSavePrompt()"
-                    title="Persist the in-memory recording to disk"
+                    title="Persist changes for the current selection (and any in-memory recording) to disk"
                 >
                     Save
                 </button>
@@ -416,6 +422,10 @@
     .file-list li.selected {
         background: rgba(99, 102, 241, 0.25);
         color: #ffffff;
+    }
+
+    .file-list li.pending-rename .file-name {
+        font-weight: 700;
     }
 
     .file-name {
@@ -742,6 +752,22 @@
 
     const contextMenu = ref(null);
 
+    // Pending renames queued by the user; flushed only when the affected
+    // file is selected and the user clicks Save. Keyed by the on-disk
+    // filename, never the display name. Deletes are NOT pending — they hit
+    // disk immediately because there's no row left to "select to save".
+    const pendingRenames = ref({});
+
+    const displayName = (file) => pendingRenames.value[file] || file;
+    const isPendingRename = (file) => Object.prototype.hasOwnProperty.call(pendingRenames.value, file);
+    const selectedHasPendingRename = computed(() =>
+        selected.value !== null && isPendingRename(selected.value),
+    );
+    // Save is per-file: it covers the in-memory recording (which has its
+    // own implicit focus) plus the pending rename of the selected row.
+    // Other rows' pending renames stay queued until those rows are selected.
+    const canSave = computed(() => unsavedRecording.value || selectedHasPendingRename.value);
+
     const renamingFile = ref(null);
     const renameValue = ref('');
     const renameInputEl = ref(null);
@@ -895,10 +921,17 @@
             return 'Recording — click in the game to capture actions. Press Stop when done.';
         }
         if (running.value) return 'Playing... game will reset and actions will execute.';
-        if (unsavedRecording.value) {
-            return recordingSource.value
-                ? `Unsaved recording — Save to overwrite ${recordingSource.value}.`
-                : 'Unsaved recording — click Save to persist.';
+        if (canSave.value) {
+            const bits = [];
+            if (unsavedRecording.value) {
+                bits.push(recordingSource.value
+                    ? `recording for ${recordingSource.value}`
+                    : 'recording');
+            }
+            if (selectedHasPendingRename.value) {
+                bits.push(`rename ${selected.value} → ${pendingRenames.value[selected.value]}`);
+            }
+            return `Pending: ${bits.join(', ')}. Click Save to commit.`;
         }
         if (lastSaved.value) return `Saved ${lastSaved.value}`;
         return '';
@@ -906,7 +939,7 @@
 
     const statusClass = computed(() => {
         if (recording.value) return 'recording';
-        if (unsavedRecording.value) return 'unsaved';
+        if (canSave.value) return 'unsaved';
         return '';
     });
 
@@ -1040,33 +1073,59 @@
     };
 
     const openSavePrompt = async () => {
-        if (!unsavedRecording.value) return;
-        if (recordingSource.value) {
-            // Continue mode: filename is locked in to the original file.
-            await persistRecording();
+        if (!canSave.value) return;
+        // A fresh recording with no source file needs a name before we can
+        // flush. A pending rename alone doesn't need a prompt.
+        if (unsavedRecording.value && !recordingSource.value) {
+            const now = new Date();
+            const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+            saveFilename.value = `recording-${stamp}`;
+            pendingSave.value = true;
+            await nextTick();
+            if (saveInputEl.value) {
+                saveInputEl.value.focus();
+                saveInputEl.value.select();
+            }
             return;
         }
-        const now = new Date();
-        const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-        saveFilename.value = `recording-${stamp}`;
-        pendingSave.value = true;
-        await nextTick();
-        if (saveInputEl.value) {
-            saveInputEl.value.focus();
-            saveInputEl.value.select();
-        }
+        await saveSelected();
     };
 
-    const persistRecording = async (filename) => {
-        const params = filename ? { filename } : {};
-        const response = await Network.send({ command: 'saveRecording', params });
-        if (response.success) {
-            await refreshList();
-            selected.value = response.params.file;
-        } else {
-            result.value = { passed: 0, failed: 1, total: 1, error: response.error ?? 'saveRecording failed' };
+    // Per-file save: flush the in-memory recording (which has its own
+    // implicit focus) and the pending rename of the currently selected
+    // row. Pending renames for OTHER rows stay queued until those rows
+    // are selected and Save is clicked.
+    //
+    // Order matters when both apply: the recording targets the original
+    // on-disk filename, so save it before renaming.
+    const saveSelected = async (recordingFilename) => {
+        if (unsavedRecording.value) {
+            const params = recordingFilename ? { filename: recordingFilename } : {};
+            const resp = await Network.send({ command: 'saveRecording', params });
+            if (!resp.success) {
+                result.value = { passed: 0, failed: 1, total: 1, error: resp.error ?? 'saveRecording failed' };
+                return;
+            }
         }
-        return response;
+
+        if (selected.value && isPendingRename(selected.value)) {
+            const from = selected.value;
+            const to = pendingRenames.value[from];
+            const resp = await Network.send({
+                command: 'renameRatest',
+                params: { from, to },
+            });
+            if (resp.success) {
+                const next = { ...pendingRenames.value };
+                delete next[from];
+                pendingRenames.value = next;
+                selected.value = to;
+            } else {
+                result.value = { passed: 0, failed: 1, total: 1, error: `rename ${from} → ${to}: ${resp.error ?? 'failed'}` };
+            }
+        }
+
+        await refreshList();
     };
 
     const confirmSave = async () => {
@@ -1074,7 +1133,7 @@
         if (!name) return;
         pendingSave.value = false;
         saveFilename.value = '';
-        await persistRecording(name);
+        await saveSelected(name);
     };
 
     const cancelSave = () => {
@@ -1085,7 +1144,9 @@
     };
 
     const askRename = async (file) => {
-        renameValue.value = file.replace(/\.ratest$/, '');
+        // Seed from the pending name so re-renaming an already-renamed file
+        // shows what the user last typed, not the stale on-disk name.
+        renameValue.value = displayName(file).replace(/\.ratest$/, '');
         renamingFile.value = file;
         await nextTick();
         if (renameInputEl.value) {
@@ -1094,7 +1155,7 @@
         }
     };
 
-    const confirmRename = async () => {
+    const confirmRename = () => {
         const from = renamingFile.value;
         if (!from) return;
         const raw = renameValue.value.trim();
@@ -1102,15 +1163,16 @@
         renameValue.value = '';
         if (!raw) return;
         const to = raw.endsWith('.ratest') ? raw : `${raw}.ratest`;
-        if (to === from) return;
-        const response = await Network.send({
-            command: 'renameRatest',
-            params: { from, to },
-        });
-        if (response.success) {
-            if (selected.value === from) selected.value = to;
-            await refreshList();
+        if (to === from) {
+            // Renaming back to the original name clears any pending rename.
+            if (isPendingRename(from)) {
+                const next = { ...pendingRenames.value };
+                delete next[from];
+                pendingRenames.value = next;
+            }
+            return;
         }
+        pendingRenames.value = { ...pendingRenames.value, [from]: to };
     };
 
     const cancelRename = () => {
@@ -1125,7 +1187,15 @@
         });
         if (response.success) {
             if (selected.value === file) selected.value = null;
+            // Drop any queued rename for the file that no longer exists.
+            if (isPendingRename(file)) {
+                const next = { ...pendingRenames.value };
+                delete next[file];
+                pendingRenames.value = next;
+            }
             await refreshList();
+        } else {
+            result.value = { passed: 0, failed: 1, total: 1, error: response.error ?? 'deleteRatest failed' };
         }
     };
 
