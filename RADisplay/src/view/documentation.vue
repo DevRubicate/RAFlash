@@ -414,6 +414,167 @@
                 </p>
             </section>
 
+            <section id="tool-recorded-test">
+                <h1>Recorded Test</h1>
+                <p>
+                    Records and replays scripted interactions against the live game as
+                    <strong>.ratest</strong> files. Use it to capture a sequence of clicks,
+                    method calls, and assertions that reproduces a given scenario &mdash; then
+                    replay it later to confirm an achievement still unlocks, a bug is still
+                    fixed, or the game still behaves as expected after changes.
+                </p>
+                <p>
+                    The window has three parts: a <strong>file list</strong> on the left
+                    showing every <code>.ratest</code> saved for the current game's hash, a
+                    <strong>step log</strong> on the right showing the steps of the
+                    selected recording, and a <strong>footer</strong> with the active
+                    action buttons.
+                </p>
+
+                <h2>Header Toggles</h2>
+                <dl>
+                    <dt>Delay</dt>
+                    <dd>
+                        The global pause (in milliseconds) inserted between every step during
+                        playback. Click to edit. A small delay helps the game catch up
+                        between interactions; set to 0 to run as fast as possible.
+                    </dd>
+
+                    <dt>Restart</dt>
+                    <dd>
+                        When <strong>Yes</strong>, playback resets the game to its initial
+                        state before running. When <strong>No</strong>, the recording plays
+                        against whatever state the game is currently in &mdash; useful for
+                        composing steps on top of manual setup.
+                    </dd>
+
+                    <dt>Achievements</dt>
+                    <dd>
+                        When <strong>Yes</strong>, recording captures achievement triggers
+                        as <code>achievement &lt;id&gt;</code> lines, and playback verifies
+                        those achievements fire within 5 seconds at the corresponding point.
+                        When <strong>No</strong>, new recordings skip them and playback
+                        ignores any that are already present. This toggle is per-session
+                        and resets to Yes on every launch.
+                    </dd>
+                </dl>
+
+                <h2>Recording</h2>
+                <dl>
+                    <dt>New Record</dt>
+                    <dd>
+                        Starts a fresh recording. A new entry named
+                        <code>New Recording N.ratest</code> is auto-added to the file list
+                        and selected. Interact with the game normally &mdash; clicks, value
+                        changes, and (if the Achievements toggle is Yes) achievement
+                        triggers are appended to the step log as they happen.
+                        Click <strong>Stop Recording</strong> when done, then <strong>Save</strong>
+                        to persist to disk.
+                    </dd>
+
+                    <dt>Continue Recording</dt>
+                    <dd>
+                        Right-click an existing file and choose Continue Recording to
+                        append new steps to the end of that file's script. The previously
+                        recorded steps stay visible; new interactions are added below them.
+                    </dd>
+
+                    <dt>Rerecord</dt>
+                    <dd>
+                        Right-click an existing file and choose Rerecord to play back the
+                        recording <em>and</em> capture any new events that happen during
+                        playback. New clicks or unexpected achievements are spliced into
+                        the script at the current playback position. Pause the playback to
+                        insert steps at a specific point. Commit the modified script with
+                        <strong>Save</strong>.
+                    </dd>
+                </dl>
+
+                <h2>Playback</h2>
+                <p>
+                    Double-click a file (or right-click &rarr; Play) to run the selected
+                    recording. The currently-executing step is highlighted in the log,
+                    and each step reports <code>pass</code>, <code>fail</code>, or
+                    <code>ok</code> as it completes. The final row summarizes the run as
+                    <code>Passed N/M</code> or <code>Failed N/M</code>.
+                </p>
+                <dl>
+                    <dt>Stop</dt>
+                    <dd>Aborts the playback immediately.</dd>
+                    <dt>Pause / Resume</dt>
+                    <dd>
+                        Freezes playback between steps. While paused, you can interact with
+                        the game manually &mdash; in Rerecord mode, those interactions get
+                        captured and spliced into the script.
+                    </dd>
+                    <dt>Step</dt>
+                    <dd>Visible only while paused. Runs the next step, then stays paused.</dd>
+                </dl>
+
+                <h2>Editing Steps</h2>
+                <p>
+                    When not recording or playing, each step row shows inline action buttons
+                    on hover:
+                </p>
+                <dl>
+                    <dt>&#9650; / &#9660;</dt>
+                    <dd>Move the step up or down in the script.</dd>
+                    <dt>&#10005; (Edit)</dt>
+                    <dd>
+                        Open a popup to edit the step's source text directly. The editor
+                        also has a <strong>Delete</strong> button for removing the step.
+                    </dd>
+                    <dt>&#65291; (Insert)</dt>
+                    <dd>Add a new blank step directly below the current one and open the edit popup.</dd>
+                </dl>
+                <p>
+                    The <strong>Filter steps...</strong> input at the bottom of the log
+                    narrows rows by substring match on the step source and label.
+                    The summary row (the pass/fail outcome) is always visible.
+                </p>
+                <p>
+                    Unsaved edits on a file are indicated with a yellow <code>*</code>
+                    next to its name. Switching to another file stashes your edits
+                    in memory so you can return later without losing work.
+                </p>
+
+                <h2>File Management</h2>
+                <p>
+                    Right-click a file for the context menu:
+                </p>
+                <dl>
+                    <dt>Play</dt>
+                    <dd>Run the selected recording.</dd>
+                    <dt>Continue Recording</dt>
+                    <dd>Append new steps to the end of the selected recording.</dd>
+                    <dt>Rerecord</dt>
+                    <dd>Replay while capturing new events to splice in at the current position.</dd>
+                    <dt>Rename</dt>
+                    <dd>
+                        Edit the filename inline. Renames are <strong>pending</strong> until
+                        the row is selected and <strong>Save</strong> is clicked &mdash; you
+                        can queue multiple renames and flush them one at a time.
+                    </dd>
+                    <dt>Discard changes</dt>
+                    <dd>
+                        Reload the file from disk, throwing away any unsaved edits or
+                        pending rename. Prompts for confirmation.
+                    </dd>
+                    <dt>Delete</dt>
+                    <dd>Remove the file from disk immediately.</dd>
+                </dl>
+                <p>
+                    The <strong>Copy</strong> button above the step log copies the
+                    current step script to the clipboard as <code>.ratest</code> source
+                    text, handy for pasting into bug reports or version-controlled fixtures.
+                </p>
+                <p>
+                    Recordings are tied to a game by its hash, so the file list only shows
+                    scripts that target the game currently loaded. A "No game loaded"
+                    indicator appears when Flash isn't connected.
+                </p>
+            </section>
+
             <section id="tool-code-notes">
                 <h1>Code Notes</h1>
                 <p>
@@ -610,6 +771,38 @@
                     <li>Play the game &mdash; the log updates whenever the value changes.</li>
                     <li>This helps verify that your path expression is correct and understand when values update.</li>
                 </ol>
+            </section>
+
+            <section id="guide-recording-test">
+                <h1>Recording a Test</h1>
+                <p>
+                    To capture a reproducible run that unlocks an achievement (or otherwise
+                    exercises the game) and replay it later:
+                </p>
+                <ol>
+                    <li>Open <strong>Recorded Test</strong> from the Devtools menu.</li>
+                    <li>
+                        Confirm the <strong>Achievements</strong> toggle is set to Yes if you
+                        want achievement triggers to be captured and verified on playback.
+                    </li>
+                    <li>Click <strong>New Record</strong>. A new entry appears in the file list.</li>
+                    <li>
+                        Play the game through the scenario you want to capture &mdash; clicks
+                        and value changes are logged as steps as they happen.
+                    </li>
+                    <li>Click <strong>Stop Recording</strong>, then <strong>Save</strong> to persist the script to disk.</li>
+                    <li>
+                        Play it back anytime with a double-click (or right-click &rarr; Play).
+                        The run reports Passed or Failed at the end.
+                    </li>
+                </ol>
+                <p>
+                    To refine a recording afterwards &mdash; reorder, edit, insert, or delete
+                    steps &mdash; use the inline action buttons that appear on each row when
+                    not actively recording or playing. Use <strong>Rerecord</strong> (from the
+                    right-click menu) to replay a script while splicing in additional events
+                    captured during paused playback.
+                </p>
             </section>
 
             <!-- ============ REFERENCE ============ -->
@@ -997,6 +1190,7 @@ stage.menu.gotoMySite.triggered // 1 on frames the function fired, else 0</pre>
         { id: 'tool-memory-search',       title: 'Memory Search' },
         { id: 'tool-memory-watch',        title: 'Memory Watch' },
         { id: 'tool-resource-explorer',   title: 'Resource Explorer' },
+        { id: 'tool-recorded-test',       title: 'Recorded Test' },
         { id: 'tool-code-notes',          title: 'Code Notes' },
         { id: 'tool-event-log',           title: 'Event Log' },
         { id: 'tool-settings',            title: 'Settings' },
@@ -1009,6 +1203,7 @@ stage.menu.gotoMySite.triggered // 1 on frames the function fired, else 0</pre>
         { id: 'guide-finding-property',     title: 'Finding a Property' },
         { id: 'guide-exploring-structure',  title: 'Exploring Structure' },
         { id: 'guide-tracking-changes',     title: 'Tracking Changes' },
+        { id: 'guide-recording-test',       title: 'Recording a Test' },
     ];
 
     const referenceChapters = [
