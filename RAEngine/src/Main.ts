@@ -1515,6 +1515,11 @@ let flashProcess: Deno.ChildProcess | null = null;
 // .ratest is executed via the normal LiveStagehand path. Exit code
 // reflects pass/fail.
 let headlessMode: { gamePath: string; testPath: string } | null = null;
+// --headless-json: emit one JSON line per step event + a summary line on
+// stdout, instead of the human-readable PASS/FAIL text. Consumed by
+// tests/ratest.ts so the test runner can surface per-step results without
+// parsing unstructured output.
+let headlessJson = false;
 // True between `flashProcess.spawn` and `await flashProcess.status` resolving.
 // When false, devtools windows are degraded into a read-only mode (the user
 // can still browse last-known data and edit per-game settings, but anything
@@ -4063,14 +4068,24 @@ async function runHeadlessTest(testPath: string): Promise<number> {
     const pendingAchievements: Array<Promise<void>> = [];
     const stepCtx = { achievementsEnabled: true, pendingAchievements };
 
-    console.log(`Running ${testPath} (${parsed.steps.length} steps)`);
-    console.log("");
+    if (!headlessJson) {
+        console.log(`Running ${testPath} (${parsed.steps.length} steps)`);
+        console.log("");
+    }
 
     let printed = 0;
     const drainPrints = () => {
         while (printed < results.length) {
             const r = results[printed++];
-            if (r.passed) {
+            if (headlessJson) {
+                console.log(JSON.stringify({
+                    type: "step",
+                    name: r.name,
+                    passed: r.passed,
+                    error: r.error ?? null,
+                    durationMs: r.durationMs,
+                }));
+            } else if (r.passed) {
                 console.log(`  PASS  ${r.name}`);
             } else {
                 console.log(`  FAIL  ${r.name}`);
@@ -4094,12 +4109,22 @@ async function runHeadlessTest(testPath: string): Promise<number> {
 
     const passed = results.filter((r) => r.passed).length;
     const failed = results.length - passed;
-    const seconds = ((performance.now() - start) / 1000).toFixed(1);
-    console.log("");
-    if (failed === 0) {
-        console.log(`  ${passed} passed (${seconds}s)`);
+    const durationMs = performance.now() - start;
+    if (headlessJson) {
+        console.log(JSON.stringify({
+            type: "summary",
+            passed,
+            failed,
+            durationMs,
+        }));
     } else {
-        console.log(`  ${failed} failed, ${passed} passed (${seconds}s)`);
+        const seconds = (durationMs / 1000).toFixed(1);
+        console.log("");
+        if (failed === 0) {
+            console.log(`  ${passed} passed (${seconds}s)`);
+        } else {
+            console.log(`  ${failed} failed, ${passed} passed (${seconds}s)`);
+        }
     }
     return failed === 0 ? 0 : 1;
 }
@@ -4144,6 +4169,24 @@ async function main(): Promise<void> {
         }
     }
 
+    // --port N: override the base port. Every subsystem (HTTP, firmware
+    // socket, sitelock proxy) is allocated sequentially from here, so this
+    // lets a test runner pick a per-test base and avoid collisions with
+    // another RAFlash already running. Accepted with or without --headless.
+    let portOverride: number | null = null;
+    {
+        const idx = Deno.args.indexOf("--port");
+        if (idx !== -1) {
+            const val = Deno.args[idx + 1];
+            const port = parseInt(val ?? "");
+            if (isNaN(port) || port < 1 || port > 65535) {
+                console.error(`--port requires a valid port number (got "${val}")`);
+                Deno.exit(2);
+            }
+            portOverride = port;
+        }
+    }
+
     // --headless <game> <test.ratest>: runs the given .ratest against the
     // given game and exits with pass/fail. Uses the normal app launch path
     // (HTTP server, sitelock proxy, firmware, Flash Player) — just skips
@@ -4151,9 +4194,17 @@ async function main(): Promise<void> {
     // via the same LiveStagehand + runStep primitives the devtools Play
     // button uses. Scoped during main() only; read from here on as `headlessMode`.
     if (Deno.args.includes("--headless")) {
-        const positional = Deno.args.filter((a) => a !== "--headless");
+        headlessJson = Deno.args.includes("--headless-json");
+        // Strip flags and the --port value so what remains is <game> <test>.
+        const positional: string[] = [];
+        for (let i = 0; i < Deno.args.length; i++) {
+            const a = Deno.args[i];
+            if (a === "--headless" || a === "--headless-json") continue;
+            if (a === "--port") { i++; continue; }
+            positional.push(a);
+        }
         if (positional.length !== 2) {
-            console.error("Usage: RAFlash --headless <game.swf|.raflash> <test.ratest>");
+            console.error("Usage: RAFlash --headless <game.swf|.raflash> <test.ratest> [--port N] [--headless-json]");
             Deno.exit(2);
         }
         const [gameArg, testArg] = positional;
@@ -4252,13 +4303,18 @@ async function main(): Promise<void> {
         }
     }
 
-    // Load persistent settings
-    await loadSettings();
+    // Load persistent settings. Skipped in headless mode — tests must be
+    // deterministic, so reading whatever settings the developer happens to
+    // have configured locally would leak dev state into CI. Defaults are
+    // always used instead.
+    if (!headlessMode) {
+        await loadSettings();
+    }
 
-    // Allocate ports sequentially from DEFAULT_PORT.
-    // Main.ts is the single source of truth — subsystems use exactly
-    // the port they are given, no fallback.
-    [HTTP_PORT, FLASH_PORT, PROXY_PORT] = allocatePorts(DEFAULT_PORT, 3);
+    // Allocate ports sequentially from the base (DEFAULT_PORT, or whatever
+    // --port N supplied). Main.ts is the single source of truth —
+    // subsystems use exactly the port they are given, no fallback.
+    [HTTP_PORT, FLASH_PORT, PROXY_PORT] = allocatePorts(portOverride ?? DEFAULT_PORT, 3);
 
     // 1. Start HTTP server (persists across game sessions, retries port on startup after self-update)
     await startHttpServer();
@@ -4477,13 +4533,19 @@ async function main(): Promise<void> {
             }
         }
 
-        // Load user and apply previously unlocked achievements
-        selectedUserName = user;
-        await UserProfile.loadUser(user);
-        const unlockedIds = UserProfile.getUnlockedIds(AppData.gameHash!);
-        for (const asset of AppData.data.assets) {
-            if (unlockedIds.includes(asset.id)) {
-                asset.state = "TRIGGERED";
+        // Load user and apply previously unlocked achievements. Skipped in
+        // headless mode — tests need a clean slate on every run, and
+        // UserProfile.currentName stays null so later trigger events don't
+        // persist back to disk (see the recordUnlock/saveUser block in the
+        // firmware edit handler, which gates on currentName).
+        if (!headlessMode) {
+            selectedUserName = user;
+            await UserProfile.loadUser(user);
+            const unlockedIds = UserProfile.getUnlockedIds(AppData.gameHash!);
+            for (const asset of AppData.data.assets) {
+                if (unlockedIds.includes(asset.id)) {
+                    asset.state = "TRIGGERED";
+                }
             }
         }
 

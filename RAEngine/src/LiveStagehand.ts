@@ -12,7 +12,7 @@
  */
 import { Formula } from "./formula/Formula.ts";
 import { AppData } from "./AppData.ts";
-import type { StagehandLike } from "../../tests/stagehand.ts";
+import type { StagehandLike } from "../../tests/ratest.ts";
 
 type SendToFirmware = (
     command: string,

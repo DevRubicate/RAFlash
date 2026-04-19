@@ -1,10 +1,17 @@
 /**
  * .ratest — data-driven Flash integration tests.
  *
- * A .ratest file is a line-oriented script that drives a Flash game through
- * the Stagehand harness. It captures the same interactions you'd write
- * imperatively in TypeScript (click, invoke, tick, set, assert, wait) but
- * in a declarative format that non-programmers can author and review.
+ * A .ratest file is a line-oriented script that drives a Flash game
+ * through RAFlash's headless mode. It captures the same interactions you'd
+ * write imperatively in TypeScript (click, invoke, tick, set, assert,
+ * wait) but in a declarative format that non-programmers can author and
+ * review.
+ *
+ * Execution: `runRatestFile(path)` resolves the test's `hash` directive
+ * to an on-disk game, then spawns `Main.ts --headless --headless-json`
+ * against it and streams per-step results back from stdout. The parser,
+ * `runStep`, and `StagehandLike` live here because Main.ts's devtools
+ * Play button and `runHeadlessTest` both consume them.
  *
  * Grammar (each non-blank non-comment line is one statement):
  *
@@ -18,8 +25,10 @@
  *                                  hash to an on-disk .swf/.raflash. May
  *                                  appear multiple times. Defaults to
  *                                  .tests/ and .build/games/.
- *   port   <n>                  -- TCP port for the firmware socket
- *   timeout <ms>                -- launch timeout
+ *   port   <n>                  -- TCP base port; passed through as
+ *                                  `--port` to the spawned Main.ts so
+ *                                  consecutive tests don't collide.
+ *   timeout <ms>                -- per-step launch timeout (advisory)
  *
  *   ---- Actions ----
  *   click   <path>              -- call path.onRelease()
@@ -64,12 +73,33 @@
 import { crypto as stdCrypto } from "jsr:@std/crypto";
 import { unzipSync } from "npm:fflate";
 import type { SuiteResult, TestResult } from "./framework.ts";
-import { type AppData, Stagehand, type StagehandLike } from "./stagehand.ts";
-import { Formula } from "../RAEngine/src/formula/Formula.ts";
 
 // -------------------------------------------------------------------------
 // Types
 // -------------------------------------------------------------------------
+
+/**
+ * The subset of Stagehand's public API that `runStep` depends on. Lives
+ * here (not in an implementation file) because both Main.ts's devtools
+ * Play path and Main.ts's headless runner feed `runStep` their own
+ * `LiveStagehand` — the interface is the contract between them.
+ */
+export interface StagehandLike {
+    evaluate<T = unknown>(formula: string): Promise<T>;
+    setValue(path: string, property: string, value: string | number | boolean | null): Promise<void>;
+    invoke<T = unknown>(path: string, method: string, args?: unknown[]): Promise<T>;
+    click(path: string): Promise<unknown>;
+    tick(n?: number): Promise<void>;
+    hasTriggered(idOrName: number | string): boolean;
+    waitTriggered(idOrName: number | string, timeoutMs?: number): Promise<void>;
+    waitFor<T = unknown>(
+        formula: string,
+        predicate: (value: T) => boolean,
+        opts?: { timeoutMs?: number; pollMs?: number },
+    ): Promise<T>;
+    waitForElement(path: string, opts?: { timeoutMs?: number }): Promise<void>;
+    close(): Promise<void>;
+}
 
 type StepKind =
     | "click" | "invoke" | "tick" | "set" | "pause" | "eval"
@@ -363,16 +393,13 @@ class RatestParseError extends Error {
 // -------------------------------------------------------------------------
 
 /**
- * A resolved game is either a SWF on disk (.swf file) or a SWF extracted
- * from an archive (.raflash). Callers pass this straight through to
- * Stagehand.launch.
+ * Result of resolving a .ratest `hash` directive to an on-disk game file.
+ * Always a path (.swf or .raflash) — Main.ts's --headless mode handles
+ * both transparently, including data.json.hashOverride for archives, so
+ * the runner doesn't need to extract bytes itself.
  */
-export interface ResolvedGame {
-    /** Human-readable source path (for diagnostics). */
-    source: string;
-    /** Either a direct path (fast) or bytes (extracted from a zip). */
-    swfPath?: string;
-    swfBytes?: Uint8Array;
+interface ResolvedGame {
+    path: string;
 }
 
 // Cache of (search-path -> hash -> resolved-game). Built lazily and reused
@@ -389,14 +416,11 @@ async function md5Bytes(data: Uint8Array): Promise<string> {
 }
 
 /**
- * Extract a .raflash archive and compute its identity.
- *
- * Identity matches RAEngine's convention: `data.json.hashOverride` if
- * present, otherwise MD5 of the inner `start.swf` bytes. This is the same
- * identity used to attach achievements to a game, so a .raflash produced
- * from a .swf automatically resolves under the original .swf's hash.
+ * Derive the hash a .raflash archive will claim at load time. Matches
+ * Main.ts: `data.json.hashOverride` if present, otherwise MD5 of the
+ * inner `start.swf`.
  */
-async function resolveRaflash(path: string): Promise<{ hash: string; swfBytes: Uint8Array } | null> {
+async function raflashHash(path: string): Promise<string | null> {
     let files: Record<string, Uint8Array>;
     try {
         const zipData = await Deno.readFile(path);
@@ -407,20 +431,18 @@ async function resolveRaflash(path: string): Promise<{ hash: string; swfBytes: U
     const swfBytes = files["start.swf"];
     if (!swfBytes) return null;
 
-    let hashOverride: string | undefined;
     if (files["data.json"]) {
         try {
             const parsed = JSON.parse(new TextDecoder().decode(files["data.json"]));
             if (typeof parsed?.hashOverride === "string" && parsed.hashOverride !== "") {
-                hashOverride = parsed.hashOverride.toLowerCase();
+                return parsed.hashOverride.toLowerCase();
             }
         } catch {
             // Malformed data.json — fall back to SWF hash.
         }
     }
 
-    const hash = hashOverride ?? await md5Bytes(swfBytes);
-    return { hash, swfBytes };
+    return await md5Bytes(swfBytes);
 }
 
 async function indexForSearchPath(dir: string): Promise<Map<string, ResolvedGame>> {
@@ -436,12 +458,10 @@ async function indexForSearchPath(dir: string): Promise<Map<string, ResolvedGame
 
             if (lower.endsWith(".swf")) {
                 const hash = await md5Bytes(await Deno.readFile(path));
-                if (!index.has(hash)) index.set(hash, { source: path, swfPath: path });
+                if (!index.has(hash)) index.set(hash, { path });
             } else if (lower.endsWith(".raflash")) {
-                const resolved = await resolveRaflash(path);
-                if (resolved && !index.has(resolved.hash)) {
-                    index.set(resolved.hash, { source: path, swfBytes: resolved.swfBytes });
-                }
+                const hash = await raflashHash(path);
+                if (hash && !index.has(hash)) index.set(hash, { path });
             }
         }
     } catch (e) {
@@ -474,7 +494,7 @@ async function describeAvailableHashes(searchPaths: string[]): Promise<string> {
             lines.push(`  ${dir}: (no .swf or .raflash files found)`);
         } else {
             for (const [h, game] of index) {
-                lines.push(`  ${h}  ${game.source}`);
+                lines.push(`  ${h}  ${game.path}`);
             }
         }
     }
@@ -482,72 +502,16 @@ async function describeAvailableHashes(searchPaths: string[]): Promise<string> {
 }
 
 // -------------------------------------------------------------------------
-// Achievement loading
+// Execution — spawn headless Main.ts and stream results
 // -------------------------------------------------------------------------
 
-/**
- * Try to load RAFlash's on-disk achievement data for this game hash.
- *
- * The on-disk format stores source formulas (`addressA`, `addressB`,
- * RICH_PRESENCE `formula`) but not the compiled bytecode the firmware
- * needs — RAEngine normally compiles those at load time. This function
- * does the same compilation so the loaded data is firmware-ready.
- *
- * Returns null if no file is found at the conventional location.
- */
-async function loadAchievements(hash: string): Promise<AppData | null> {
-    const path = `.build/RACache/games/${hash}.json`;
-    let text: string;
-    try {
-        text = await Deno.readTextFile(path);
-    } catch (e) {
-        if (e instanceof Deno.errors.NotFound) return null;
-        throw e;
-    }
+const DENO_PERMISSIONS = [
+    "--allow-ffi", "--allow-net", "--allow-run",
+    "--allow-read", "--allow-write", "--allow-env",
+];
 
-    const appData = JSON.parse(text) as AppData;
-
-    for (const asset of appData.assets ?? []) {
-        // `state` is ephemeral and not persisted; RAEngine's loader always
-        // initializes it to "ACTIVE" so the firmware will evaluate the asset.
-        // Without this, achievements silently skip (see Main.as checkAchievements).
-        (asset as Record<string, unknown>).state = "ACTIVE";
-
-        // Rich presence assets carry a top-level formula.
-        if (asset.type === "RICH_PRESENCE" && typeof asset.formula === "string") {
-            (asset as Record<string, unknown>).compiledFormula = Formula.compile(asset.formula);
-        }
-        const groups = (asset as Record<string, unknown>).groups as
-            Array<{ requirements?: Array<Record<string, unknown>> }> | undefined;
-        for (const group of groups ?? []) {
-            for (const req of group.requirements ?? []) {
-                // Firmware expects flag to be a string (not null).
-                if (req.flag == null) req.flag = "";
-                if (req.hits == null) req.hits = 0;
-                if (typeof req.addressA === "string" && req.addressA !== "") {
-                    req.compiledA = Formula.compile(req.addressA);
-                }
-                if (typeof req.addressB === "string" && req.addressB !== "") {
-                    req.compiledB = Formula.compile(req.addressB);
-                }
-            }
-        }
-    }
-
-    // Fill in required stubs that the firmware expects to exist.
-    if (!appData.codeNotes) appData.codeNotes = [];
-    if (!appData.gameConfig) {
-        appData.gameConfig = {
-            title: "", originUrl: "", badgeImage: "",
-            hashOverride: "", scaleMode: "neutral", align: "neutral", networkRules: [],
-        };
-    }
-    return appData;
-}
-
-// -------------------------------------------------------------------------
-// Execution
-// -------------------------------------------------------------------------
+/** Deno process launch timeout — generous since firmware startup can be slow. */
+const LAUNCH_TIMEOUT_MS = 60000;
 
 export async function runRatestFile(filePath: string): Promise<SuiteResult> {
     const start = performance.now();
@@ -584,61 +548,114 @@ export async function runRatestFile(filePath: string): Promise<SuiteResult> {
         return finalize(filePath, results, start);
     }
 
-    // Achievements are optional — if a JSON file exists at the conventional
-    // RAEngine location for this hash, load it so the firmware evaluates
-    // achievements and trigger tests can observe them.
-    let appData: AppData | null;
-    try {
-        appData = await loadAchievements(parsed.directives.hash);
-    } catch (err) {
-        results.push({
-            name: `load achievements for ${parsed.directives.hash}`,
-            passed: false,
-            error: (err as Error).message || String(err),
-            durationMs: 0,
-        });
-        return finalize(filePath, results, start);
+    // Spawn Main.ts in headless mode. Run with cwd=.build/ so the
+    // firmware-directory probe in main() finds `firmware/` and every
+    // relative path (vendor/adobe, assets/, RACache) resolves the same
+    // way the shipping exe does. Game/test paths are absolutized so they
+    // survive the cwd switch.
+    const projectRoot = Deno.cwd();
+    const buildDir = `${projectRoot}/.build`;
+    const absGame = absPath(game.path, projectRoot);
+    const absTest = absPath(filePath, projectRoot);
+
+    const args = [
+        "run",
+        ...DENO_PERMISSIONS,
+        "../RAEngine/src/Main.ts",
+        "--headless",
+        "--headless-json",
+        absGame,
+        absTest,
+    ];
+    if (parsed.directives.port !== undefined) {
+        args.push("--port", String(parsed.directives.port));
     }
 
-    let page: Stagehand | null = null;
-    try {
-        page = await Stagehand.launch({
-            swfPath: game.swfPath,
-            swfBytes: game.swfBytes,
-            appData: appData ?? undefined,
-            port: parsed.directives.port,
-            launchTimeoutMs: parsed.directives.timeoutMs,
-        });
-    } catch (err) {
-        results.push({
-            name: `launch hash ${parsed.directives.hash} (${game.source})`,
-            passed: false,
-            error: (err as Error).message || String(err),
-            durationMs: 0,
-        });
-        return finalize(filePath, results, start);
-    }
+    const command = new Deno.Command("deno", {
+        args,
+        cwd: buildDir,
+        stdout: "piped",
+        stderr: "piped",
+    });
+    const child = command.spawn();
 
-    const pendingAchievements: Array<Promise<void>> = [];
-    const ctx: RunContext = { achievementsEnabled: true, pendingAchievements };
-    try {
-        for (const step of parsed.steps) {
-            await runStep(page, step, results, ctx);
+    // Guard against a wedged Main.ts: if it hasn't exited by the deadline,
+    // kill the process so the test suite can move on. The fallback error
+    // is surfaced as a single failing result row.
+    let timedOut = false;
+    const timeoutHandle = setTimeout(() => {
+        timedOut = true;
+        try { child.kill(); } catch { /* already exited */ }
+    }, LAUNCH_TIMEOUT_MS);
+
+    const [stdoutText, stderrText, status] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.status,
+    ]);
+    clearTimeout(timeoutHandle);
+
+    // Parse stdout for JSON event lines. Any other output (plain logs,
+    // warnings, blank lines) is ignored — the contract is that every
+    // headless-mode step and summary event is a JSON line with a `type`
+    // field. If the process failed without emitting any, surface stderr
+    // as the failure reason.
+    let summary: { passed: number; failed: number; durationMs: number } | null = null;
+    for (const line of stdoutText.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("{")) continue;
+        let event: unknown;
+        try {
+            event = JSON.parse(trimmed);
+        } catch {
+            continue;
         }
-        await Promise.all(pendingAchievements);
-    } finally {
-        await page.close();
+        const e = event as { type?: string };
+        if (e.type === "step") {
+            const s = event as { name: string; passed: boolean; error: string | null; durationMs: number };
+            results.push({
+                name: s.name,
+                passed: s.passed,
+                error: s.error ?? undefined,
+                durationMs: s.durationMs,
+            });
+        } else if (e.type === "summary") {
+            summary = event as { passed: number; failed: number; durationMs: number };
+        }
+    }
+
+    if (!summary || status.code !== 0 || timedOut) {
+        // Runner-level failure: the child crashed, timed out, or never
+        // emitted a summary. Attach whatever diagnostic context we have.
+        const reason = timedOut
+            ? `headless run exceeded ${LAUNCH_TIMEOUT_MS}ms`
+            : !summary
+                ? `headless run exited with code ${status.code} without emitting a summary`
+                : `headless run exited with code ${status.code}`;
+        const detail = stderrText.trim();
+        results.push({
+            name: `headless ${parsed.directives.hash}`,
+            passed: false,
+            error: detail ? `${reason}\n${detail}` : reason,
+            durationMs: 0,
+        });
     }
 
     return finalize(filePath, results, start);
 }
 
+function absPath(p: string, base: string): string {
+    if (p.startsWith("/") || /^[A-Za-z]:/.test(p)) return p;
+    return `${base}/${p}`;
+}
+
 /**
- * Optional per-run state for `achievement` steps. The `achievement` kind is
+ * Per-run state for `achievement` steps. The `achievement` kind is
  * inherently async: it kicks off a 5s background watcher and the step
- * completes immediately so subsequent steps can keep playing the game. The
- * caller owns the promise list so it can drain (await + report) at end of
- * run, and so it knows which step indices produced deferred outcomes.
+ * completes immediately so subsequent steps can keep playing the game.
+ * The caller owns the promise list so it can drain (await + report) at
+ * end of run, and so it knows which step indices produced deferred
+ * outcomes.
  *
  * `achievementsEnabled: false` makes `achievement` steps a no-op (they
  * appear in the file but do not assert anything), matching the Recorded
