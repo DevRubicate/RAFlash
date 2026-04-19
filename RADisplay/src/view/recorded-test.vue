@@ -4,6 +4,22 @@
             <div class="title">Recorded Test</div>
             <div class="hash" v-if="gameHash">{{ gameHash }}</div>
             <div class="hash-missing" v-else>No game loaded</div>
+            <div class="header-actions">
+                <button
+                    class="delay-button"
+                    @click="openDelayModal()"
+                    title="Edit the global delay inserted between every playback step"
+                >
+                    Delay: {{ playbackDelayMs }}
+                </button>
+                <button
+                    class="restart-button"
+                    @click="toggleRestart()"
+                    title="When Yes, playback resets the game before running. When No, it plays against the current game state."
+                >
+                    Restart: {{ playbackRestart ? 'Yes' : 'No' }}
+                </button>
+            </div>
         </div>
 
         <div class="main-wrapper">
@@ -76,9 +92,18 @@
                 />
                 <button class="confirm-button" :disabled="!saveFilename.trim()" @click="confirmSave()">Save</button>
                 <button class="cancel-button" @click="cancelSave()">Cancel</button>
-                <div class="status">Name the recording, or Cancel to discard.</div>
+                <div class="status">Name the recording, or Cancel to keep editing.</div>
             </template>
             <template v-else>
+                <button
+                    v-if="!recording && !running"
+                    class="save-button"
+                    :disabled="!unsavedRecording"
+                    @click="openSavePrompt()"
+                    title="Persist the in-memory recording to disk"
+                >
+                    Save
+                </button>
                 <button
                     v-if="running"
                     class="play-button active"
@@ -119,20 +144,6 @@
                     New Record
                 </button>
                 <div class="status" :class="statusClass">{{ statusText }}</div>
-                <button
-                    class="delay-button"
-                    @click="openDelayModal()"
-                    title="Edit the global delay inserted between every playback step"
-                >
-                    Delay: {{ playbackDelayMs }}
-                </button>
-                <button
-                    class="restart-button"
-                    @click="toggleRestart()"
-                    title="When Yes, playback resets the game before running. When No, it plays against the current game state."
-                >
-                    Restart: {{ playbackRestart ? 'Yes' : 'No' }}
-                </button>
             </template>
         </div>
 
@@ -207,10 +218,16 @@
     .header {
         flex-shrink: 0;
         display: flex;
-        align-items: baseline;
+        align-items: center;
         gap: 0.75rem;
         padding-bottom: 0.5rem;
         border-bottom: 1px solid var(--c-border);
+    }
+
+    .header-actions {
+        margin-left: auto;
+        display: flex;
+        gap: 0.5rem;
     }
 
     .title {
@@ -507,6 +524,7 @@
     .pause-button,
     .step-button,
     .record-button,
+    .save-button,
     .delay-button,
     .restart-button,
     .confirm-button,
@@ -536,6 +554,10 @@
 
     .record-button.active {
         background: #dc2626;
+    }
+
+    .save-button {
+        background: var(--c-primary);
     }
 
     .pause-button {
@@ -605,6 +627,7 @@
     .pause-button:disabled,
     .step-button:disabled,
     .record-button:disabled,
+    .save-button:disabled,
     .delay-button:disabled,
     .restart-button:disabled,
     .confirm-button:disabled {
@@ -616,6 +639,7 @@
     .pause-button:not(:disabled):hover,
     .step-button:not(:disabled):hover,
     .record-button:not(:disabled):hover,
+    .save-button:not(:disabled):hover,
     .delay-button:not(:disabled):hover,
     .restart-button:not(:disabled):hover,
     .confirm-button:not(:disabled):hover,
@@ -673,6 +697,10 @@
     .status.recording {
         color: #fca5a5;
     }
+
+    .status.unsaved {
+        color: #fcd34d;
+    }
 </style>
 
 <script setup>
@@ -691,7 +719,13 @@
     const stepLogEl = ref(null);
 
     const recording = ref(false);
-    const continueMode = ref(false);
+    // The originating file for a "Continue Record" session — sticks around
+    // after stopRecording so Save knows where to overwrite. Null means a
+    // fresh recording that needs a filename prompt on Save.
+    const recordingSource = ref(null);
+    // True once any new event has been captured during the active recording.
+    // Drives the Save button's enabled state and only clears on save/discard.
+    const unsavedRecording = ref(false);
     const pendingSave = ref(false);
     const saveFilename = ref('');
     const saveInputEl = ref(null);
@@ -776,7 +810,8 @@
         const appending = !!data?.appendTo;
         if (!appending) steps.value = [];
         recording.value = true;
-        continueMode.value = appending;
+        recordingSource.value = data?.appendTo ?? null;
+        unsavedRecording.value = false;
         result.value = null;
         lastSaved.value = null;
     });
@@ -796,22 +831,36 @@
             source,
             phase,
         });
+        unsavedRecording.value = true;
         scrollLogToBottom();
+    });
+
+    Network.addEventListener('recordingStopped', () => {
+        // Capture ended but the buffer survives on the backend until the
+        // user clicks Save (or starts another recording, which discards).
+        recording.value = false;
     });
 
     Network.addEventListener('recordingCancel', () => {
         recording.value = false;
-        continueMode.value = false;
+        recordingSource.value = null;
+        unsavedRecording.value = false;
     });
 
     Network.addEventListener('recordingSaved', (data) => {
         recording.value = false;
-        continueMode.value = false;
+        recordingSource.value = null;
+        unsavedRecording.value = false;
         lastSaved.value = data.file;
     });
 
     watch(selected, async (file) => {
         if (running.value || recording.value) return;
+        // Switching files while there's an unsaved buffer discards it —
+        // the Save button was visible and ignored, so we treat that as intent.
+        if (unsavedRecording.value || recordingSource.value) {
+            await Network.send({ command: 'cancelRecording', params: {} });
+        }
         if (!file) {
             steps.value = [];
             return;
@@ -842,16 +891,22 @@
     const statusText = computed(() => {
         if (!App.flashConnected) return 'Flash Player is not running — reload the game to run recorded tests.';
         if (recording.value) {
-            if (continueMode.value) return `Recording — appending to ${selected.value}. Press Stop when done.`;
+            if (recordingSource.value) return `Recording — appending to ${recordingSource.value}. Press Stop when done.`;
             return 'Recording — click in the game to capture actions. Press Stop when done.';
         }
         if (running.value) return 'Playing... game will reset and actions will execute.';
+        if (unsavedRecording.value) {
+            return recordingSource.value
+                ? `Unsaved recording — Save to overwrite ${recordingSource.value}.`
+                : 'Unsaved recording — click Save to persist.';
+        }
         if (lastSaved.value) return `Saved ${lastSaved.value}`;
         return '';
     });
 
     const statusClass = computed(() => {
         if (recording.value) return 'recording';
+        if (unsavedRecording.value) return 'unsaved';
         return '';
     });
 
@@ -976,51 +1031,57 @@
     };
 
     const stopRecord = async () => {
-        if (continueMode.value) {
-            // Filename is locked in by startRecording — save straight to it.
-            const response = await Network.send({
-                command: 'stopRecording',
-                params: {},
-            });
-            if (!response.success) {
-                result.value = { passed: 0, failed: 1, total: 1, error: response.error ?? 'stopRecording failed' };
-            }
-        } else {
-            // Open the filename prompt; the recording keeps running until the
-            // user confirms or cancels so they can still abandon gracefully.
-            const now = new Date();
-            const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-            saveFilename.value = `recording-${stamp}`;
-            pendingSave.value = true;
-            await nextTick();
-            if (saveInputEl.value) {
-                saveInputEl.value.focus();
-                saveInputEl.value.select();
-            }
+        // Just stops capture; the buffer survives in backend memory until
+        // the user clicks Save (or starts another recording / picks a file).
+        const response = await Network.send({ command: 'stopRecording', params: {} });
+        if (!response.success) {
+            result.value = { passed: 0, failed: 1, total: 1, error: response.error ?? 'stopRecording failed' };
         }
+    };
+
+    const openSavePrompt = async () => {
+        if (!unsavedRecording.value) return;
+        if (recordingSource.value) {
+            // Continue mode: filename is locked in to the original file.
+            await persistRecording();
+            return;
+        }
+        const now = new Date();
+        const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+        saveFilename.value = `recording-${stamp}`;
+        pendingSave.value = true;
+        await nextTick();
+        if (saveInputEl.value) {
+            saveInputEl.value.focus();
+            saveInputEl.value.select();
+        }
+    };
+
+    const persistRecording = async (filename) => {
+        const params = filename ? { filename } : {};
+        const response = await Network.send({ command: 'saveRecording', params });
+        if (response.success) {
+            await refreshList();
+            selected.value = response.params.file;
+        } else {
+            result.value = { passed: 0, failed: 1, total: 1, error: response.error ?? 'saveRecording failed' };
+        }
+        return response;
     };
 
     const confirmSave = async () => {
         const name = saveFilename.value.trim();
         if (!name) return;
-        const response = await Network.send({
-            command: 'stopRecording',
-            params: { filename: name },
-        });
         pendingSave.value = false;
         saveFilename.value = '';
-        if (response.success) {
-            await refreshList();
-            selected.value = response.params.file;
-        } else {
-            result.value = { passed: 0, failed: 1, total: 1, error: response.error ?? 'stopRecording failed' };
-        }
+        await persistRecording(name);
     };
 
-    const cancelSave = async () => {
+    const cancelSave = () => {
+        // Dismiss the prompt only — the buffer stays so the user can save
+        // later (or trigger discard by selecting a different file).
         pendingSave.value = false;
         saveFilename.value = '';
-        await Network.send({ command: 'cancelRecording', params: {} });
     };
 
     const askRename = async (file) => {

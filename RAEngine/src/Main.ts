@@ -1662,9 +1662,9 @@ type RecordingEvent =
 let recordingActive = false;
 let recordingBuffer: RecordingEvent[] = [];
 let recordingStartTime: number | null = null;
-// When set, stopRecording appends the buffered events to this existing
-// `.ratest` file instead of writing a new one. Used by "Continue Record"
-// so the user can extend a saved test from the current game state.
+// Remembers the file targeted by "Continue Record". Set on startRecording
+// in continue mode and persists through stopRecording until saveRecording
+// (which uses it as the destination) or cancelRecording discards it.
 let recordingAppendTo: string | null = null;
 
 let playbackAbort = false;
@@ -2957,6 +2957,18 @@ async function handleApiRequest(
             if (!flashConnected) return { success: false, error: "Flash Player is not running — reload the game to record" };
             if (recordingActive) return { success: false, error: "A recording is already in progress" };
 
+            // Any leftover unsaved buffer from a previous stopped session is
+            // dropped now — the user picked a new recording over saving.
+            if (recordingBuffer.length > 0 || recordingAppendTo) {
+                emitLog(
+                    "ratest",
+                    "warn",
+                    `Discarding ${recordingBuffer.length} unsaved events before new recording`,
+                );
+                recordingBuffer = [];
+                recordingAppendTo = null;
+            }
+
             // "Continue Record": append the new buffer to an existing file
             // instead of writing a fresh one. We deliberately skip the
             // game/asset reset in this mode — the whole point is to extend
@@ -3036,14 +3048,25 @@ async function handleApiRequest(
         }
 
         case "cancelRecording": {
-            if (!recordingActive) return { success: false, error: "Not recording" };
+            // Idempotent: callable while actively recording (cancels the
+            // capture) or after stopping (discards the unsaved buffer).
+            const wasActive = recordingActive;
+            const hadBuffer = recordingBuffer.length > 0 || recordingAppendTo !== null;
             recordingActive = false;
             recordingBuffer = [];
             recordingStartTime = null;
             recordingAppendTo = null;
-            sendToFirmware("setRecording", { recording: false }).catch(() => {});
-            broadcastToDevtools("recordingCancel", {});
-            emitLog("ratest", "info", "Recording cancelled");
+            if (wasActive) {
+                sendToFirmware("setRecording", { recording: false }).catch(() => {});
+            }
+            if (wasActive || hadBuffer) {
+                broadcastToDevtools("recordingCancel", {});
+                emitLog(
+                    "ratest",
+                    "info",
+                    wasActive ? "Recording cancelled" : "Unsaved recording discarded",
+                );
+            }
             return { success: true };
         }
 
@@ -3060,36 +3083,52 @@ async function handleApiRequest(
 
         case "stopRecording": {
             if (!recordingActive) return { success: false, error: "Not recording" };
-            const appendTarget = recordingAppendTo;
-
-            // In append mode the filename is locked in by startRecording, so
-            // the UI omits the prompt. In new-recording mode the user picks
-            // a name and we fall back to validating it here.
-            let safeName: string;
-            if (appendTarget) {
-                safeName = appendTarget;
-            } else {
-                const filename = String(input.params.filename || "").trim();
-                if (!filename) return { success: false, error: "filename required" };
-                if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) {
-                    return { success: false, error: "Invalid filename" };
-                }
-                safeName = filename.endsWith(".ratest") ? filename : `${filename}.ratest`;
-            }
-
+            // Stops capture only — the buffer (and recordingAppendTo) stay
+            // alive until saveRecording or cancelRecording. Persistence is
+            // an explicit user action via the Save button.
             recordingActive = false;
             sendToFirmware("setRecording", { recording: false }).catch(() => {});
+            const stepCount = recordingBuffer.length;
+            emitLog("ratest", "info", `Recording stopped: ${stepCount} events buffered`);
+            broadcastToDevtools("recordingStopped", {
+                stepCount,
+                appendTo: recordingAppendTo,
+            });
+            return { success: true, params: { stepCount, appendTo: recordingAppendTo } };
+        }
+
+        case "saveRecording": {
+            if (recordingActive) return { success: false, error: "Stop the recording before saving" };
+            if (!AppData.gameHash) return { success: false, error: "No game loaded" };
+            if (recordingBuffer.length === 0) return { success: false, error: "Nothing to save" };
+
+            const appendTarget = recordingAppendTo;
+            // Continue mode defaults to overwriting the original file; the
+            // UI can still pass an explicit filename if "save as" is added
+            // later. New mode requires an explicit filename.
+            let safeName: string;
+            const overrideRaw = String((input.params as { filename?: string })?.filename || "").trim();
+            if (overrideRaw) {
+                if (overrideRaw.includes("/") || overrideRaw.includes("\\") || overrideRaw.includes("..")) {
+                    return { success: false, error: "Invalid filename" };
+                }
+                safeName = overrideRaw.endsWith(".ratest") ? overrideRaw : `${overrideRaw}.ratest`;
+            } else if (appendTarget) {
+                safeName = appendTarget;
+            } else {
+                return { success: false, error: "filename required" };
+            }
 
             const { serializeRatest, serializeRatestEvents } = await import("./ratestWriter.ts");
             const dir = `RACache/ratests/${AppData.gameHash}`;
             const filePath = `${dir}/${safeName}`;
             let content: string;
             if (appendTarget) {
+                const existingPath = `${dir}/${appendTarget}`;
                 let existing: string;
                 try {
-                    existing = await Deno.readTextFile(filePath);
+                    existing = await Deno.readTextFile(existingPath);
                 } catch (e) {
-                    recordingAppendTo = null;
                     return { success: false, error: `read existing: ${(e as Error).message}` };
                 }
                 const newPart = serializeRatestEvents(recordingBuffer);
@@ -3098,13 +3137,14 @@ async function handleApiRequest(
             } else {
                 content = serializeRatest(recordingBuffer, AppData.gameHash!, recordingStartTime);
             }
+
             try {
                 await Deno.mkdir(dir, { recursive: true });
                 await Deno.writeTextFile(filePath, content);
             } catch (e) {
-                recordingAppendTo = null;
                 return { success: false, error: `write: ${(e as Error).message}` };
             }
+
             const stepCount = recordingBuffer.length;
             recordingBuffer = [];
             recordingStartTime = null;
