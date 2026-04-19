@@ -409,6 +409,11 @@ interface Settings {
     // raise when a game's reactions lag behind element visibility,
     // lower (down to 0) when playing back a well-behaved recording.
     playbackDelayMs: number;
+    // Whether `playRatest` should reset the game to its initial state
+    // before starting. Turn off when mid-game iteration on a test —
+    // e.g. recording the tail of a sequence and wanting to replay it
+    // against the current game state instead of the title screen.
+    playbackRestart: boolean;
 }
 const defaultSettings: Settings = {
     firmwareMode: "child",
@@ -421,6 +426,7 @@ const defaultSettings: Settings = {
     interpreterFastPath: true,
     lastUser: "Guest",
     playbackDelayMs: 200,
+    playbackRestart: true,
 };
 let settings: Settings = { ...defaultSettings };
 
@@ -2750,11 +2756,13 @@ async function handleApiRequest(
             playbackPaused = false;
             playbackAdvance = false;
 
-            const resetResp = await performResetGame();
-            if (!resetResp.success) {
-                const error = `resetGame: ${resetResp.error ?? "unknown error"}`;
-                broadcastToDevtools("ratestEnd", { passed: 0, failed: 1, total: 1, error, aborted: false });
-                return { success: false, error };
+            if (settings.playbackRestart) {
+                const resetResp = await performResetGame();
+                if (!resetResp.success) {
+                    const error = `resetGame: ${resetResp.error ?? "unknown error"}`;
+                    broadcastToDevtools("ratestEnd", { passed: 0, failed: 1, total: 1, error, aborted: false });
+                    return { success: false, error };
+                }
             }
 
             const visibleProperty = avmConfig?.mode === "AVM2" ? "visible" : "_visible";
@@ -2965,13 +2973,21 @@ async function handleApiRequest(
             recordingBuffer = [];
             recordingActive = true;
             broadcastToDevtools("recordingStart", {});
-            emitLog("ratest", "info", "Recording started — resetting game");
+            emitLog(
+                "ratest",
+                "info",
+                settings.playbackRestart
+                    ? "Recording started — resetting game"
+                    : "Recording started — skipping reset (Restart: No)",
+            );
 
-            const resetResp = await performResetGame();
-            if (!resetResp.success) {
-                recordingActive = false;
-                broadcastToDevtools("recordingCancel", {});
-                return { success: false, error: `resetGame: ${resetResp.error ?? "unknown error"}` };
+            if (settings.playbackRestart) {
+                const resetResp = await performResetGame();
+                if (!resetResp.success) {
+                    recordingActive = false;
+                    broadcastToDevtools("recordingCancel", {});
+                    return { success: false, error: `resetGame: ${resetResp.error ?? "unknown error"}` };
+                }
             }
 
             const r = await sendToFirmware("setRecording", { recording: true });

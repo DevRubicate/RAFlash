@@ -144,6 +144,13 @@
                 >
                     Delay: {{ playbackDelayMs }}
                 </button>
+                <button
+                    class="restart-button"
+                    @click="toggleRestart()"
+                    title="When Yes, playback resets the game before running. When No, it plays against the current game state."
+                >
+                    Restart: {{ playbackRestart ? 'Yes' : 'No' }}
+                </button>
             </template>
         </div>
 
@@ -490,6 +497,7 @@
     .record-button,
     .hit-test-button,
     .delay-button,
+    .restart-button,
     .confirm-button,
     .cancel-button {
         color: white;
@@ -540,6 +548,10 @@
     }
 
     .delay-button {
+        background: #374151;
+    }
+
+    .restart-button {
         background: #374151;
     }
 
@@ -635,6 +647,7 @@
     .record-button:disabled,
     .hit-test-button:disabled,
     .delay-button:disabled,
+    .restart-button:disabled,
     .confirm-button:disabled {
         opacity: 0.4;
         cursor: not-allowed;
@@ -646,6 +659,7 @@
     .record-button:not(:disabled):hover,
     .hit-test-button:not(:disabled):hover,
     .delay-button:not(:disabled):hover,
+    .restart-button:not(:disabled):hover,
     .confirm-button:not(:disabled):hover,
     .cancel-button:hover {
         opacity: 0.85;
@@ -731,6 +745,7 @@
     let stepsCopiedTimer = null;
 
     const playbackDelayMs = ref(200);
+    const playbackRestart = ref(true);
     const delayModalOpen = ref(false);
     const delayDraft = ref(200);
     const delayInputEl = ref(null);
@@ -977,19 +992,29 @@
 
     const confirmDelayModal = async () => {
         const n = Math.max(0, Math.floor(Number(delayDraft.value) || 0));
-        // Round-trip through getSettings so we don't clobber other
-        // fields on the way back: saveSettings replaces the whole blob.
+        await persistSettingPatch({ playbackDelayMs: n });
+        playbackDelayMs.value = n;
+        delayModalOpen.value = false;
+    };
+
+    const toggleRestart = async () => {
+        const next = !playbackRestart.value;
+        await persistSettingPatch({ playbackRestart: next });
+        playbackRestart.value = next;
+    };
+
+    // Round-trip through getSettings so we don't clobber other fields
+    // on the way back: saveSettings replaces the whole blob.
+    const persistSettingPatch = async (patch) => {
         const current = await Network.send({ command: 'getSettings', params: {} });
-        if (!current.success) { delayModalOpen.value = false; return; }
-        const next = { ...current.params, playbackDelayMs: n };
+        if (!current.success) return;
+        const next = { ...current.params, ...patch };
         // Strip read-only fields the engine appends on read.
         delete next.version;
         delete next.isRaflash;
         delete next.hasRaflash;
         delete next.gameHash;
         await Network.send({ command: 'saveSettings', params: { settings: next } });
-        playbackDelayMs.value = n;
-        delayModalOpen.value = false;
     };
 
     const toggleRecord = async () => {
@@ -1101,6 +1126,9 @@
             gameHash.value = settings.params.gameHash ?? null;
             if (typeof settings.params.playbackDelayMs === 'number') {
                 playbackDelayMs.value = settings.params.playbackDelayMs;
+            }
+            if (typeof settings.params.playbackRestart === 'boolean') {
+                playbackRestart.value = settings.params.playbackRestart;
             }
         }
         await refreshList();
