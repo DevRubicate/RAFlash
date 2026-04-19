@@ -1655,17 +1655,11 @@ function emitLog(source: string, level: string, message: string): void {
  */
 const gameLoadedWaiters = new Set<() => void>();
 
-type RecordingEvent =
-    | { kind: "click"; path: string; timestamp: number }
-    | { kind: "triggered"; id: number; name?: string; timestamp: number };
-
+// Recording is just an on/off switch on the firmware-side capture. The
+// captured lines are streamed to the frontend via `recordingLine` events
+// and held there as the editable in-memory recording. Persistence is the
+// frontend handing those lines back to `saveRatest`.
 let recordingActive = false;
-let recordingBuffer: RecordingEvent[] = [];
-let recordingStartTime: number | null = null;
-// Remembers the file targeted by "Continue Record". Set on startRecording
-// in continue mode and persists through stopRecording until saveRecording
-// (which uses it as the destination) or cancelRecording discards it.
-let recordingAppendTo: string | null = null;
 
 let playbackAbort = false;
 let playbackPaused = false;
@@ -2957,39 +2951,12 @@ async function handleApiRequest(
             if (!flashConnected) return { success: false, error: "Flash Player is not running — reload the game to record" };
             if (recordingActive) return { success: false, error: "A recording is already in progress" };
 
-            // Any leftover unsaved buffer from a previous stopped session is
-            // dropped now — the user picked a new recording over saving.
-            if (recordingBuffer.length > 0 || recordingAppendTo) {
-                emitLog(
-                    "ratest",
-                    "warn",
-                    `Discarding ${recordingBuffer.length} unsaved events before new recording`,
-                );
-                recordingBuffer = [];
-                recordingAppendTo = null;
-            }
+            // Continue mode just controls game-reset behavior; the file
+            // identity (if any) is the frontend's concern — it knows which
+            // file it loaded and which steps to preserve.
+            const continueMode = !!(input.params as { continueMode?: boolean })?.continueMode;
 
-            // "Continue Record": append the new buffer to an existing file
-            // instead of writing a fresh one. We deliberately skip the
-            // game/asset reset in this mode — the whole point is to extend
-            // a recording from wherever the game currently is.
-            const appendTo = String((input.params as { appendTo?: string })?.appendTo || "").trim();
-            let appendTarget: string | null = null;
-            if (appendTo) {
-                if (appendTo.includes("/") || appendTo.includes("\\") || appendTo.includes("..")) {
-                    return { success: false, error: "Invalid filename" };
-                }
-                const safe = appendTo.endsWith(".ratest") ? appendTo : `${appendTo}.ratest`;
-                const path = `RACache/ratests/${AppData.gameHash}/${safe}`;
-                try {
-                    await Deno.stat(path);
-                } catch {
-                    return { success: false, error: `File not found: ${safe}` };
-                }
-                appendTarget = safe;
-            }
-
-            if (!appendTarget) {
+            if (!continueMode) {
                 // Match playRatest: reset every asset to ACTIVE so triggers
                 // during the recording produce state-transition diffs we can tap.
                 const stateEdits: Array<[string, unknown]> = [];
@@ -3007,12 +2974,10 @@ async function handleApiRequest(
                 }
             }
 
-            recordingBuffer = [];
             recordingActive = true;
-            recordingAppendTo = appendTarget;
-            broadcastToDevtools("recordingStart", { appendTo: appendTarget });
-            if (appendTarget) {
-                emitLog("ratest", "info", `Continue recording — appending to ${appendTarget}`);
+            broadcastToDevtools("recordingStart", { continueMode });
+            if (continueMode) {
+                emitLog("ratest", "info", "Continue recording — preserving existing steps");
             } else {
                 emitLog(
                     "ratest",
@@ -3023,11 +2988,10 @@ async function handleApiRequest(
                 );
             }
 
-            if (!appendTarget && settings.playbackRestart) {
+            if (!continueMode && settings.playbackRestart) {
                 const resetResp = await performResetGame();
                 if (!resetResp.success) {
                     recordingActive = false;
-                    recordingAppendTo = null;
                     broadcastToDevtools("recordingCancel", {});
                     return { success: false, error: `resetGame: ${resetResp.error ?? "unknown error"}` };
                 }
@@ -3036,36 +3000,19 @@ async function handleApiRequest(
             const r = await sendToFirmware("setRecording", { recording: true });
             if (!r.success) {
                 recordingActive = false;
-                recordingAppendTo = null;
                 broadcastToDevtools("recordingCancel", {});
                 return r;
             }
-            // Clock starts here so any wait before the first click (loading
-            // bars, intro anims, player hesitation) is preserved as an
-            // initial `pause` step on serialization.
-            recordingStartTime = Date.now();
             return { success: true };
         }
 
         case "cancelRecording": {
-            // Idempotent: callable while actively recording (cancels the
-            // capture) or after stopping (discards the unsaved buffer).
             const wasActive = recordingActive;
-            const hadBuffer = recordingBuffer.length > 0 || recordingAppendTo !== null;
             recordingActive = false;
-            recordingBuffer = [];
-            recordingStartTime = null;
-            recordingAppendTo = null;
             if (wasActive) {
                 sendToFirmware("setRecording", { recording: false }).catch(() => {});
-            }
-            if (wasActive || hadBuffer) {
                 broadcastToDevtools("recordingCancel", {});
-                emitLog(
-                    "ratest",
-                    "info",
-                    wasActive ? "Recording cancelled" : "Unsaved recording discarded",
-                );
+                emitLog("ratest", "info", "Recording cancelled");
             }
             return { success: true };
         }
@@ -3083,61 +3030,31 @@ async function handleApiRequest(
 
         case "stopRecording": {
             if (!recordingActive) return { success: false, error: "Not recording" };
-            // Stops capture only — the buffer (and recordingAppendTo) stay
-            // alive until saveRecording or cancelRecording. Persistence is
-            // an explicit user action via the Save button.
             recordingActive = false;
             sendToFirmware("setRecording", { recording: false }).catch(() => {});
-            const stepCount = recordingBuffer.length;
-            emitLog("ratest", "info", `Recording stopped: ${stepCount} events buffered`);
-            broadcastToDevtools("recordingStopped", {
-                stepCount,
-                appendTo: recordingAppendTo,
-            });
-            return { success: true, params: { stepCount, appendTo: recordingAppendTo } };
+            emitLog("ratest", "info", "Recording stopped");
+            broadcastToDevtools("recordingStopped", {});
+            return { success: true };
         }
 
-        case "saveRecording": {
-            if (recordingActive) return { success: false, error: "Stop the recording before saving" };
+        case "saveRatest": {
             if (!AppData.gameHash) return { success: false, error: "No game loaded" };
-            if (recordingBuffer.length === 0) return { success: false, error: "Nothing to save" };
+            if (recordingActive) return { success: false, error: "Stop the recording before saving" };
 
-            const appendTarget = recordingAppendTo;
-            // Continue mode defaults to overwriting the original file; the
-            // UI can still pass an explicit filename if "save as" is added
-            // later. New mode requires an explicit filename.
-            let safeName: string;
-            const overrideRaw = String((input.params as { filename?: string })?.filename || "").trim();
-            if (overrideRaw) {
-                if (overrideRaw.includes("/") || overrideRaw.includes("\\") || overrideRaw.includes("..")) {
-                    return { success: false, error: "Invalid filename" };
-                }
-                safeName = overrideRaw.endsWith(".ratest") ? overrideRaw : `${overrideRaw}.ratest`;
-            } else if (appendTarget) {
-                safeName = appendTarget;
-            } else {
-                return { success: false, error: "filename required" };
+            const filename = String((input.params as { filename?: string })?.filename || "").trim();
+            if (!filename) return { success: false, error: "filename required" };
+            if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) {
+                return { success: false, error: "Invalid filename" };
             }
+            const safeName = filename.endsWith(".ratest") ? filename : `${filename}.ratest`;
 
-            const { serializeRatest, serializeRatestEvents } = await import("./ratestWriter.ts");
+            const linesParam = (input.params as { lines?: unknown }).lines;
+            if (!Array.isArray(linesParam)) return { success: false, error: "lines required" };
+            const lines = linesParam.map((l) => String(l));
+
+            const content = `hash ${AppData.gameHash}\n\n${lines.join("\n")}\n`;
             const dir = `RACache/ratests/${AppData.gameHash}`;
             const filePath = `${dir}/${safeName}`;
-            let content: string;
-            if (appendTarget) {
-                const existingPath = `${dir}/${appendTarget}`;
-                let existing: string;
-                try {
-                    existing = await Deno.readTextFile(existingPath);
-                } catch (e) {
-                    return { success: false, error: `read existing: ${(e as Error).message}` };
-                }
-                const newPart = serializeRatestEvents(recordingBuffer);
-                const joiner = existing.endsWith("\n") ? "" : "\n";
-                content = existing + joiner + newPart;
-            } else {
-                content = serializeRatest(recordingBuffer, AppData.gameHash!, recordingStartTime);
-            }
-
             try {
                 await Deno.mkdir(dir, { recursive: true });
                 await Deno.writeTextFile(filePath, content);
@@ -3145,14 +3062,9 @@ async function handleApiRequest(
                 return { success: false, error: `write: ${(e as Error).message}` };
             }
 
-            const stepCount = recordingBuffer.length;
-            recordingBuffer = [];
-            recordingStartTime = null;
-            recordingAppendTo = null;
-            const verb = appendTarget ? "appended" : "saved";
-            emitLog("ratest", "info", `Recording ${verb}: ${safeName} (${stepCount} events)`);
-            broadcastToDevtools("recordingSaved", { file: safeName, stepCount, appended: !!appendTarget });
-            return { success: true, params: { file: safeName, stepCount, appended: !!appendTarget } };
+            emitLog("ratest", "info", `Recording saved: ${safeName} (${lines.length} lines)`);
+            broadcastToDevtools("recordingSaved", { file: safeName, stepCount: lines.length });
+            return { success: true, params: { file: safeName, stepCount: lines.length } };
         }
 
         // Memory Watch commands
@@ -3788,16 +3700,12 @@ function handleFirmwareData(data: string): void {
                     });
                 } else if (recordingActive && parsed.data?.kind === "click") {
                     if (typeof parsed.data.path === "string") {
-                        const event: RecordingEvent = {
-                            kind: "click",
-                            path: parsed.data.path,
-                            timestamp: Date.now(),
-                        };
-                        recordingBuffer.push(event);
-                        broadcastToDevtools("recordingEvent", {
-                            index: recordingBuffer.length - 1,
-                            ...event,
-                        });
+                        // Emit canonical ratest lines: a `wait` so playback
+                        // polls until the element exists, then the `click`.
+                        // Same shape as what saveRatest will write to disk.
+                        const path = parsed.data.path;
+                        broadcastToDevtools("recordingLine", { source: `wait ${path}` });
+                        broadcastToDevtools("recordingLine", { source: `click ${path}` });
                     } else {
                         // Firmware saw a click but couldn't resolve a clickable
                         // target under the cursor. Surface it so the user can
@@ -3839,16 +3747,12 @@ function handleFirmwareData(data: string): void {
                                 const index = parseInt(match[1]);
                                 const asset = AppData.data.assets[index];
                                 if (asset) {
-                                    const event: RecordingEvent = {
-                                        kind: "triggered",
-                                        id: asset.id as number,
-                                        name: asset.name as string | undefined,
-                                        timestamp: Date.now(),
-                                    };
-                                    recordingBuffer.push(event);
-                                    broadcastToDevtools("recordingEvent", {
-                                        index: recordingBuffer.length - 1,
-                                        ...event,
+                                    // Emit canonical `waitTriggered <id>`
+                                    // line; the asset's display name flows
+                                    // separately as a hint for the UI log.
+                                    broadcastToDevtools("recordingLine", {
+                                        source: `waitTriggered ${asset.id}`,
+                                        label: asset.name ?? null,
                                     });
                                 }
                             }
