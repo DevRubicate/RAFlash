@@ -109,6 +109,7 @@ dist: compile
 release: dist
 	$(eval VERSION := $(shell grep 'const VERSION' RAEngine/src/Main.ts | sed 's/.*"\(.*\)".*/\1/'))
 	@if [ -z "$(VERSION)" ]; then echo "Error: could not extract VERSION from RAEngine/src/Main.ts"; exit 1; fi
+	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$$' || { echo "Error: extracted VERSION '$(VERSION)' is not a valid semver (expected e.g. 1.2.3 or 1.2.3-rc1)"; exit 1; }
 	@if git rev-parse "v$(VERSION)" >/dev/null 2>&1; then echo "Error: tag v$(VERSION) already exists. Bump VERSION in RAEngine/src/Main.ts first."; exit 1; fi
 	@echo "Releasing v$(VERSION)..."
 	@git tag -a "v$(VERSION)" -m "v$(VERSION)"

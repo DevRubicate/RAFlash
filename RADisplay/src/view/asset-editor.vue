@@ -461,9 +461,16 @@
                 }
             }
         }
+        // Snapshot the asset id before any await so the saveAssets call
+        // targets the user's original selection even if they click another
+        // asset during the save round-trip.
         const assetId = selectedAssetId.value;
         if (cleared) await App.save();
-        await Network.send({ command: 'saveAssets', params: { ids: [assetId] } });
+        const response = await Network.send({ command: 'saveAssets', params: { ids: [assetId] } });
+        if (!response.success) {
+            console.error('saveAssets failed:', response.error);
+            alert('Failed to save asset: ' + (response.error || 'unknown error'));
+        }
     };
 
     const clearBadgeImage = () => {
@@ -536,8 +543,12 @@
         }
     });
 
+    let addAltGroupInFlight = false;
     const addAltGroup = async () => {
-        if (selectedAsset.value) {
+        if (addAltGroupInFlight) return;
+        if (!selectedAsset.value) return;
+        addAltGroupInFlight = true;
+        try {
             selectedAsset.value.groups.push({
                 id: App.getFakeId(), type: 'ALT', requirements: []
             });
@@ -547,6 +558,8 @@
                 });
             }
             await App.save();
+        } finally {
+            addAltGroupInFlight = false;
         }
     };
 
@@ -704,13 +717,16 @@
         }
     };
 
-    // Sync local refs when the underlying asset data changes (e.g. external edits)
-    watch(() => selectedAsset.value.points, (newVal) => {
-        selectedPoints.value = newVal;
-    });
-    watch(() => selectedAsset.value.progressionType, (newVal) => {
-        selectedProgressionType.value = newVal;
-    });
+    // Sync local refs when the underlying asset data changes (e.g. external
+    // edits) OR when the whole asset object is swapped by a server sync.
+    // Watching `selectedAsset.value.x` directly only tracks property changes;
+    // a full object replacement wouldn't re-run the callback. Watching
+    // `selectedAsset` itself ensures both cases are covered.
+    watch(selectedAsset, (asset) => {
+        if (!asset) return;
+        selectedPoints.value = asset.points;
+        selectedProgressionType.value = asset.progressionType;
+    }, { deep: true });
 
     App.initialize().then(() => {
         const asset = App.data.assets.find((a) => a.id === App.windowParams.selectedAssetId);

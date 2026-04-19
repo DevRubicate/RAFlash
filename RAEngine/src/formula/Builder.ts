@@ -500,7 +500,7 @@ export class Builder {
                     element.children[0].parent = element;
                     return element;
                 }
-                throw new Error(`Unknown function: ${funcName}`);
+                throw new Error(`Unknown function "${funcName}". Supported functions: len, type.`);
             }
             default:
                 throw new Error(`Invalid node type: ${node.type}`);

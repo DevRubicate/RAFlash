@@ -324,7 +324,7 @@
 </style>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Network } from '../js/network.ts';
 import { App } from '../js/app.ts';
 
@@ -468,7 +468,21 @@ async function openSettings() {
 }
 
 // Check for updates
-// Sync assets from RAFlash-Assets repo
+// Track any setTimeouts we schedule so they can be cleared on unmount.
+const pendingTimeouts = new Set();
+function trackedTimeout(fn, ms) {
+    const id = setTimeout(() => {
+        pendingTimeouts.delete(id);
+        fn();
+    }, ms);
+    pendingTimeouts.add(id);
+    return id;
+}
+onUnmounted(() => {
+    for (const id of pendingTimeouts) clearTimeout(id);
+    pendingTimeouts.clear();
+});
+
 async function syncAssets() {
     assetSyncState.value = 'syncing';
     try {
@@ -479,7 +493,7 @@ async function syncAssets() {
             return;
         }
         assetSyncState.value = 'done';
-        setTimeout(() => { assetSyncState.value = 'idle'; }, 2000);
+        trackedTimeout(() => { assetSyncState.value = 'idle'; }, 2000);
     } catch {
         alert('Failed to sync assets');
         assetSyncState.value = 'idle';
@@ -499,7 +513,7 @@ async function checkForUpdates() {
             updateInfo.value = response.params;
         } else {
             updateState.value = 'uptodate';
-            setTimeout(() => { updateState.value = 'idle'; }, 2000);
+            trackedTimeout(() => { updateState.value = 'idle'; }, 2000);
             return;
         }
     } catch {

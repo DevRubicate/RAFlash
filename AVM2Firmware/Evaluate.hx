@@ -79,7 +79,18 @@ class Evaluate {
                 try {
                     var cls:Dynamic = untyped appDomain.getDefinition(fullName);
                     if (cls == null) continue;
-                    gameClassRegistry.set(shortName, cls);
+                    // Register under short name (first one wins on collision) and
+                    // under a dot-free qualified alias (game.Main → game$Main) so
+                    // users can disambiguate when two packages expose the same
+                    // short name. DSL identifiers can't contain '.' so '$' is
+                    // the escape here.
+                    if (!gameClassRegistry.exists(shortName)) {
+                        gameClassRegistry.set(shortName, cls);
+                    }
+                    var qualifiedAlias:String = StringTools.replace(StringTools.replace(fullName, "::", "$"), ".", "$");
+                    if (qualifiedAlias != shortName) {
+                        gameClassRegistry.set(qualifiedAlias, cls);
+                    }
                     // Enumerate statics and add to merged map
                     try {
                         var classXml:Dynamic = untyped __global__["flash.utils.describeType"](cls);
@@ -1362,13 +1373,19 @@ class Evaluate {
                 var numChildren:Int = container.numChildren;
                 var c:Int = 0;
                 while (c < numChildren) {
-                    var child:DisplayObject = container.getChildAt(c);
-                    var childName:String = child.name;
-                    // Skip firmware child and duplicates (already found as dynamic property)
-                    if (childName != "__raflash" && !seen.exists(childName)) {
-                        propKeys.push(childName);
-                        propValues.push(child);
-                        seen.set(childName, true);
+                    // Guard each getChildAt individually so a single child
+                    // removed between numChildren and getChildAt doesn't
+                    // abort enumeration of the remaining siblings.
+                    try {
+                        var child:DisplayObject = container.getChildAt(c);
+                        var childName:String = child.name;
+                        if (childName != "__raflash" && !seen.exists(childName)) {
+                            propKeys.push(childName);
+                            propValues.push(child);
+                            seen.set(childName, true);
+                        }
+                    } catch (e:Dynamic) {
+                        // Child at index c unavailable this frame; skip.
                     }
                     c++;
                 }

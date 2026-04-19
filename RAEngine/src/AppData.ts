@@ -31,7 +31,11 @@ export class AppData {
      */
     static async setGamePath(gamePath: string, hashOverride?: string): Promise<void> {
         this.gamePath = gamePath;
-        this.gameHash = hashOverride || await this.hashFile(gamePath);
+        const rawHash = hashOverride || await this.hashFile(gamePath);
+        if (!/^[A-Za-z0-9._-]+$/.test(rawHash)) {
+            throw new Error(`Invalid game hash "${rawHash}": must match [A-Za-z0-9._-]+`);
+        }
+        this.gameHash = rawHash;
         this.stateFilePath = `RACache/games/${this.gameHash}.json`;
     }
 
@@ -44,47 +48,55 @@ export class AppData {
             throw new Error("Game path not set. Call setGamePath() first.");
         }
 
+        let content: string;
         try {
-            const content = await Deno.readTextFile(this.stateFilePath);
-            const loadedData = JSON.parse(content);
-
-            // Filter out null/invalid entries and mark all loaded assets as saved
-            if (loadedData.assets) {
-                loadedData.assets = loadedData.assets.filter((a: Record<string, unknown>) => a != null && a.id != null);
-                for (const asset of loadedData.assets) {
-                    asset._saved = true;
-                    asset._modified = false;
-                    asset.state = "ACTIVE"; // state is ephemeral, always starts as ACTIVE
-                    asset._originalSnapshot = JSON.parse(JSON.stringify(this.stripAssetData(asset, this.assetSchema)));
-                }
-            }
-
-            // Strip gameConfig to schema-defined fields only, so stale
-            // behavior fields (originUrl, networkRules, etc.) left in old
-            // RACache files are not loaded into memory.
-            if (loadedData.gameConfig) {
-                loadedData.gameConfig = this.stripAssetData(loadedData.gameConfig, this.gameConfigSchema);
-            }
-
-            const diff = JSONDiff.getDataDiff(AppData.data, loadedData);
-            JSONDiff.processIncomingDiff(AppData.data, diff);
-
-            // Ensure .raflash-only fields have defaults in memory
-            // (they are not persisted to RACache; loaded from .raflash on startup)
-            const gc = AppData.data.gameConfig;
-            if (gc.originUrl == null) gc.originUrl = '';
-            if (gc.scaleMode == null) gc.scaleMode = 'neutral';
-            if (gc.align == null) gc.align = 'neutral';
-            if (gc.hashOverride == null) gc.hashOverride = '';
-            if (gc.networkRules == null) gc.networkRules = [];
+            content = await Deno.readTextFile(this.stateFilePath);
         } catch (error) {
             if (error instanceof Deno.errors.NotFound) {
                 // New game, start fresh
                 this.data = { assets: [], codeNotes: [], gameConfig: { title: '', badgeImage: '', originUrl: '', hashOverride: '', scaleMode: 'neutral', align: 'neutral', networkRules: [] } };
-            } else {
-                throw error;
+                return;
+            }
+            throw error;
+        }
+
+        let loadedData;
+        try {
+            loadedData = JSON.parse(content);
+        } catch (error) {
+            console.error(`RACache file at ${this.stateFilePath} is corrupt: ${error instanceof Error ? error.message : String(error)}`);
+            Deno.exit(1);
+        }
+
+        // Filter out null/invalid entries and mark all loaded assets as saved
+        if (loadedData.assets) {
+            loadedData.assets = loadedData.assets.filter((a: Record<string, unknown>) => a != null && a.id != null);
+            for (const asset of loadedData.assets) {
+                asset._saved = true;
+                asset._modified = false;
+                asset.state = "ACTIVE"; // state is ephemeral, always starts as ACTIVE
+                asset._originalSnapshot = JSON.parse(JSON.stringify(this.stripAssetData(asset, this.assetSchema)));
             }
         }
+
+        // Strip gameConfig to schema-defined fields only, so stale
+        // behavior fields (originUrl, networkRules, etc.) left in old
+        // RACache files are not loaded into memory.
+        if (loadedData.gameConfig) {
+            loadedData.gameConfig = this.stripAssetData(loadedData.gameConfig, this.gameConfigSchema);
+        }
+
+        const diff = JSONDiff.getDataDiff(AppData.data, loadedData);
+        JSONDiff.processIncomingDiff(AppData.data, diff);
+
+        // Ensure .raflash-only fields have defaults in memory
+        // (they are not persisted to RACache; loaded from .raflash on startup)
+        const gc = AppData.data.gameConfig;
+        if (gc.originUrl == null) gc.originUrl = '';
+        if (gc.scaleMode == null) gc.scaleMode = 'neutral';
+        if (gc.align == null) gc.align = 'neutral';
+        if (gc.hashOverride == null) gc.hashOverride = '';
+        if (gc.networkRules == null) gc.networkRules = [];
     }
 
     /**

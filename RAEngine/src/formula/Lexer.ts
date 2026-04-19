@@ -275,21 +275,48 @@ class Lexer {
                 this.advancePosition(); // Handle escape sequences by skipping the backslash
 
                 if (this.position < this.input.length) {
-                    // Handle escaped character (e.g., \' or \")
                     const escapedChar = this.input[this.position];
                     if (escapedChar === 'n') {
                         str += '\n';
+                        this.advancePosition();
                     } else if (escapedChar === 't') {
                         str += '\t';
+                        this.advancePosition();
+                    } else if (escapedChar === 'r') {
+                        str += '\r';
+                        this.advancePosition();
+                    } else if (escapedChar === '0') {
+                        str += '\0';
+                        this.advancePosition();
                     } else if (escapedChar === '\\') {
                         str += '\\';
-                    } else if (escapedChar === this.stringDelimiter) {
-                        str += this.stringDelimiter;
+                        this.advancePosition();
+                    } else if (escapedChar === '\'' || escapedChar === '"') {
+                        str += escapedChar;
+                        this.advancePosition();
+                    } else if (escapedChar === 'x') {
+                        this.advancePosition();
+                        const hex = this.input.slice(this.position, this.position + 2);
+                        if (!/^[0-9a-fA-F]{2}$/.test(hex)) {
+                            throw new LexerError(`Invalid \\x escape: expected two hex digits`, this.row, this.column);
+                        }
+                        str += String.fromCharCode(parseInt(hex, 16));
+                        this.advancePosition();
+                        this.advancePosition();
+                    } else if (escapedChar === 'u') {
+                        this.advancePosition();
+                        const hex = this.input.slice(this.position, this.position + 4);
+                        if (!/^[0-9a-fA-F]{4}$/.test(hex)) {
+                            throw new LexerError(`Invalid \\u escape: expected four hex digits`, this.row, this.column);
+                        }
+                        str += String.fromCharCode(parseInt(hex, 16));
+                        this.advancePosition();
+                        this.advancePosition();
+                        this.advancePosition();
+                        this.advancePosition();
                     } else {
-                        str += escapedChar; // Default for any other escaped char
+                        throw new LexerError(`Invalid escape sequence \\${escapedChar}`, this.row, this.column);
                     }
-
-                    this.advancePosition();
                 }
             } else {
                 str += this.input[this.position];

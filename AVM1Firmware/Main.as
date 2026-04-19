@@ -2186,6 +2186,14 @@ class Main {
      * Marks the formula as preprocessed by setting index 0 to the number 1 (was "VERSION_1").
      */
     private static function preprocessFormula(formula:Array):Void {
+        if (formula == null || formula.length < 1) {
+            throw new Error("preprocessFormula: formula is empty");
+        }
+        // Accept either the raw VERSION_1 header or an already-preprocessed formula
+        // (index 0 set to the number 1). Anything else indicates corruption.
+        if (formula[0] !== "VERSION_1" && formula[0] !== 1) {
+            throw new Error("preprocessFormula: missing VERSION_1 header (got " + formula[0] + ")");
+        }
         formula[0] = 1; // Mark as preprocessed
         preprocessRange(formula, 1, formula.length);
     }
@@ -2930,8 +2938,9 @@ class Main {
                 }
                 case "NOT": {
                     var a = stack.pop();
+                    // Empty is truthy (matches TERNARY at lines 3341/3366), so NOT(empty) = [0]
                     if (a.length == 0) {
-                        stack.push([1]);
+                        stack.push([0]);
                         break;
                     }
                     var result = [];
@@ -3325,6 +3334,9 @@ class Main {
                     var elseEnd:Number = elseStart + elseLen;
                     i = elseEnd - 1; // -1 because loop will ++i
 
+                    if (stack.length == 0) {
+                        throw new Error("Stack underflow at TERNARY");
+                    }
                     var condition:Array = Array(stack.pop());
 
                     // Empty condition array means nothing matched — push empty result

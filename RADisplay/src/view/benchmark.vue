@@ -190,7 +190,9 @@
             if (ms < rows[kind].min) rows[kind].min = ms;
             if (ms > rows[kind].max) rows[kind].max = ms;
         } else {
-            rows[kind] = reactive({ kind, current: ms, min: ms, max: ms });
+            // Outer `rows` is already reactive; nested reactive() is redundant
+            // and only adds proxy overhead (Vue auto-unwraps anyway).
+            rows[kind] = { kind, current: ms, min: ms, max: ms };
         }
     };
 

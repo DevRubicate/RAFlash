@@ -42,9 +42,11 @@
 
 /**
  * Describes a single change operation in a diff.
- * It's a tuple containing the path and the new value.
+ * Tuple: [path, value]. The value side is JSON — scalar, object, array, or
+ * DELETE_SENTINEL — so it's typed as `unknown` to force callers to narrow
+ * before using.
  */
-export type DiffOperation = [string, any];
+export type DiffOperation = [string, unknown];
 
 /**
  * Represents the diff object, which contains a list of edit operations.
@@ -56,11 +58,12 @@ export type Diff = {
 /**
  * Defines the structure for a watcher.
  * The callback receives an array of the actual objects/values from the target
- * that correspond to each part of the matched path.
+ * that correspond to each part of the matched path — each entry is whatever
+ * lives at that level of the traversal, so values are `unknown`.
  */
 interface Watcher {
     pattern: string;
-    callback: (segments: any[]) => void;
+    callback: (segments: unknown[]) => void;
 }
 
 export class JSONDiff {

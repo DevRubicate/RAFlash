@@ -51,6 +51,13 @@ class Main extends MovieClip {
     private var memoryWatchers:Map<String, Dynamic> = new Map();
     private var memoryWatchFrameCount:Int = 0;
 
+    // Active game loader (tracked so reloads can remove the prior loader)
+    private var activeGameLoader:Loader = null;
+    // Uncaught error listeners attached on the last game load, so we can
+    // remove them before attaching new ones on a reload.
+    private var uncaughtErrorTargets:Array<Dynamic> = [];
+    private var uncaughtErrorHandler:Dynamic->Void = null;
+
     // Reconnection
     private var reconnectAttempts:Int = 0;
     private var reconnectPending:Bool = false;
@@ -599,6 +606,12 @@ class Main extends MovieClip {
                 instance.addChild(naLoader);
                 Achievement.nativeAchLoader = naLoader;
                 var naContext:LoaderContext = new LoaderContext(false, new ApplicationDomain(null));
+                var removeNaLoaderOnFailure = function():Void {
+                    if (Achievement.nativeAchLoader == naLoader) {
+                        try { instance.removeChild(naLoader); } catch (e:Dynamic) {}
+                        Achievement.nativeAchLoader = null;
+                    }
+                };
                 naLoader.contentLoaderInfo.addEventListener(Event.COMPLETE, function(e:Event):Void {
                     try {
                         var domain:ApplicationDomain = naLoader.contentLoaderInfo.applicationDomain;
@@ -612,16 +625,20 @@ class Main extends MovieClip {
                                 Achievement.nativeAchReady = true;
                                 sendResponse(naId, {success: true});
                             } else {
+                                removeNaLoaderOnFailure();
                                 sendResponse(naId, {success: false, error: "__NativeEval.ach not defined"});
                             }
                         } else {
+                            removeNaLoaderOnFailure();
                             sendResponse(naId, {success: false, error: "__NativeEval class not found"});
                         }
                     } catch (err:Dynamic) {
+                        removeNaLoaderOnFailure();
                         sendResponse(naId, {success: false, error: "Error accessing __NativeEval: " + Std.string(err)});
                     }
                 });
                 naLoader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, function(e:IOErrorEvent):Void {
+                    removeNaLoaderOnFailure();
                     sendResponse(naId, {success: false, error: "IO error loading compiled SWF: " + e.text});
                 });
                 naLoader.load(new URLRequest(naUrl), naContext);
@@ -654,6 +671,19 @@ class Main extends MovieClip {
     }
 
     private function loadGame(?url:String):Void {
+        // Remove the prior loader (and its listeners on the previous game's
+        // uncaughtErrorEvents) before spinning up a new one, so reloads don't
+        // leak display-list children or stack handlers.
+        if (activeGameLoader != null) {
+            try { activeGameLoader.contentLoaderInfo.removeEventListener(Event.COMPLETE, onGameLoaded); } catch (e:Dynamic) {}
+            try { activeGameLoader.contentLoaderInfo.removeEventListener(IOErrorEvent.IO_ERROR, onGameLoadError); } catch (e:Dynamic) {}
+            if (activeGameLoader.parent != null) {
+                try { activeGameLoader.parent.removeChild(activeGameLoader); } catch (e:Dynamic) {}
+            }
+            activeGameLoader = null;
+        }
+        removeUncaughtErrorListeners();
+
         var loader = new Loader();
         loader.contentLoaderInfo.addEventListener(Event.COMPLETE, onGameLoaded);
         loader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, onGameLoadError);
@@ -663,6 +693,18 @@ class Main extends MovieClip {
         loader.load(new URLRequest(gameUrl), context);
 
         addChild(loader);
+        activeGameLoader = loader;
+    }
+
+    private function removeUncaughtErrorListeners():Void {
+        if (uncaughtErrorHandler == null) return;
+        for (target in uncaughtErrorTargets) {
+            try {
+                untyped target.uncaughtErrorEvents.removeEventListener("uncaughtError", uncaughtErrorHandler);
+            } catch (e:Dynamic) {}
+        }
+        uncaughtErrorTargets = [];
+        uncaughtErrorHandler = null;
     }
 
     private function onGameLoaded(e:Event):Void {
@@ -676,25 +718,27 @@ class Main extends MovieClip {
 
         // Suppress uncaught error events from the game (IOError, SecurityError, etc.)
         // Try multiple targets since the effective root varies between child/parent mode.
+        // Reuse a single handler instance so loadGame can remove them on reload.
         var _self = this;
+        uncaughtErrorHandler = function(evt:Dynamic) {
+            untyped evt.preventDefault();
+            try {
+                var err:Dynamic = untyped evt.error;
+                var msg:String = Std.isOfType(err, String) ? err : Std.string(untyped err.message);
+                _self.sendMessage("log", {message: "Suppressed game error: " + msg});
+            } catch (e3:Dynamic) {
+                _self.sendMessage("log", {message: "Suppressed unknown game error"});
+            }
+        };
+        uncaughtErrorTargets = [];
         for (target in ([
             untyped gameRoot.loaderInfo,
             untyped gameRoot.stage.loaderInfo,
             untyped flash.Lib.current.loaderInfo
         ] : Array<Dynamic>)) {
             try {
-                untyped target.uncaughtErrorEvents.addEventListener(
-                    "uncaughtError", function(evt:Dynamic) {
-                        untyped evt.preventDefault();
-                        try {
-                            var err:Dynamic = untyped evt.error;
-                            var msg:String = Std.isOfType(err, String) ? err : Std.string(untyped err.message);
-                            _self.sendMessage("log", {message: "Suppressed game error: " + msg});
-                        } catch (e3:Dynamic) {
-                            _self.sendMessage("log", {message: "Suppressed unknown game error"});
-                        }
-                    }
-                );
+                untyped target.uncaughtErrorEvents.addEventListener("uncaughtError", uncaughtErrorHandler);
+                uncaughtErrorTargets.push(target);
             } catch (e2:Dynamic) {}
         }
 

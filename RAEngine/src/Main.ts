@@ -1578,7 +1578,8 @@ function generateRequestId(): string {
 /** Read the game SWF bytes — from memory cache (.raflash) or disk (.swf). */
 async function readGameSwf(): Promise<Uint8Array> {
     if (cachedGameSwf) return cachedGameSwf;
-    return Deno.readFile(selectedGamePath!);
+    if (!selectedGamePath) throw new Error("readGameSwf: no game selected (selectedGamePath is null)");
+    return Deno.readFile(selectedGamePath);
 }
 
 /**
@@ -1606,30 +1607,30 @@ async function sendToFirmware(command: string, params: Record<string, unknown> =
     const message = JSON.stringify(["REQUEST", id, { command, params }]) + avmConfig.messageTerminator;
 
     return new Promise((resolve) => {
-        // Set up timeout
-        const timeout = setTimeout(() => {
-            pendingRequests.delete(id);
-            resolve({ success: false, error: "Request timed out" });
-        }, 30000);
-
-        // Store resolver
-        pendingRequests.set(id, (response) => {
+        let settled = false;
+        const settle = (response: Record<string, unknown>) => {
+            if (settled) return;
+            settled = true;
             clearTimeout(timeout);
             pendingRequests.delete(id);
             resolve(response);
-        });
+        };
+
+        const timeout = setTimeout(() => {
+            settle({ success: false, error: "Request timed out" });
+        }, 30000);
+
+        pendingRequests.set(id, settle);
 
         // Send request
         const encoder = new TextEncoder();
         const writer = firmwareWriter;
         if (!writer) {
-            resolve({ success: false, error: "Firmware disconnected during send" });
+            settle({ success: false, error: "Firmware disconnected during send" });
             return;
         }
         writer.write(encoder.encode(message)).catch(() => {
-            clearTimeout(timeout);
-            pendingRequests.delete(id);
-            resolve({ success: false, error: "Failed to send to firmware" });
+            settle({ success: false, error: "Failed to send to firmware" });
         });
     });
 }
@@ -1881,6 +1882,10 @@ function startHttpServerInner() {
 
                 socket.onclose = () => {
                     devtoolsClients.delete(socket);
+                    socket.onopen = null;
+                    socket.onmessage = null;
+                    socket.onclose = null;
+                    socket.onerror = null;
                 };
 
                 socket.onmessage = async (event) => {
@@ -3283,13 +3288,19 @@ async function startFlashServer(): Promise<void> {
         policyListener = Deno.listen({ port: 843 });
         const encoder = new TextEncoder();
         (async () => {
-            for await (const conn of policyListener) {
-                try {
-                    const writer = conn.writable.getWriter();
-                    await writer.write(encoder.encode(POLICY_FILE));
-                    writer.releaseLock();
-                    conn.close();
-                } catch { /* connection closed before write */ }
+            try {
+                for await (const conn of policyListener) {
+                    try {
+                        const writer = conn.writable.getWriter();
+                        await writer.write(encoder.encode(POLICY_FILE));
+                        writer.releaseLock();
+                        conn.close();
+                    } catch { /* connection closed before write */ }
+                }
+            } catch (err) {
+                console.error("Policy listener loop failed:", err);
+                try { policyListener?.close(); } catch { /* already closed */ }
+                policyListener = null;
             }
         })();
     } catch {
@@ -3652,7 +3663,9 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
         firmwareWriter = writer;
         firmwareConnected = true;
         firmwareMessageBuffer = ""; // Drain stale partial data from previous connection
-        if (firmwareConnectResolve) firmwareConnectResolve();
+        const resolver = firmwareConnectResolve;
+        firmwareConnectResolve = null;
+        if (resolver) resolver();
         emitLog("engine", "info", "Firmware connected");
         // Send app data to firmware (don't await - would deadlock before read loop starts)
         const gameUrl = AppData.data.gameConfig.originUrl ? resolveGameUrl().url : null;

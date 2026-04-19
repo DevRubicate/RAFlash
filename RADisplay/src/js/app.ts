@@ -83,7 +83,11 @@ export const App: AppState = reactive({
         this._saving = true;
         try {
             const diff = JSONDiff.getDataDiff(App.originalData, App.data);
-            await Network.send({command: 'editData', params: diff});
+            const response = await Network.send({command: 'editData', params: diff});
+            if (!response.success) {
+                console.error('App.save: server rejected editData', response.error);
+                return;
+            }
             App.originalData = deepCloneRaw(App.data) as Record<string, any>;
         } finally {
             this._saving = false;

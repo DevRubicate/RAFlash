@@ -134,21 +134,34 @@ export class Network {
                         const [type, id, message] = arr;
                         if(type === 'SETUP') {
                             Network.ready = true;
-                            // Re-send setup command after reconnect to refresh App.data
+                            // Snapshot and clear the queue now so new sends made during
+                            // the setup round-trip don't get replayed twice.
+                            const pendingQueue = Network.messageQueue.slice();
+                            Network.messageQueue.length = 0;
+                            for (const [, , timeout] of pendingQueue) clearTimeout(timeout);
+
+                            const flushQueue = () => {
+                                for (const [msg, cb] of pendingQueue) {
+                                    Network.send(msg).then(cb).catch(console.error);
+                                }
+                            };
+
                             if (Network.isReconnecting) {
+                                // Re-send setup, apply the fresh server state, THEN flush
+                                // the queue so queued edits apply on top of the new baseline
+                                // instead of racing with it.
                                 Network.isReconnecting = false;
                                 Network.send({command: 'setup', params: {windowId: App.windowId}})
                                 .then((response) => {
                                     if (response.success && Network.onMessageCallback) {
                                         Network.onMessageCallback({command: 'setup', params: response.params as Record<string, unknown>});
                                     }
-                                }).catch(console.error);
+                                })
+                                .catch(console.error)
+                                .finally(flushQueue);
+                            } else {
+                                flushQueue();
                             }
-                            Network.messageQueue.forEach(([message, callback, timeout]) => {
-                                clearTimeout(timeout);
-                                Network.send(message).then(callback).catch(console.error);
-                            });
-                            Network.messageQueue.length = 0;
                         } else if(type === 'REQUEST') {
                             if(Network.onMessageCallback === null) {
                                 throw new Error('Network.onmessage: No callback registered');
@@ -217,6 +230,9 @@ export class Network {
     }
 
     static onMessage(callback: MessageHandler): void {
+        if (Network.onMessageCallback !== null && Network.onMessageCallback !== callback) {
+            console.warn('Network.onMessage: replacing an existing message handler — previous callback will no longer receive events.');
+        }
         Network.onMessageCallback = callback;
     }
 

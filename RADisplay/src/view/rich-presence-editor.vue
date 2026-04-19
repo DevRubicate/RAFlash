@@ -126,6 +126,7 @@
     const selectedAssetId = ref(null);
     let pollInterval = null;
     let saveTimeout = null;
+    let isUnmounted = false;
 
     // Computed that always looks up the asset from App.data.assets
     const selectedAsset = computed(() => {
@@ -190,6 +191,9 @@
     };
 
     App.initialize().then(() => {
+        // Guard against the component unmounting while initialize() was in flight;
+        // otherwise we'd leave a live setInterval with no owner to clear it.
+        if (isUnmounted) return;
         const asset = App.data.assets.find((a) => a.id === App.windowParams.selectedAssetId);
         if (!asset) {
             console.error('Asset not found:', App.windowParams.selectedAssetId);
@@ -198,14 +202,13 @@
         selectedAssetId.value = asset.id;
         App.ready = true;
 
-        // Start polling for Rich Presence result
         pollInterval = setInterval(pollResult, 500);
-        // Initial poll
         pollResult();
     });
 
     // Cleanup
     onUnmounted(() => {
+        isUnmounted = true;
         if (pollInterval) {
             clearInterval(pollInterval);
             pollInterval = null;

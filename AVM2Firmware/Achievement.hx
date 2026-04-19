@@ -63,17 +63,30 @@ class Achievement {
     }
 
     // === Delta Tracking ===
+    //
+    // Delta/prev state is keyed by *address* (the DSL expression being evaluated),
+    // not by requirement ID, so two requirements that reference the same address
+    // share one prev value. Matches the per-frame semantics users expect when
+    // writing `stage.player.health (delta) < stage.player.health`.
 
-    private static function storeDeltaValue(reqId:String, side:String, value:Dynamic):Void {
-        if (!deltaValues.exists(reqId)) {
-            deltaValues.set(reqId, {});
-        }
-        var entry:Dynamic = deltaValues.get(reqId);
-        if (side == "A") {
-            untyped entry.prevA = value;
-        } else {
-            untyped entry.prevB = value;
-        }
+    private static function deltaKey(address:Dynamic):String {
+        return Std.string(address);
+    }
+
+    private static function storeDeltaValue(address:Dynamic, value:Dynamic):Void {
+        deltaValues.set(deltaKey(address), {prev: value});
+    }
+
+    private static function hasDeltaValue(address:Dynamic):Bool {
+        var key:String = deltaKey(address);
+        if (!deltaValues.exists(key)) return false;
+        var entry:Dynamic = deltaValues.get(key);
+        return untyped __typeof__(entry.prev) != "undefined";
+    }
+
+    private static function getDeltaValue(address:Dynamic):Dynamic {
+        var entry:Dynamic = deltaValues.get(deltaKey(address));
+        return untyped entry.prev;
     }
 
     private static function clearAssetDeltaValues(asset:Dynamic):Void {
@@ -85,7 +98,9 @@ class Achievement {
             if (reqs == null) { gj++; continue; }
             var rk:Int = 0;
             while (rk < reqs.length) {
-                deltaValues.remove(Std.string(untyped reqs[rk].id));
+                var r:Dynamic = reqs[rk];
+                if (untyped r.addressA != null) deltaValues.remove(deltaKey(untyped r.addressA));
+                if (untyped r.addressB != null) deltaValues.remove(deltaKey(untyped r.addressB));
                 rk++;
             }
             gj++;
@@ -122,34 +137,32 @@ class Achievement {
         }
 
         // Handle Delta type for A side
-        var reqId:String = Std.string(untyped requirement.id);
+        var addressA:Dynamic = untyped requirement.addressA;
         var resultA:Array<Dynamic>;
         if (untyped requirement.typeA == "DELTA") {
-            var deltaData:Dynamic = deltaValues.exists(reqId) ? deltaValues.get(reqId) : null;
-            if (deltaData == null || untyped __typeof__(deltaData.prevA) == "undefined") {
-                storeDeltaValue(reqId, "A", currentA[0]);
+            if (!hasDeltaValue(addressA)) {
+                storeDeltaValue(addressA, currentA[0]);
                 return {passed: false, valid: false};
             }
             // Capture previous value BEFORE storing current to avoid corruption
-            // when this requirement is evaluated multiple times per frame (e.g. AddHits chains)
-            var capturedPrevA:Dynamic = untyped deltaData.prevA;
-            storeDeltaValue(reqId, "A", currentA[0]);
+            // when this address is read multiple times per frame (e.g. AddHits chains)
+            var capturedPrevA:Dynamic = getDeltaValue(addressA);
+            storeDeltaValue(addressA, currentA[0]);
             resultA = [capturedPrevA];
         } else {
             resultA = currentA;
         }
 
         // Handle Delta type for B side
+        var addressB:Dynamic = untyped requirement.addressB;
         var resultB:Array<Dynamic>;
         if (untyped requirement.typeB == "DELTA") {
-            var deltaBData:Dynamic = deltaValues.exists(reqId) ? deltaValues.get(reqId) : null;
-            if (deltaBData == null || untyped __typeof__(deltaBData.prevB) == "undefined") {
-                storeDeltaValue(reqId, "B", currentB[0]);
+            if (!hasDeltaValue(addressB)) {
+                storeDeltaValue(addressB, currentB[0]);
                 return {passed: false, valid: false};
             }
-            // Capture previous value BEFORE storing current
-            var capturedPrevB:Dynamic = untyped deltaBData.prevB;
-            storeDeltaValue(reqId, "B", currentB[0]);
+            var capturedPrevB:Dynamic = getDeltaValue(addressB);
+            storeDeltaValue(addressB, currentB[0]);
             resultB = [capturedPrevB];
         } else {
             resultB = currentB;
@@ -202,17 +215,14 @@ class Achievement {
         if (currentA == null || currentA.length != 1) return Math.NaN;
 
         // Handle Delta type
-        var reqId:String = Std.string(untyped requirement.id);
+        var addressA:Dynamic = untyped requirement.addressA;
         if (untyped requirement.typeA == "DELTA") {
-            var deltaData:Dynamic = deltaValues.exists(reqId) ? deltaValues.get(reqId) : null;
-            if (deltaData == null || untyped __typeof__(deltaData.prevA) == "undefined") {
-                storeDeltaValue(reqId, "A", currentA[0]);
+            if (!hasDeltaValue(addressA)) {
+                storeDeltaValue(addressA, currentA[0]);
                 return Math.NaN;
             }
-            // Capture previous value BEFORE storing current to avoid corruption
-            // when this requirement is evaluated multiple times per frame
-            var capturedPrevA:Dynamic = untyped deltaData.prevA;
-            storeDeltaValue(reqId, "A", currentA[0]);
+            var capturedPrevA:Dynamic = getDeltaValue(addressA);
+            storeDeltaValue(addressA, currentA[0]);
             return toFloat(capturedPrevA);
         }
 
@@ -566,7 +576,7 @@ class Achievement {
                             if (curA != null) frameCache.set(ckA, curA);
                         }
                         if (curA != null && curA.length == 1)
-                            storeDeltaValue(Std.string(untyped requirement.id), "A", curA[0]);
+                            storeDeltaValue(untyped requirement.addressA, curA[0]);
                     }
                     if (untyped requirement.typeB == "DELTA") {
                         var ckB:String = Std.string(untyped requirement.addressB);
@@ -577,7 +587,7 @@ class Achievement {
                             if (curB != null) frameCache.set(ckB, curB);
                         }
                         if (curB != null && curB.length == 1)
-                            storeDeltaValue(Std.string(untyped requirement.id), "B", curB[0]);
+                            storeDeltaValue(untyped requirement.addressB, curB[0]);
                     }
                     k++;
                 }

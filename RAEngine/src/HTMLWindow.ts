@@ -24,11 +24,11 @@ export class HTMLWindow {
         this.persistent = false;
         this.url = url;
         
-        // Asynchronously update the state when the user closes the window.
-        this.process.status.then(() => {
+        // Asynchronously update the state when the user closes the window
+        // and clean up the temp directory on both success and failure paths.
+        this.process.status.finally(() => {
             this.isClosed = true;
-        }).catch(() => {
-            this.isClosed = true;
+            Deno.remove(this.tempDir, { recursive: true }).catch(() => { /* already gone */ });
         });
 
         HTMLWindow.instances.push(this);

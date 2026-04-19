@@ -217,6 +217,7 @@ class Parser {
                                 qnode.type === NODE_TYPE.FUNCTION_CALL) {
                                 elseStack.push(qnode);
                             } else if (opDetails && opDetails.type === 'BINARY') {
+                                if (elseStack.length < 2) throw new ParseError(`Insufficient operands for binary operator in ternary else-expression`, this.peakToken());
                                 const b = elseStack.pop()!;
                                 const a = elseStack.pop()!;
                                 a.parent = qnode;
@@ -225,6 +226,7 @@ class Parser {
                                 qnode.children.push(b);
                                 elseStack.push(qnode);
                             } else if (opDetails && opDetails.type === 'UNARY') {
+                                if (elseStack.length < 1) throw new ParseError(`Insufficient operands for unary operator in ternary else-expression`, this.peakToken());
                                 const a = elseStack.pop()!;
                                 a.parent = qnode;
                                 qnode.children.unshift(a);
@@ -1178,6 +1180,7 @@ class Parser {
                                         qnode.type === NODE_TYPE.FUNCTION_CALL) {
                                         thenStack.push(qnode);
                                     } else if (opDetails && opDetails.type === 'BINARY') {
+                                        if (thenStack.length < 2) throw new ParseError(`Insufficient operands for binary operator in ternary then-expression`, this.peakToken());
                                         const b = thenStack.pop()!;
                                         const a = thenStack.pop()!;
                                         a.parent = qnode;
@@ -1186,6 +1189,7 @@ class Parser {
                                         qnode.children.push(b);
                                         thenStack.push(qnode);
                                     } else if (opDetails && opDetails.type === 'UNARY') {
+                                        if (thenStack.length < 1) throw new ParseError(`Insufficient operands for unary operator in ternary then-expression`, this.peakToken());
                                         const a = thenStack.pop()!;
                                         a.parent = qnode;
                                         qnode.children.unshift(a);

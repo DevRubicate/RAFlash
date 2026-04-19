@@ -938,7 +938,7 @@
 </style>
 
 <script setup>
-    import { ref, computed, nextTick, watch } from 'vue';
+    import { ref, computed, nextTick, watch, onUnmounted } from 'vue';
     import { Network }                 from '../js/network.ts';
     import { App }                     from '../js/app.ts';
 
@@ -1194,7 +1194,21 @@
         }
     };
 
-    Network.addEventListener('ratestStart', (data) => {
+    // Track (event, handler) pairs so we can remove them on unmount.
+    // Without this, a remount would stack handlers and each fire N times.
+    const networkListeners = [];
+    const listen = (event, handler) => {
+        networkListeners.push([event, handler]);
+        Network.addEventListener(event, handler);
+    };
+    onUnmounted(() => {
+        for (const [event, handler] of networkListeners) {
+            Network.removeEventListener(event, handler);
+        }
+        networkListeners.length = 0;
+    });
+
+    listen('ratestStart', (data) => {
         // The initiating play()/rerecord() call has already pre-loaded
         // the steps and snapshotted playbackUids so the full script is
         // visible before the first ratestStep arrives. All we do here
@@ -1209,7 +1223,7 @@
     // attempt — successful runs, failures, aborts, and early errors.
     // UI state flips here (not on the playRatest HTTP response) because
     // long recorded test runs exceed the 30s request timeout.
-    Network.addEventListener('ratestEnd', (data) => {
+    listen('ratestEnd', (data) => {
         const passed = data.passed ?? 0;
         const failed = data.failed ?? 0;
         const total = data.total ?? 0;
@@ -1233,7 +1247,7 @@
         playingRowEl = null;
     });
 
-    Network.addEventListener('ratestStep', (data) => {
+    listen('ratestStep', (data) => {
         // The engine fires two events per step — `start` before running,
         // then `pass`/`fail`/`ok` (with durationMs/error) after. Backend
         // indices refer to the scaffold captured at playback start;
@@ -1256,7 +1270,7 @@
         }
     });
 
-    Network.addEventListener('recordingStart', (data) => {
+    listen('recordingStart', (data) => {
         // Continue mode preserves the steps that were loaded from the
         // selected file; new-record mode starts from a clean slate, but
         // we stash any unsaved edits on the previously loaded file first
@@ -1271,7 +1285,7 @@
         unsavedRecording.value = false;
     });
 
-    Network.addEventListener('recordingLine', (data) => {
+    listen('recordingLine', (data) => {
         const source = String(data?.source ?? '');
         if (!source) return;
         const fresh = newStep({
@@ -1296,16 +1310,16 @@
         scrollLogToBottom();
     });
 
-    Network.addEventListener('recordingStopped', () => {
+    listen('recordingStopped', () => {
         recording.value = false;
     });
 
-    Network.addEventListener('recordingCancel', () => {
+    listen('recordingCancel', () => {
         recording.value = false;
         unsavedRecording.value = false;
     });
 
-    Network.addEventListener('recordingSaved', (data) => {
+    listen('recordingSaved', (data) => {
         recording.value = false;
         unsavedRecording.value = false;
         loadedFromFile.value = data.file;
