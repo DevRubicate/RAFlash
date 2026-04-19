@@ -1169,6 +1169,37 @@ class Main {
                 sendResponse(id, { success: true });
                 break;
 
+            case "checkElementReady":
+                // Effective-visibility check used by waitForElement: a leaf
+                // can have _visible=true while an ancestor (e.g. a wrapper
+                // panel like gui_spell) has _visible=false, hiding it from
+                // the human player. Walk _parent up to gameRoot and
+                // require every level to be _visible.
+                _stageContext[0] = gameRoot;
+                var crFormula:Array = params.pathFormula;
+                var crResult:Array = evaluate(crFormula, 1, crFormula.length, _stageContext, _stageKeys);
+                if (crResult == null || crResult.length == 0) {
+                    sendResponse(id, { success: true, ready: false, reason: "not found" });
+                    break;
+                }
+                var crCurrent:Object = crResult[0];
+                var crLevel:Number = 0;
+                var crReady:Boolean = true;
+                var crReason:String = null;
+                while (crCurrent != null && crCurrent != undefined && crLevel < 32) {
+                    if (crCurrent._visible === false) {
+                        var crName:String = String(crCurrent._name);
+                        crReady = false;
+                        crReason = "ancestor hidden: " + (crName == "" ? "<root>" : crName) + " (level " + crLevel + ")";
+                        break;
+                    }
+                    if (crCurrent == gameRoot) break;
+                    crCurrent = crCurrent._parent;
+                    crLevel++;
+                }
+                sendResponse(id, { success: true, ready: crReady, reason: crReason });
+                break;
+
             case "dumpDisplayTree":
                 _stageContext[0] = gameRoot;
                 var dumpFormula:Array = params.pathFormula;

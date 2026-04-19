@@ -2765,7 +2765,6 @@ async function handleApiRequest(
                 }
             }
 
-            const visibleProperty = avmConfig?.mode === "AVM2" ? "visible" : "_visible";
             const page = new LiveStagehand(sendToFirmware, async (path: string) => {
                 // Click fallback for DefineButton2 / BUTTONCONDACTION: focus
                 // the element via Selection.setFocus, then post Enter to
@@ -2782,7 +2781,7 @@ async function handleApiRequest(
                 await new Promise((r) => setTimeout(r, 30));
                 const VK_RETURN = 0x0D;
                 return WindowManager.postKeypress(pid, VK_RETURN);
-            }, visibleProperty);
+            });
             const results: Array<{ name: string; passed: boolean; error?: string; durationMs: number }> = [];
             let aborted = false;
             for (let i = 0; i < parsed.steps.length; i++) {

@@ -12,7 +12,7 @@
  */
 import { Formula } from "./formula/Formula.ts";
 import { AppData } from "./AppData.ts";
-import { isElementReady, type StagehandLike } from "../../tests/stagehand.ts";
+import type { StagehandLike } from "../../tests/stagehand.ts";
 
 type SendToFirmware = (
     command: string,
@@ -33,10 +33,6 @@ export class LiveStagehand implements StagehandLike {
     constructor(
         private readonly send: SendToFirmware,
         private readonly activateViaFocus?: ActivateViaFocus,
-        // Property name for DisplayObject visibility — "_visible" on AVM1,
-        // "visible" on AVM2. Used by waitForElement to gate on visibility
-        // rather than mere existence.
-        private readonly visibleProperty: string = "_visible",
     ) {}
 
     async evaluate<T = unknown>(formula: string): Promise<T> {
@@ -127,12 +123,22 @@ export class LiveStagehand implements StagehandLike {
 
     async waitForElement(path: string, opts: { timeoutMs?: number } = {}): Promise<void> {
         const timeoutMs = opts.timeoutMs ?? 15000;
-        // Poll `<path>.<visibleProperty>` instead of `<path>`: the result
-        // is empty when the element doesn't exist yet, `false` when it
-        // exists but is hidden, and `true` once it's both present and
-        // visible — which is the readiness state we actually want before
-        // clicking.
-        await this.waitFor(`${path}.${this.visibleProperty}`, isElementReady, { timeoutMs, pollMs: 50 });
+        const pollMs = 50;
+        const deadline = Date.now() + timeoutMs;
+        // The firmware's `checkElementReady` walks _parent up to gameRoot
+        // and AND-folds _visible at every level. This catches the case
+        // where the leaf is _visible=true but a wrapper ancestor is
+        // _visible=false — the panel is hidden from the human even though
+        // the leaf reports as visible.
+        const compiled = Formula.compile(path);
+        let lastReason: string | undefined;
+        while (Date.now() < deadline) {
+            const resp = await this.send("checkElementReady", { pathFormula: compiled });
+            if (resp.success && resp.ready === true) return;
+            lastReason = (resp.reason as string | undefined) ?? lastReason;
+            await new Promise((r) => setTimeout(r, pollMs));
+        }
+        throw new Error(`waitForElement("${path}") timed out after ${timeoutMs}ms (last reason: ${lastReason ?? "unknown"})`);
     }
 
     close(): Promise<void> {

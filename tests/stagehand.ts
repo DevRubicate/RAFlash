@@ -362,12 +362,22 @@ export class Stagehand {
      */
     async waitForElement(path: string, opts: { timeoutMs?: number } = {}): Promise<void> {
         const timeoutMs = opts.timeoutMs ?? 15000;
-        // Poll `<path>._visible` instead of `<path>`: the result is empty
-        // when the element doesn't exist yet, `false` when it exists but
-        // is hidden, and `true` once it's both present and visible —
-        // which is the readiness state we actually want before clicking.
-        // (`_visible` is AS2/AVM1; the test runner only targets AVM1.)
-        await this.waitFor(`${path}._visible`, isElementReady, { timeoutMs, pollMs: 50 });
+        const pollMs = 50;
+        const deadline = Date.now() + timeoutMs;
+        // Firmware-side `checkElementReady` walks _parent up to gameRoot
+        // and AND-folds _visible. Avoids the false-positive where the leaf
+        // is _visible=true but an ancestor wrapper is hidden, which means
+        // the panel is invisible to the human even though we'd consider
+        // the click target ready.
+        const compiled = Formula.compile(path);
+        let lastReason: string | undefined;
+        while (Date.now() < deadline) {
+            const resp = await this.request("checkElementReady", { pathFormula: compiled });
+            if (resp.success && resp.ready === true) return;
+            lastReason = (resp.reason as string | undefined) ?? lastReason;
+            await new Promise((r) => setTimeout(r, pollMs));
+        }
+        throw new Error(`waitForElement("${path}") timed out after ${timeoutMs}ms (last reason: ${lastReason ?? "unknown"})`);
     }
 
     /**
@@ -583,31 +593,4 @@ function unwrapQuoted(v: unknown): unknown {
         return v.slice(1, -1);
     }
     return v;
-}
-
-/**
- * Predicate for `waitForElement`: returns true when the polled
- * `<path>._visible` (or `.visible` on AVM2) has resolved to a truthy
- * value for every matched element — i.e., the element exists AND is
- * visible. Tolerates both the raw `{ output: [...] }` envelope (used
- * by LiveStagehand.evaluate) and the extracted value shape (used by
- * Stagehand.evaluate above), so the same predicate works in both
- * runtime adapters.
- */
-export function isElementReady(v: unknown): boolean {
-    if (v == null) return false;
-    const isTruthy = (x: unknown): boolean =>
-        x !== false && x !== "false" && x !== 0 && x !== "0" && x != null && x !== "";
-    if (typeof v === "object") {
-        if ("output" in (v as Record<string, unknown>)) {
-            const out = (v as Record<string, unknown>).output;
-            if (!Array.isArray(out) || out.length === 0) return false;
-            return out.every((item) => {
-                const val = (item as { value?: unknown })?.value;
-                return isTruthy(val);
-            });
-        }
-        if (Array.isArray(v)) return v.length > 0 && v.every(isTruthy);
-    }
-    return isTruthy(v);
 }

@@ -419,6 +419,40 @@ class Main extends MovieClip {
                 }
                 sendResponse(id, {success: true, tree: buildDisplayTree(dumpResult[0], dumpPathString)});
 
+            case "checkElementReady":
+                // Effective-visibility check used by waitForElement: a leaf
+                // can have visible=true while an ancestor wrapper has
+                // visible=false, hiding it from the human player. Walk
+                // parent up to gameRoot and require every level visible.
+                if (gameRoot == null) { sendResponse(id, {success: false, error: "Game not loaded"}); return; }
+                if (params.pathFormula == null) { sendResponse(id, {success: false, error: "Missing pathFormula"}); return; }
+                var crPf:Array<Dynamic> = params.pathFormula;
+                Evaluate.ROOT_SENTINEL.__raflash_gameRoot = gameRoot;
+                var crResult = Evaluate.evaluate(crPf, 1, crPf.length, [Evaluate.ROOT_SENTINEL], cast ["root"], gameRoot);
+                if (crResult == null || crResult.length == 0) {
+                    sendResponse(id, {success: true, ready: false, reason: "not found"});
+                    return;
+                }
+                var crCurrent:Dynamic = crResult[0];
+                var crLevel:Int = 0;
+                var crReady:Bool = true;
+                var crReason:String = null;
+                while (crCurrent != null && crLevel < 32) {
+                    var crVisible:Dynamic = null;
+                    try { crVisible = crCurrent.visible; } catch (_:Dynamic) { break; }
+                    if (crVisible == false) {
+                        var crName:String = "";
+                        try { crName = Std.string(crCurrent.name); } catch (_:Dynamic) {}
+                        crReady = false;
+                        crReason = "ancestor hidden: " + (crName == "" ? "<root>" : crName) + " (level " + crLevel + ")";
+                        break;
+                    }
+                    if (crCurrent == gameRoot) break;
+                    try { crCurrent = crCurrent.parent; } catch (_:Dynamic) { break; }
+                    crLevel++;
+                }
+                sendResponse(id, {success: true, ready: crReady, reason: crReason});
+
             case "editData":
                 if (params.changes == null) { sendResponse(id, {success: false, error: "Missing changes"}); return; }
                 var changes:Dynamic = params.changes;
