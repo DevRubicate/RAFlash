@@ -79,14 +79,12 @@
                     <li
                         v-for="(step, idx) in steps"
                         :key="step.uid"
-                        :class="['phase-' + step.phase, { summary: step.isSummary }]"
+                        :class="{ summary: step.isSummary }"
                     >
                         <span class="step-num">{{ idx + 1 }}</span>
-                        <span class="step-icon">{{ phaseIcon(step.phase) }}</span>
                         <span class="step-source">
                             {{ step.source }}<span class="step-label" v-if="step.label"> — {{ step.label }}</span>
                         </span>
-                        <span class="step-ms" v-if="step.durationMs != null">{{ step.durationMs }}ms</span>
                         <span class="step-actions" v-if="!step.isSummary && canEditSteps">
                             <button
                                 class="step-action"
@@ -407,15 +405,10 @@
         color: var(--c-text);
         border-radius: var(--radius-sm);
         display: grid;
-        grid-template-columns: 1.75rem 1.25rem 1fr auto auto;
+        grid-template-columns: 1.75rem 1fr auto;
         gap: 0.4rem;
         align-items: center;
     }
-
-    .step-log li.phase-start { color: var(--c-text-muted); }
-    .step-log li.phase-pass { color: #86efac; }
-    .step-log li.phase-ok { color: var(--c-text); }
-    .step-log li.phase-fail { color: #fca5a5; background: rgba(239, 68, 68, 0.08); }
 
     .step-log li.summary {
         margin-top: 0.25rem;
@@ -431,19 +424,10 @@
         color: var(--c-text-muted);
     }
 
-    .step-icon {
-        text-align: center;
-    }
-
     .step-source {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-    }
-
-    .step-ms {
-        color: var(--c-text-muted);
-        font-variant-numeric: tabular-nums;
     }
 
     .step-label {
@@ -1056,14 +1040,6 @@
     const renameInputEl = ref(null);
     const setRenameInputRef = (el) => { if (el) renameInputEl.value = el; };
 
-    const phaseIcon = (phase) => {
-        if (phase === 'pass') return '✅';
-        if (phase === 'fail') return '❌';
-        if (phase === 'ok') return '▪️';
-        if (phase === 'record') return '🔴';
-        return '⏳';
-    };
-
     const scrollLogToBottom = () => {
         requestAnimationFrame(() => {
             if (stepLogEl.value) stepLogEl.value.scrollTop = stepLogEl.value.scrollHeight;
@@ -1071,12 +1047,10 @@
     };
 
     Network.addEventListener('ratestStart', () => {
-        // Wipe playback annotations from the previous run, but keep the
-        // step content — playback runs against the saved file, so the
-        // steps already reflect what's on disk.
-        steps.value = steps.value
-            .filter((s) => !s.isSummary)
-            .map((s) => ({ ...s, phase: 'start', durationMs: undefined, error: undefined }));
+        // Fresh log for the incoming run. Works for both locally-initiated
+        // playback (play() already cleared) and runs kicked off by another
+        // devtools client we're mirroring.
+        steps.value = [];
     });
 
     // Completion signal: the engine emits this for every playRatest
@@ -1101,15 +1075,18 @@
     });
 
     Network.addEventListener('ratestStep', (data) => {
-        // Backend indices are positional within the saved file; steps[i]
-        // is the same line. After playback ends the user can reorder, but
-        // we update by position because ratestStep events stream during
-        // an active run when reordering is locked out.
+        // The engine fires two events per step — `start` before running,
+        // then `pass`/`fail`/`ok` (with durationMs/error) after. On the
+        // first we append, on the second we update in place. play() wipes
+        // the log before kickoff so indices always begin at 0.
         const i = data.index;
-        if (typeof i === 'number' && i >= 0 && i < steps.value.length) {
-            const { index, ...rest } = data;
-            void index;
+        if (typeof i !== 'number' || i < 0) return;
+        const { index, ...rest } = data;
+        void index;
+        if (i < steps.value.length) {
             steps.value[i] = { ...steps.value[i], ...rest };
+        } else {
+            steps.value.push(newStep(rest));
         }
         scrollLogToBottom();
     });
