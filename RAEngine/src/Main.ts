@@ -1509,6 +1509,12 @@ const windowParams = new Map<number, Record<string, unknown>>();
 // Flash Player window management
 let flashPlayerPid: number | null = null;
 let flashProcess: Deno.ChildProcess | null = null;
+
+// --headless mode state: when set, the file picker is skipped (game
+// auto-loads), UI windows are suppressed, and once the game is up a
+// .ratest is executed via the normal LiveStagehand path. Exit code
+// reflects pass/fail.
+let headlessMode: { gamePath: string; testPath: string } | null = null;
 // True between `flashProcess.spawn` and `await flashProcess.status` resolving.
 // When false, devtools windows are degraded into a read-only mode (the user
 // can still browse last-known data and edit per-game settings, but anything
@@ -3993,11 +3999,109 @@ function launchFlashPlayer(): Deno.ChildProcess {
         launchUrl = `http://${resolved.domain}${avmConfig.firmwareUrl}?port=${FLASH_PORT}`;
     }
 
+    // Headless on Windows: spawn via PowerShell with -WindowStyle Hidden
+    // so Flash Player's window is never drawn. The PowerShell process
+    // exits immediately after Start-Process returns — we capture the
+    // real Flash Player PID from stdout after spawn.
+    if (headlessMode && Deno.build.os === "windows") {
+        const psCmd = `$p = Start-Process -FilePath '${fpPath}' -ArgumentList '${launchUrl}' -WindowStyle Hidden -PassThru; Write-Output $p.Id`;
+        const command = new Deno.Command("powershell", {
+            args: ["-NoProfile", "-Command", psCmd],
+            cwd: Deno.cwd(),
+            stdout: "piped",
+        });
+        return command.spawn();
+    }
+
     const command = new Deno.Command(fpPath, {
         args: [launchUrl],
         cwd: Deno.cwd(),
     });
     return command.spawn();
+}
+
+/**
+ * Run a .ratest file against the currently-loaded game in headless mode.
+ * Mirrors the devtools `playRatest` handler but reads from an arbitrary
+ * path, prints to stdout, and reports a process exit code instead of
+ * broadcasting events to a UI. Called from main() once the firmware
+ * finishes loading; assumes flashConnected and AppData.gameHash are set.
+ */
+async function runHeadlessTest(testPath: string): Promise<number> {
+    const { parseRatest, runStep } = await import("../../tests/ratest.ts");
+    const { LiveStagehand } = await import("./LiveStagehand.ts");
+
+    let parsed: ReturnType<typeof parseRatest>;
+    try {
+        const text = await Deno.readTextFile(testPath);
+        parsed = parseRatest(testPath, text);
+    } catch (e) {
+        console.error(`ERROR: failed to read/parse ${testPath}: ${(e as Error).message}`);
+        return 2;
+    }
+
+    // Hash directive is advisory here (the caller chose the game), but
+    // enforce it when present — a mismatched pairing means the test was
+    // authored against a different build and assertions will be nonsense.
+    if (parsed.directives.hash && parsed.directives.hash !== AppData.gameHash) {
+        console.error(`ERROR: hash mismatch — test expects ${parsed.directives.hash}, game is ${AppData.gameHash}`);
+        return 2;
+    }
+
+    const page = new LiveStagehand(sendToFirmware, async (path: string) => {
+        const pid = flashPlayerPid;
+        if (pid == null) return false;
+        const compiledPath = compileFormula(path);
+        const focusResp = await sendToFirmware("focusElement", { pathFormula: compiledPath });
+        if (!focusResp.success) return false;
+        await new Promise((r) => setTimeout(r, 30));
+        const VK_RETURN = 0x0D;
+        return WindowManager.postKeypress(pid, VK_RETURN);
+    });
+
+    const results: Array<{ name: string; passed: boolean; error?: string; durationMs: number }> = [];
+    const pendingAchievements: Array<Promise<void>> = [];
+    const stepCtx = { achievementsEnabled: true, pendingAchievements };
+
+    console.log(`Running ${testPath} (${parsed.steps.length} steps)`);
+    console.log("");
+
+    let printed = 0;
+    const drainPrints = () => {
+        while (printed < results.length) {
+            const r = results[printed++];
+            if (r.passed) {
+                console.log(`  PASS  ${r.name}`);
+            } else {
+                console.log(`  FAIL  ${r.name}`);
+                if (r.error) console.log(`        ${r.error}`);
+            }
+        }
+    };
+
+    const start = performance.now();
+    for (const step of parsed.steps) {
+        await runStep(page, step, results, stepCtx);
+        drainPrints();
+        if (!flashConnected) {
+            results.push({ name: "firmware", passed: false, error: "Flash Player disconnected mid-test", durationMs: 0 });
+            drainPrints();
+            break;
+        }
+    }
+    await Promise.all(pendingAchievements);
+    drainPrints();
+
+    const passed = results.filter((r) => r.passed).length;
+    const failed = results.length - passed;
+    const seconds = ((performance.now() - start) / 1000).toFixed(1);
+    console.log("");
+    if (failed === 0) {
+        console.log(`  ${passed} passed (${seconds}s)`);
+    } else {
+        console.log(`  ${failed} failed, ${passed} passed (${seconds}s)`);
+    }
+    return failed === 0 ? 0 : 1;
 }
 
 /**
@@ -4040,9 +4144,29 @@ async function main(): Promise<void> {
         }
     }
 
+    // --headless <game> <test.ratest>: runs the given .ratest against the
+    // given game and exits with pass/fail. Uses the normal app launch path
+    // (HTTP server, sitelock proxy, firmware, Flash Player) — just skips
+    // the file picker, devtools windows, and user input. The test executes
+    // via the same LiveStagehand + runStep primitives the devtools Play
+    // button uses. Scoped during main() only; read from here on as `headlessMode`.
+    if (Deno.args.includes("--headless")) {
+        const positional = Deno.args.filter((a) => a !== "--headless");
+        if (positional.length !== 2) {
+            console.error("Usage: RAFlash --headless <game.swf|.raflash> <test.ratest>");
+            Deno.exit(2);
+        }
+        const [gameArg, testArg] = positional;
+        headlessMode = {
+            gamePath: isAbsolute(gameArg) ? gameArg : join(originalCwd, gameArg),
+            testPath: isAbsolute(testArg) ? testArg : join(originalCwd, testArg),
+        };
+    }
+
     // Chrome check. RAFlash uses Chrome in app mode for all UI windows.
     // Detect early so the user gets a clear message instead of a cryptic crash.
-    if (!(await HTMLWindow.findChrome())) {
+    // Headless mode opens no Chrome windows, so the check is skipped.
+    if (!headlessMode && !(await HTMLWindow.findChrome())) {
         const msg = "Google Chrome is required but was not found.\n\nPlease install it from:\nhttps://www.google.com/chrome/";
         if (Deno.build.os === "windows") {
             WindowManager.showMessageBox(msg, "RAFlash");
@@ -4069,7 +4193,10 @@ async function main(): Promise<void> {
         isPostUpdateLaunch = true;
     } catch { /* not a post-update launch */ }
 
-    if (!isPostUpdateLaunch) {
+    // Headless runs don't contend for the single-instance slot — a developer
+    // may reasonably want to run one headless against a test while another
+    // RAFlash is open. Port allocation finds free ports regardless.
+    if (!isPostUpdateLaunch && !headlessMode) {
         let existingInstance = false;
         try {
             const probe = await fetch(`http://127.0.0.1:${HTTP_PORT}/instance-check`, {
@@ -4158,9 +4285,35 @@ async function main(): Promise<void> {
     // Validated once at startup. If the path is bad we still fall through to
     // the picker but surface the failure as an error modal. Multiple files
     // dropped at once → take the first, ignore the rest silently.
+    //
+    // Headless mode seeds this from the --headless <game> path and skips
+    // the drag-drop parsing — the flag consumed positional args already.
     let initialDrop: { gamePath: string } | null = null;
     let invalidDropMessage: string | null = null;
-    if (Deno.args.length > 0) {
+    if (headlessMode) {
+        try {
+            const stat = await Deno.stat(headlessMode.gamePath);
+            if (!stat.isFile) {
+                console.error(`ERROR: not a file: ${headlessMode.gamePath}`);
+                Deno.exit(2);
+            }
+            const lower = headlessMode.gamePath.toLowerCase();
+            if (!lower.endsWith(".swf") && !lower.endsWith(".raflash")) {
+                console.error(`ERROR: not a .swf or .raflash file: ${headlessMode.gamePath}`);
+                Deno.exit(2);
+            }
+        } catch {
+            console.error(`ERROR: game file not found: ${headlessMode.gamePath}`);
+            Deno.exit(2);
+        }
+        try {
+            await Deno.stat(headlessMode.testPath);
+        } catch {
+            console.error(`ERROR: test file not found: ${headlessMode.testPath}`);
+            Deno.exit(2);
+        }
+        initialDrop = { gamePath: headlessMode.gamePath };
+    } else if (Deno.args.length > 0) {
         const arg = Deno.args[0];
         // Resolve against the original cwd, not the (possibly chdir'd) firmware
         // directory — relative args from the user's shell should mean what they
@@ -4374,20 +4527,32 @@ async function main(): Promise<void> {
 
         // Launch Flash Player
         flashProcess = launchFlashPlayer();
-        flashPlayerPid = flashProcess.pid;
+        if (headlessMode && Deno.build.os === "windows") {
+            // Hidden-launch path: flashProcess is PowerShell, which
+            // exited after Start-Process. Its stdout carries the real
+            // Flash Player PID — read it so focusElement, window
+            // queries, and kill all target the right process.
+            const output = await new Response(flashProcess.stdout).text();
+            const parsed = parseInt(output.trim());
+            flashPlayerPid = isNaN(parsed) ? null : parsed;
+        } else {
+            flashPlayerPid = flashProcess.pid;
+        }
         flashConnected = true;
 
         // Auto-open the devtools menu if the user has asked us to. Useful
         // for sitelocked / immediately-crashing games where the user has no
-        // chance to hit F12 themselves before Flash dies.
-        if (settings.autoOpenDevtools) {
+        // chance to hit F12 themselves before Flash dies. Always suppressed
+        // in headless mode — no UI surfaces there.
+        if (settings.autoOpenDevtools && !headlessMode) {
             openDevtoolsMenu().catch(() => { /* best effort */ });
         }
 
         // Resize and center Flash Player to match game dimensions (Windows only).
         // When Reset Game stashed a previous window position, place it there
         // instead of centering so the user doesn't lose their placement.
-        if (Deno.build.os === "windows") {
+        // Skipped in headless: the window was launched hidden and is never shown.
+        if (Deno.build.os === "windows" && !headlessMode) {
             const icoPath = join(Deno.cwd(), "assets", "icon.ico");
             const restorePos = pendingRelaunchPosition ?? undefined;
             pendingRelaunchPosition = null;
@@ -4401,6 +4566,35 @@ async function main(): Promise<void> {
                 updateFlashPlayerTitle("");
             }
         }, 1000);
+
+        // Headless: wait for the firmware to finish initializing, then
+        // drive the .ratest and exit. All the normal infrastructure
+        // (HTTP server, sitelock proxy, firmware, Flash Player) is live
+        // at this point, same as an interactive session.
+        if (headlessMode) {
+            const killFlash = () => {
+                // In hidden-launch mode, flashProcess is PowerShell
+                // (already exited), so .kill() won't reach Flash Player.
+                // Taskkill the captured PID instead.
+                if (Deno.build.os === "windows" && flashPlayerPid != null) {
+                    try {
+                        new Deno.Command("taskkill", { args: ["/F", "/PID", String(flashPlayerPid)] }).outputSync();
+                    } catch { /* already exited */ }
+                }
+                try { flashProcess?.kill(); } catch { /* already exited */ }
+            };
+            const loaded = await waitForGameLoaded(30000);
+            if (!loaded) {
+                console.error("ERROR: game did not finish loading within 30s");
+                killFlash();
+                stopSitelockProxy();
+                Deno.exit(2);
+            }
+            const code = await runHeadlessTest(headlessMode.testPath);
+            killFlash();
+            stopSitelockProxy();
+            Deno.exit(code);
+        }
 
         // Wait for Flash Player to close
         await flashProcess.status;
