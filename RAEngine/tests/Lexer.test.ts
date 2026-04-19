@@ -368,9 +368,8 @@ test("Lexer - newline in complex expression", () => {
 // String Escape Edge Cases
 // =============================================================================
 
-test("Lexer - default escape passes through character", () => {
-    // \z is not a recognized escape, so it becomes just "z"
-    assertEqual(values('"a\\zb"'), ["azb"]);
+test("Lexer - unknown escape sequence throws", () => {
+    assertThrows(() => new Lexer('"a\\zb"'), Error, "Invalid escape sequence");
 });
 
 test("Lexer - single-quoted string with \\n escape", () => {

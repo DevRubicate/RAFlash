@@ -395,15 +395,11 @@ test("compile - carriage return normalized to newline", () => {
     assertEqual(bytecode[0], "VERSION_1");
 });
 
-test("compile - carriage return in string is literal", () => {
-    // \r inside a string literal is just a character, not whitespace
-    // The lexer processes string contents character-by-character
+test("compile - \\r escape in string produces carriage return", () => {
     const bytecode = Formula.compile('"hello\\rworld"');
-    // \r escape is not specially handled, so it falls through to default
-    // and becomes just 'r'
     assertEqual(bytecode[0], "VERSION_1");
     assertEqual(bytecode[1], "STRING");
-    assertEqual(bytecode[2], "hellorworld");
+    assertEqual(bytecode[2], "hello\rworld");
 });
 
 // =============================================================================
