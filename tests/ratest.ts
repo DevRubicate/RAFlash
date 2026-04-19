@@ -40,6 +40,10 @@
  *                               -- inverse of assertTriggered
  *   waitTriggered <id|"name"> [timeout=<ms>]
  *                               -- poll until the asset triggers
+ *   achievement <id|"name">     -- assert the asset triggers within 5s of
+ *                                  this point. Async: execution does NOT
+ *                                  block here; a background watcher reports
+ *                                  pass/fail at end of test.
  *
  *   ---- Value literals ----
  *   42         -- number
@@ -70,7 +74,8 @@ import { Formula } from "../RAEngine/src/formula/Formula.ts";
 type StepKind =
     | "click" | "invoke" | "tick" | "set" | "pause" | "eval"
     | "assert" | "wait"
-    | "assertTriggered" | "assertNotTriggered" | "waitTriggered";
+    | "assertTriggered" | "assertNotTriggered" | "waitTriggered"
+    | "achievement";
 
 export interface Step {
     lineNo: number;
@@ -248,6 +253,18 @@ function parseStep(lineNo: number, source: string, cmd: string, rest: string): S
                 throw new RatestParseError(lineNo, `${cmd} target must be a number or quoted string, got ${typeof target}`);
             }
             return { ...base, kind: cmd, value: target, timeoutMs };
+        }
+
+        case "achievement": {
+            const r = rest.trim();
+            if (r === "") {
+                throw new RatestParseError(lineNo, `achievement requires an asset id or "name"`);
+            }
+            const target = parseLiteral(r);
+            if (typeof target !== "number" && typeof target !== "string") {
+                throw new RatestParseError(lineNo, `achievement target must be a number or quoted string, got ${typeof target}`);
+            }
+            return { ...base, kind: "achievement", value: target };
         }
 
         default:
@@ -602,10 +619,13 @@ export async function runRatestFile(filePath: string): Promise<SuiteResult> {
         return finalize(filePath, results, start);
     }
 
+    const pendingAchievements: Array<Promise<void>> = [];
+    const ctx: RunContext = { achievementsEnabled: true, pendingAchievements };
     try {
         for (const step of parsed.steps) {
-            await runStep(page, step, results);
+            await runStep(page, step, results, ctx);
         }
+        await Promise.all(pendingAchievements);
     } finally {
         await page.close();
     }
@@ -613,7 +633,24 @@ export async function runRatestFile(filePath: string): Promise<SuiteResult> {
     return finalize(filePath, results, start);
 }
 
-export async function runStep(page: StagehandLike, step: Step, results: TestResult[]): Promise<void> {
+/**
+ * Optional per-run state for `achievement` steps. The `achievement` kind is
+ * inherently async: it kicks off a 5s background watcher and the step
+ * completes immediately so subsequent steps can keep playing the game. The
+ * caller owns the promise list so it can drain (await + report) at end of
+ * run, and so it knows which step indices produced deferred outcomes.
+ *
+ * `achievementsEnabled: false` makes `achievement` steps a no-op (they
+ * appear in the file but do not assert anything), matching the Recorded
+ * Test view's "Achievements: No" toggle.
+ */
+export interface RunContext {
+    achievementsEnabled?: boolean;
+    pendingAchievements?: Array<Promise<void>>;
+    onAchievementOutcome?: (target: number | string, passed: boolean, error: string | undefined, durationMs: number) => void;
+}
+
+export async function runStep(page: StagehandLike, step: Step, results: TestResult[], ctx: RunContext = {}): Promise<void> {
     const t0 = performance.now();
     const name = `${step.source}`;
     try {
@@ -697,6 +734,34 @@ export async function runStep(page: StagehandLike, step: Step, results: TestResu
                     durationMs: performance.now() - t0,
                     error: undefined,
                 });
+                return;
+            }
+            case "achievement": {
+                const target = step.value as number | string;
+                if (ctx.achievementsEnabled === false) {
+                    return;
+                }
+                const stepStart = t0;
+                const promise = (async () => {
+                    let passed = true;
+                    let err: string | undefined;
+                    try {
+                        await page.waitTriggered(target, 5000);
+                    } catch (e) {
+                        passed = false;
+                        err = (e as Error).message || String(e);
+                    }
+                    const durationMs = performance.now() - stepStart;
+                    results.push({ name, passed, error: err, durationMs });
+                    ctx.onAchievementOutcome?.(target, passed, err, durationMs);
+                })();
+                if (ctx.pendingAchievements) {
+                    ctx.pendingAchievements.push(promise);
+                } else {
+                    // Standalone callers without a tracker still get correct
+                    // semantics — we just block on the watcher in-line.
+                    await promise;
+                }
                 return;
             }
         }

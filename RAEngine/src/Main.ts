@@ -1660,6 +1660,10 @@ const gameLoadedWaiters = new Set<() => void>();
 // and held there as the editable in-memory recording. Persistence is the
 // frontend handing those lines back to `saveRatest`.
 let recordingActive = false;
+// When false, asset-trigger events during recording produce no `achievement`
+// lines. Set per-recording via the `achievementsEnabled` param of
+// startRecording. Defaults to true to match the UI's default toggle state.
+let recordingAchievementsEnabled = true;
 
 let playbackAbort = false;
 let playbackPaused = false;
@@ -2717,6 +2721,11 @@ async function handleApiRequest(
             const { parseRatest, runStep } = await import("../../tests/ratest.ts");
             const { LiveStagehand } = await import("./LiveStagehand.ts");
 
+            // Per-run toggle from the UI: when false, `achievement` lines
+            // in the script are no-ops (skipped, not asserted). Defaults
+            // to true if absent so external callers get assertion behavior.
+            const achievementsEnabled = (input.params as { achievementsEnabled?: boolean })?.achievementsEnabled !== false;
+
             let parsed: ReturnType<typeof parseRatest>;
             try {
                 const text = await Deno.readTextFile(path);
@@ -2781,6 +2790,13 @@ async function handleApiRequest(
                 return WindowManager.postKeypress(pid, VK_RETURN);
             });
             const results: Array<{ name: string; passed: boolean; error?: string; durationMs: number }> = [];
+            // `achievement` steps fire async 5s watchers and don't have a
+            // result at runStep return time. We track each watcher's step
+            // index so we can refresh that row's phase to pass/fail at
+            // drain time, after the main loop completes.
+            const pendingAchievements: Array<Promise<void>> = [];
+            const achievementStepIndices: number[] = [];
+            const stepCtx = { achievementsEnabled, pendingAchievements };
             let aborted = false;
             for (let i = 0; i < parsed.steps.length; i++) {
                 // Universal inter-step delay. Applied before every step
@@ -2820,8 +2836,18 @@ async function handleApiRequest(
                 });
 
                 const stepStart = performance.now();
-                await runStep(page, step, results);
+                const pendingBefore = pendingAchievements.length;
+                await runStep(page, step, results, stepCtx);
                 const stepMs = Math.round(performance.now() - stepStart);
+
+                // An `achievement` step in async (toggle Yes) mode pushes a
+                // promise to pendingAchievements during this call but won't
+                // settle until later. Hold the row open with the "start"
+                // phase; drain-time logic will refresh it with pass/fail.
+                if (pendingAchievements.length > pendingBefore) {
+                    achievementStepIndices.push(i);
+                    continue;
+                }
 
                 const newResult = results.length > before ? results[results.length - 1] : null;
                 const phase: "pass" | "fail" | "ok" = newResult
@@ -2845,6 +2871,31 @@ async function handleApiRequest(
                     });
                     break;
                 }
+            }
+
+            // Drain pending `achievement` watchers. Each settles within 5s
+            // and pushes its outcome into `results`. We snapshot `results`
+            // around each drain so we can match outcomes back to their
+            // step row and refresh that row's phase. Order is preserved
+            // because pendingAchievements and achievementStepIndices are
+            // populated in lockstep at step time.
+            for (let k = 0; k < pendingAchievements.length; k++) {
+                const before = results.length;
+                await pendingAchievements[k];
+                const outcome = results.length > before ? results[results.length - 1] : null;
+                const stepIndex = achievementStepIndices[k];
+                const step = parsed.steps[stepIndex];
+                const phase: "pass" | "fail" | "ok" = outcome
+                    ? (outcome.passed ? "pass" : "fail")
+                    : "ok";
+                broadcastToDevtools("ratestStep", {
+                    index: stepIndex,
+                    total: parsed.steps.length,
+                    source: step.source,
+                    phase,
+                    error: outcome?.error,
+                    durationMs: outcome ? Math.round(outcome.durationMs) : 0,
+                });
             }
 
             playbackAbort = false;
@@ -2955,6 +3006,12 @@ async function handleApiRequest(
             // identity (if any) is the frontend's concern — it knows which
             // file it loaded and which steps to preserve.
             const continueMode = !!(input.params as { continueMode?: boolean })?.continueMode;
+            // Achievements toggle: when false, asset triggers during the
+            // recording session do NOT emit `achievement` lines. Defaults
+            // to true so callers that don't pass the flag get the new
+            // behavior automatically.
+            const achievementsEnabledParam = (input.params as { achievementsEnabled?: boolean })?.achievementsEnabled;
+            recordingAchievementsEnabled = achievementsEnabledParam !== false;
 
             if (!continueMode) {
                 // Match playRatest: reset every asset to ACTIVE so triggers
@@ -3739,19 +3796,22 @@ function handleFirmwareData(data: string): void {
 
                     // Tap triggered-state transitions for the active recording.
                     // Separate from the UserProfile loop so recording works
-                    // regardless of profile state.
-                    if (recordingActive && fullDiff.edited) {
+                    // regardless of profile state. Gated on the per-session
+                    // achievements toggle so the user can record interaction
+                    // sequences without polluting the file with assertions.
+                    if (recordingActive && recordingAchievementsEnabled && fullDiff.edited) {
                         for (const [path, value] of fullDiff.edited) {
                             const match = path.match(/^assets\/(\d+)\/state$/);
                             if (match && value === "TRIGGERED") {
                                 const index = parseInt(match[1]);
                                 const asset = AppData.data.assets[index];
                                 if (asset) {
-                                    // Emit canonical `waitTriggered <id>`
-                                    // line; the asset's display name flows
-                                    // separately as a hint for the UI log.
+                                    // Emit `achievement <id>` — semantics:
+                                    // playback fires a 5s background watcher
+                                    // and reports pass/fail at end of test
+                                    // without blocking the timeline.
                                     broadcastToDevtools("recordingLine", {
-                                        source: `waitTriggered ${asset.id}`,
+                                        source: `achievement ${asset.id}`,
                                         label: asset.name ?? null,
                                     });
                                 }

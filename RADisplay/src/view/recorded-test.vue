@@ -19,17 +19,24 @@
                 >
                     Restart: {{ playbackRestart ? 'Yes' : 'No' }}
                 </button>
+                <button
+                    class="achievements-button"
+                    @click="toggleAchievements()"
+                    title="When Yes, recording captures achievement triggers as `achievement <id>` lines and playback verifies they fire within 5s. When No, recording omits them and playback skips existing ones."
+                >
+                    Achievements: {{ achievementsMode ? 'Yes' : 'No' }}
+                </button>
             </div>
         </div>
 
         <div class="main-wrapper">
             <div class="list-wrapper">
-                <div v-if="files.length === 0" class="empty-state">
+                <div v-if="displayFiles.length === 0" class="empty-state">
                     <div>No <code>.ratest</code> files found for this game.</div>
                 </div>
                 <ul v-else class="file-list">
                     <li
-                        v-for="file in files"
+                        v-for="file in displayFiles"
                         :key="file"
                         :class="{
                             selected: file === selected,
@@ -643,6 +650,7 @@
     .save-button,
     .delay-button,
     .restart-button,
+    .achievements-button,
     .confirm-button,
     .cancel-button {
         color: white;
@@ -693,6 +701,10 @@
     }
 
     .restart-button {
+        background: #374151;
+    }
+
+    .achievements-button {
         background: #374151;
     }
 
@@ -894,9 +906,23 @@
     // switching back. Lets the user move between files mid-edit without
     // losing in-memory work.
     const unsavedSteps = ref({});
-    const isDirty = (file) => file === loadedFromFile.value
+    // Files that exist only in memory — a New Record session in flight.
+    // They show up in the list alongside on-disk files so the user can
+    // see what they're recording, but Save turns them into real files.
+    // Cleared entries on: save (file hits disk), delete, discard.
+    const ephemeralFiles = ref([]);
+    const isEphemeral = (file) => ephemeralFiles.value.includes(file);
+    // Displayed list: on-disk files first, then ephemerals. Preserves
+    // backend sort for disk files (currently alphabetical) so the newly
+    // minted ephemeral lands at the bottom of the list where it's easy
+    // to find.
+    const displayFiles = computed(() => {
+        const disk = files.value.filter((f) => !ephemeralFiles.value.includes(f));
+        return [...disk, ...ephemeralFiles.value];
+    });
+    const isDirty = (file) => isEphemeral(file) || (file === loadedFromFile.value
         ? unsavedRecording.value
-        : Object.prototype.hasOwnProperty.call(unsavedSteps.value, file);
+        : Object.prototype.hasOwnProperty.call(unsavedSteps.value, file));
     const pendingSave = ref(false);
     const saveFilename = ref('');
     const saveInputEl = ref(null);
@@ -1005,6 +1031,10 @@
 
     const playbackDelayMs = ref(200);
     const playbackRestart = ref(true);
+    // Per-session toggle (intentionally not persisted): controls whether
+    // achievement triggers get captured during recording and asserted
+    // during playback. Resets to Yes on every RAFlash launch.
+    const achievementsMode = ref(true);
     const delayModalOpen = ref(false);
     const delayDraft = ref(200);
     const delayInputEl = ref(null);
@@ -1033,7 +1063,10 @@
     // Covers both content drift (in-memory steps diverged from disk) and
     // metadata drift (a pending rename waiting for Save). "Discard changes"
     // clears both, so both count when deciding whether to enable the menu.
-    const hasDiscardableChanges = (file) => isDirty(file) || isPendingRename(file);
+    // Ephemeral files have no disk version to revert to, so Discard makes
+    // no sense for them — they can only be removed via Delete.
+    const hasDiscardableChanges = (file) =>
+        !isEphemeral(file) && (isDirty(file) || isPendingRename(file));
 
     const renamingFile = ref(null);
     const renameValue = ref('');
@@ -1138,6 +1171,12 @@
             delete next[data.file];
             unsavedSteps.value = next;
         }
+        // Graduate an ephemeral to a real on-disk file: refreshList will
+        // pick it up from disk on the next cycle, so the display entry
+        // should come from `files`, not `ephemeralFiles`.
+        if (ephemeralFiles.value.includes(data.file)) {
+            ephemeralFiles.value = ephemeralFiles.value.filter((f) => f !== data.file);
+        }
     });
 
     // Stash the currently-loaded file's dirty steps so they can be
@@ -1233,7 +1272,12 @@
         if (response.success) {
             files.value = response.params.files ?? [];
             dir.value = response.params.dir ?? null;
-            if (selected.value && !files.value.includes(selected.value)) selected.value = null;
+            // An ephemeral recording has no disk row yet but still belongs
+            // in the list. Only clear the selection if the file is missing
+            // from BOTH disk and the ephemeral set.
+            if (selected.value && !files.value.includes(selected.value) && !isEphemeral(selected.value)) {
+                selected.value = null;
+            }
         } else {
             files.value = [];
             dir.value = null;
@@ -1253,7 +1297,7 @@
         // actually finishes.
         Network.send({
             command: 'playRatest',
-            params: { file: target },
+            params: { file: target, achievementsEnabled: achievementsMode.value },
         }).catch((err) => console.error('playRatest failed:', err));
     };
 
@@ -1298,6 +1342,10 @@
         playbackRestart.value = next;
     };
 
+    const toggleAchievements = () => {
+        achievementsMode.value = !achievementsMode.value;
+    };
+
     // Round-trip through getSettings so we don't clobber other fields
     // on the way back: saveSettings replaces the whole blob.
     const persistSettingPatch = async (patch) => {
@@ -1312,11 +1360,43 @@
         await Network.send({ command: 'saveSettings', params: { settings: next } });
     };
 
+    // Allocate "New Recording N.ratest" with N chosen to not collide with
+    // anything already known: disk files, pending rename targets, or other
+    // in-flight ephemerals. Rename targets count so you can't queue
+    // "New Recording 1" as a rename and then get a fresh New Record that
+    // shadows it.
+    const allocateNewRecordingName = () => {
+        const taken = new Set([
+            ...files.value,
+            ...ephemeralFiles.value,
+            ...Object.values(pendingRenames.value),
+        ]);
+        for (let n = 1; ; n++) {
+            const candidate = `New Recording ${n}.ratest`;
+            if (!taken.has(candidate)) return candidate;
+        }
+    };
+
     const startNewRecord = async () => {
-        const response = await Network.send({ command: 'startRecording', params: {} });
+        const response = await Network.send({
+            command: 'startRecording',
+            params: { achievementsEnabled: achievementsMode.value },
+        });
         if (!response.success) {
             showError(`Couldn't start recording: ${response.error ?? 'unknown error'}`);
+            return;
         }
+        // The recordingStart event has already fired by the time this
+        // resolves and reset loadedFromFile to null. Auto-assign an
+        // ephemeral name now so the session shows up in the file list
+        // and Save writes straight to disk without prompting.
+        const name = allocateNewRecordingName();
+        ephemeralFiles.value = [...ephemeralFiles.value, name];
+        loadedFromFile.value = name;
+        selected.value = name;
+        // Mark dirty so the *-asterisk and Save button show up even
+        // before the first recorded interaction arrives.
+        unsavedRecording.value = true;
     };
 
     const startContinueRecord = async (file) => {
@@ -1342,7 +1422,7 @@
         }
         const response = await Network.send({
             command: 'startRecording',
-            params: { continueMode: true },
+            params: { continueMode: true, achievementsEnabled: achievementsMode.value },
         });
         if (!response.success) {
             showError(`Couldn't continue recording: ${response.error ?? 'unknown error'}`);
@@ -1482,6 +1562,24 @@
     };
 
     const doDelete = async (file) => {
+        // Ephemerals live only in the frontend — there's no on-disk file
+        // for the backend to delete. Strip the local bookkeeping so the
+        // row disappears, then bail out.
+        if (isEphemeral(file)) {
+            ephemeralFiles.value = ephemeralFiles.value.filter((f) => f !== file);
+            if (selected.value === file) selected.value = null;
+            if (loadedFromFile.value === file) {
+                loadedFromFile.value = null;
+                steps.value = [];
+                unsavedRecording.value = false;
+            }
+            if (Object.prototype.hasOwnProperty.call(unsavedSteps.value, file)) {
+                const next = { ...unsavedSteps.value };
+                delete next[file];
+                unsavedSteps.value = next;
+            }
+            return;
+        }
         const response = await Network.send({
             command: 'deleteRatest',
             params: { file },
@@ -1565,7 +1663,15 @@
     const contextPlay = () => {
         const file = contextMenu.value?.file;
         closeContextMenu();
-        if (file) play(file);
+        if (!file) return;
+        // Ephemerals haven't been written to disk yet, so the backend
+        // has nothing to load. Surface a readable message instead of
+        // letting playRatest fail with a cryptic file-not-found error.
+        if (isEphemeral(file)) {
+            showError(`Save "${displayName(file)}" before playing it.`);
+            return;
+        }
+        play(file);
     };
 
     const contextContinueRecord = () => {
