@@ -128,16 +128,6 @@
                 </button>
                 <div class="status" :class="statusClass">{{ statusText }}</div>
                 <button
-                    class="hit-test-button"
-                    :class="{ active: hitTesting }"
-                    :disabled="hitTesting ? false : !canHitTest"
-                    @click="toggleHitTest()"
-                    title="Click, then click in the game to see what path is detected"
-                >
-                    <span v-if="hitTesting">Cancel HitTest</span>
-                    <span v-else>HitTest</span>
-                </button>
-                <button
                     class="delay-button"
                     @click="openDelayModal()"
                     title="Edit the global delay inserted between every playback step"
@@ -174,19 +164,6 @@
             </div>
         </div>
 
-        <div v-if="hitTestResult" class="hit-test-modal-backdrop">
-            <div class="hit-test-modal">
-                <div class="hit-test-modal-title">
-                    {{ hitTestResult.path ? 'Detected click target' : 'No target detected' }}
-                </div>
-                <div v-if="hitTestResult.path" class="hit-test-modal-path">{{ hitTestResult.path }}</div>
-                <div v-else class="hit-test-modal-empty">Click at ({{ hitTestResult.x }}, {{ hitTestResult.y }}) didn't hit any clickable element.</div>
-                <div class="hit-test-modal-actions">
-                    <button v-if="hitTestResult.path" class="hit-test-copy" @click="copyHitTestPath()">{{ copied ? 'Copied' : 'Copy' }}</button>
-                    <button class="hit-test-close" @click="hitTestResult = null">Close</button>
-                </div>
-            </div>
-        </div>
     </div>
 </template>
 
@@ -495,7 +472,6 @@
     .pause-button,
     .step-button,
     .record-button,
-    .hit-test-button,
     .delay-button,
     .restart-button,
     .confirm-button,
@@ -525,14 +501,6 @@
 
     .record-button.active {
         background: #dc2626;
-    }
-
-    .hit-test-button {
-        background: #374151;
-    }
-
-    .hit-test-button.active {
-        background: var(--c-primary);
     }
 
     .pause-button {
@@ -584,53 +552,10 @@
         color: var(--c-text);
     }
 
-    .hit-test-modal-path {
-        font-family: var(--font-mono);
-        font-size: 0.75rem;
-        color: var(--c-text);
-        background: rgba(255, 255, 255, 0.04);
-        border: 1px solid var(--c-border);
-        border-radius: var(--radius-sm);
-        padding: 0.5rem 0.625rem;
-        word-break: break-all;
-        user-select: text;
-    }
-
-    .hit-test-modal-empty {
-        font-size: 0.8125rem;
-        color: var(--c-text-muted);
-    }
-
     .hit-test-modal-actions {
         display: flex;
         justify-content: flex-end;
         gap: 0.5rem;
-    }
-
-    .hit-test-copy,
-    .hit-test-close {
-        color: white;
-        border: none;
-        font-family: var(--font-sans);
-        font-size: 0.8125rem;
-        font-weight: 600;
-        padding: 0.4rem 1rem;
-        border-radius: var(--radius-md);
-        cursor: pointer;
-        transition: opacity var(--duration) var(--ease);
-    }
-
-    .hit-test-copy {
-        background: var(--c-primary);
-    }
-
-    .hit-test-close {
-        background: #374151;
-    }
-
-    .hit-test-copy:hover,
-    .hit-test-close:hover {
-        opacity: 0.85;
     }
 
     .confirm-button {
@@ -645,7 +570,6 @@
     .pause-button:disabled,
     .step-button:disabled,
     .record-button:disabled,
-    .hit-test-button:disabled,
     .delay-button:disabled,
     .restart-button:disabled,
     .confirm-button:disabled {
@@ -657,7 +581,6 @@
     .pause-button:not(:disabled):hover,
     .step-button:not(:disabled):hover,
     .record-button:not(:disabled):hover,
-    .hit-test-button:not(:disabled):hover,
     .delay-button:not(:disabled):hover,
     .restart-button:not(:disabled):hover,
     .confirm-button:not(:disabled):hover,
@@ -738,9 +661,6 @@
     const saveInputEl = ref(null);
     const lastSaved = ref(null);
 
-    const hitTesting = ref(false);
-    const hitTestResult = ref(null);
-    const copied = ref(false);
     const stepsCopied = ref(false);
     let stepsCopiedTimer = null;
 
@@ -844,12 +764,6 @@
         lastSaved.value = data.file;
     });
 
-    Network.addEventListener('hitTestResult', (data) => {
-        hitTesting.value = false;
-        copied.value = false;
-        hitTestResult.value = data;
-    });
-
     watch(selected, async (file) => {
         if (running.value || recording.value) return;
         if (!file) {
@@ -870,16 +784,11 @@
     );
 
     const canRecord = computed(() =>
-        !running.value && !hitTesting.value && App.flashConnected,
-    );
-
-    const canHitTest = computed(() =>
-        !running.value && !recording.value && App.flashConnected,
+        !running.value && App.flashConnected,
     );
 
     const statusText = computed(() => {
         if (!App.flashConnected) return 'Flash Player is not running — reload the game to run tests.';
-        if (hitTesting.value) return 'HitTest — click something in the game to see its detected path.';
         if (recording.value) return 'Recording — click in the game to capture actions. Press Stop when done.';
         if (running.value) return 'Playing... game will reset and actions will execute.';
         if (lastSaved.value) return `Saved ${lastSaved.value}`;
@@ -888,34 +797,8 @@
 
     const statusClass = computed(() => {
         if (recording.value) return 'recording';
-        if (hitTesting.value) return 'recording';
         return '';
     });
-
-    const toggleHitTest = async () => {
-        if (hitTesting.value) {
-            hitTesting.value = false;
-            await Network.send({ command: 'stopHitTest', params: {} });
-        } else {
-            const response = await Network.send({ command: 'startHitTest', params: {} });
-            if (response.success) {
-                hitTesting.value = true;
-                hitTestResult.value = null;
-            } else {
-                result.value = { passed: 0, failed: 1, total: 1, error: response.error ?? 'startHitTest failed' };
-            }
-        }
-    };
-
-    const copyHitTestPath = async () => {
-        if (!hitTestResult.value?.path) return;
-        try {
-            await navigator.clipboard.writeText(hitTestResult.value.path);
-            copied.value = true;
-        } catch {
-            copied.value = false;
-        }
-    };
 
     const copySteps = async () => {
         const text = steps.value

@@ -3016,7 +3016,8 @@ async function handleApiRequest(
         case "startHitTest": {
             if (!AppData.gameHash) return { success: false, error: "No game loaded" };
             if (!flashConnected) return { success: false, error: "Flash Player is not running — reload the game to hit test elements" };
-            return await sendToFirmware("setHitTest", { active: true });
+            const elementMode = (input.params as { elementMode?: boolean })?.elementMode === true;
+            return await sendToFirmware("setHitTest", { active: true, elementMode });
         }
 
         case "stopHitTest": {
@@ -3674,6 +3675,11 @@ function handleFirmwareData(data: string): void {
                 if (parsed.data?.kind === "hitTest") {
                     broadcastToDevtools("hitTestResult", {
                         path: typeof parsed.data.path === "string" ? parsed.data.path : null,
+                        // Only present when the reliable `path` differs from the
+                        // raw-name dotted form (i.e., at least one ancestor was
+                        // auto-named). UI surfaces it as a second option and
+                        // uses it to highlight the matching tree row.
+                        namePath: typeof parsed.data.namePath === "string" ? parsed.data.namePath : null,
                         x: parsed.data.x,
                         y: parsed.data.y,
                     });

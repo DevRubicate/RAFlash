@@ -13,6 +13,51 @@
                 {{ flatRows.length }} of {{ totalNodeCount }} nodes
             </span>
             <span class="toolbar-hint" v-else-if="tree">{{ flatRows.length }} nodes visible</span>
+            <div class="hit-test-buttons">
+                <button
+                    class="hit-test-button"
+                    :class="{ active: hitTestMode === 'click' }"
+                    :disabled="!App.flashConnected || (hitTestMode !== null && hitTestMode !== 'click')"
+                    @click="toggleHitTest('click')"
+                    title="Click, then click in the game to pick a clickable element (button or interactive MovieClip)"
+                >
+                    <span v-if="hitTestMode === 'click'">Cancel</span>
+                    <span v-else>Click HitTest</span>
+                </button>
+                <button
+                    class="hit-test-button"
+                    :class="{ active: hitTestMode === 'element' }"
+                    :disabled="!App.flashConnected || (hitTestMode !== null && hitTestMode !== 'element')"
+                    @click="toggleHitTest('element')"
+                    title="Click, then click in the game to pick any element under the cursor (any MovieClip, Button, or TextField)"
+                >
+                    <span v-if="hitTestMode === 'element'">Cancel</span>
+                    <span v-else>Element HitTest</span>
+                </button>
+            </div>
+        </div>
+
+        <div v-if="hitTestResult" class="hit-test-modal-backdrop">
+            <div class="hit-test-modal">
+                <button class="hit-test-modal-close-x" @click="hitTestResult = null" title="Close">&times;</button>
+                <div class="hit-test-modal-title">
+                    {{ hitTestResult.path ? 'Detected click target' : 'No target detected' }}
+                </div>
+
+                <div v-if="hitTestResult.path" class="hit-test-modal-path-row">
+                    <div v-if="hitTestResult.namePath" class="hit-test-modal-path-label">Position based:</div>
+                    <div class="hit-test-modal-path">{{ hitTestResult.path }}</div>
+                    <button class="hit-test-copy" @click="copyHitTestPath('path')">{{ copied === 'path' ? 'Copied' : 'Copy' }}</button>
+                </div>
+
+                <div v-if="hitTestResult.namePath" class="hit-test-modal-path-row">
+                    <div class="hit-test-modal-path-label">Name based:</div>
+                    <div class="hit-test-modal-path">{{ hitTestResult.namePath }}</div>
+                    <button class="hit-test-copy" @click="copyHitTestPath('namePath')">{{ copied === 'namePath' ? 'Copied' : 'Copy' }}</button>
+                </div>
+
+                <div v-if="!hitTestResult.path" class="hit-test-modal-empty">Click at ({{ hitTestResult.x }}, {{ hitTestResult.y }}) didn't hit any clickable element.</div>
+            </div>
         </div>
 
         <div class="split">
@@ -136,6 +181,138 @@
     .toolbar-hint {
         color: var(--c-text-muted);
         font-size: 0.75rem;
+    }
+
+    .hit-test-buttons {
+        margin-left: auto;
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .hit-test-button {
+        color: white;
+        background: #374151;
+        border: none;
+        font-family: var(--font-sans);
+        font-size: 0.8125rem;
+        font-weight: 600;
+        padding: 0.5rem 1.25rem;
+        border-radius: var(--radius-md);
+        cursor: pointer;
+        transition: opacity var(--duration) var(--ease), background var(--duration) var(--ease);
+    }
+
+    .hit-test-button.active {
+        background: var(--c-primary);
+    }
+
+    .hit-test-button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    .hit-test-button:not(:disabled):hover {
+        opacity: 0.85;
+    }
+
+    .hit-test-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1100;
+    }
+
+    .hit-test-modal {
+        position: relative;
+        min-width: 320px;
+        max-width: 80%;
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-md);
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    }
+
+    .hit-test-modal-close-x {
+        position: absolute;
+        top: 0.375rem;
+        right: 0.5rem;
+        background: none;
+        border: none;
+        color: var(--c-text-muted);
+        font-size: 1.5rem;
+        line-height: 1;
+        padding: 0.125rem 0.375rem;
+        cursor: pointer;
+        border-radius: var(--radius-sm);
+        transition: color var(--duration) var(--ease), background var(--duration) var(--ease);
+    }
+
+    .hit-test-modal-close-x:hover {
+        color: var(--c-text);
+        background: rgba(255, 255, 255, 0.06);
+    }
+
+    .hit-test-modal-title {
+        font-weight: 600;
+        font-size: 0.875rem;
+        color: var(--c-text);
+    }
+
+    .hit-test-modal-path-row {
+        display: flex;
+        flex-direction: column;
+        gap: 0.375rem;
+    }
+
+    .hit-test-modal-path-label {
+        font-size: 0.75rem;
+        color: var(--c-text-muted);
+        font-weight: 500;
+    }
+
+    .hit-test-modal-path {
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        color: var(--c-text);
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-sm);
+        padding: 0.5rem 0.625rem;
+        word-break: break-all;
+        user-select: text;
+    }
+
+    .hit-test-modal-path-row .hit-test-copy {
+        align-self: flex-end;
+    }
+
+    .hit-test-modal-empty {
+        font-size: 0.8125rem;
+        color: var(--c-text-muted);
+    }
+
+    .hit-test-copy {
+        color: white;
+        background: var(--c-primary);
+        border: none;
+        font-family: var(--font-sans);
+        font-size: 0.8125rem;
+        font-weight: 600;
+        padding: 0.4rem 1rem;
+        border-radius: var(--radius-md);
+        cursor: pointer;
+        transition: opacity var(--duration) var(--ease);
+    }
+
+    .hit-test-copy:hover {
+        opacity: 0.85;
     }
 
     .split {
@@ -382,6 +559,43 @@
     const treeListRef = ref(null);
     const contextMenu = ref(null);
 
+    // null when no HitTest is armed, else 'click' or 'element' to indicate
+    // which mode the firmware is currently waiting on a click for.
+    const hitTestMode = ref(null);
+    const hitTestResult = ref(null);
+    // null, 'path', or 'namePath' — tracks which row's Copy was just used so
+    // we can flip just that button's label to "Copied".
+    const copied = ref(null);
+
+    const toggleHitTest = async (mode) => {
+        if (hitTestMode.value === mode) {
+            hitTestMode.value = null;
+            await Network.send({ command: 'stopHitTest', params: {} });
+        } else {
+            const response = await Network.send({
+                command: 'startHitTest',
+                params: { elementMode: mode === 'element' },
+            });
+            if (response.success) {
+                hitTestMode.value = mode;
+                hitTestResult.value = null;
+            }
+        }
+    };
+
+    const copyHitTestPath = async (which) => {
+        const value = which === 'namePath'
+            ? hitTestResult.value?.namePath
+            : hitTestResult.value?.path;
+        if (!value) return;
+        try {
+            await navigator.clipboard.writeText(value);
+            copied.value = which;
+        } catch {
+            copied.value = null;
+        }
+    };
+
     const extractKey = (str) => {
         const idx = str.indexOf(': ');
         return idx !== -1 ? str.substring(0, idx) : null;
@@ -479,6 +693,52 @@
             }
         }
     };
+
+    // Walk from `root` to find `targetPath`, marking every ancestor on
+    // the way as expanded. Used by HitTest to surface the picked element
+    // even when it lives inside collapsed parents.
+    const expandAncestors = (root, targetPath) => {
+        if (!root) return false;
+        if (root.path === targetPath) return true;
+        for (const child of root.children) {
+            if (expandAncestors(child, targetPath)) {
+                root.expanded = true;
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const selectByPath = async (path) => {
+        if (!path || !tree.value) return;
+        let node = findNodeByPath(tree.value, path);
+        if (!node) {
+            // Tree may be a stale snapshot from before the node existed.
+            await loadTree();
+            node = findNodeByPath(tree.value, path);
+            if (!node) return;
+        }
+        // Filtered view can hide ancestors; clear so the row is reachable.
+        filterText.value = '';
+        expandAncestors(tree.value, path);
+        selectNode(node);
+        await nextTick();
+        if (treeListRef.value) {
+            const el = treeListRef.value.querySelector(`[data-path="${CSS.escape(path)}"]`);
+            if (el) el.scrollIntoView({ block: 'nearest' });
+        }
+    };
+
+    Network.addEventListener('hitTestResult', (data) => {
+        hitTestMode.value = null;
+        copied.value = null;
+        hitTestResult.value = data;
+        // Tree paths are name-based, so prefer namePath when present.
+        // Falling back to path covers the common case where there were
+        // no auto-named ancestors (path is itself name-based).
+        const treePath = data?.namePath || data?.path;
+        if (treePath) selectByPath(treePath);
+    });
 
     const focusSelected = async () => {
         if (selectedPath.value === null) return;

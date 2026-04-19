@@ -77,6 +77,10 @@ class Main {
     private static var recording:Boolean = false;
     private static var recordingMouseListener:Object = null;
     private static var hitTestMouseListener:Object = null;
+    // Tracks which kind of HitTest is armed: false = click mode (only
+    // button-like hits are claimed), true = element mode (any visible
+    // MovieClip/Button/TextField counts).
+    private static var hitTestElementMode:Boolean = false;
     private static var hitProbe:MovieClip = null;
 
 
@@ -1225,7 +1229,7 @@ class Main {
 
             case "setHitTest":
                 if (params.active == true) {
-                    setupHitTestListener();
+                    setupHitTestListener(params.elementMode == true);
                 } else {
                     teardownHitTestListener();
                 }
@@ -1361,17 +1365,30 @@ class Main {
      * recording does, forwards the result to the engine, and auto-detaches —
      * so the user can inspect a path without committing to a full recording.
      */
-    private static function setupHitTestListener():Void {
+    private static function setupHitTestListener(elementMode:Boolean):Void {
         if (hitTestMouseListener != null) return;
+        hitTestElementMode = elementMode;
         hitTestMouseListener = {};
         hitTestMouseListener.onMouseDown = function():Void {
             try {
                 if (Main.gameRoot == null) return;
                 var x:Number = _level0._xmouse;
                 var y:Number = _level0._ymouse;
-                var target:Object = Main.findClickedTargetRec(Main.gameRoot, x, y);
+                var target:Object = Main.hitTestElementMode
+                    ? Main.findElementTargetRec(Main.gameRoot, x, y)
+                    : Main.findClickedTargetRec(Main.gameRoot, x, y);
                 var path:String = (target == null) ? null : Main.buildStagePath(target);
-                Main.sendMessage("userInput", { kind: "hitTest", path: path, x: x, y: y });
+                var msg:Object = { kind: "hitTest", path: path, x: x, y: y };
+                if (target != null) {
+                    // namePath = the same chain but with raw `_name` everywhere,
+                    // including auto `instance<N>` names. Only attached when it
+                    // actually differs from `path`, so the UI knows when to
+                    // surface the second (less-reliable) option. Tree highlight
+                    // also prefers it because dumpDisplayTree is name-keyed.
+                    var namePath:String = Main.buildStagePathByName(target);
+                    if (namePath != path) msg.namePath = namePath;
+                }
+                Main.sendMessage("userInput", msg);
                 Main.teardownHitTestListener();
             } catch (e:Error) { Main.logError("hitTest onMouseDown", e); }
         };
@@ -1394,10 +1411,20 @@ class Main {
      * small widgets behind it.
      */
     public static function findClickedTargetRec(clip:Object, x:Number, y:Number):Object {
-        return findTopmostHit(clip, x, y, {}, 0);
+        return findTopmostHit(clip, x, y, {}, 0, false);
     }
 
-    private static function findTopmostHit(clip:Object, x:Number, y:Number, visited:Object, depth:Number):Object {
+    /**
+     * Element-mode counterpart of findClickedTargetRec — claims hits on
+     * any visible MovieClip / Button / TextField under the cursor, not
+     * just clickable ones. Used by the Element HitTest inspector so the
+     * user can pick decorative wrappers and text labels.
+     */
+    public static function findElementTargetRec(clip:Object, x:Number, y:Number):Object {
+        return findTopmostHit(clip, x, y, {}, 0, true);
+    }
+
+    private static function findTopmostHit(clip:Object, x:Number, y:Number, visited:Object, depth:Number, anyElement:Boolean):Object {
         if (clip == null || depth > 20) return null;
         var key:String = String(clip._target);
         if (visited[key]) return null;
@@ -1408,7 +1435,7 @@ class Main {
         // miss and we skip the 16k getInstanceAtDepth sweep entirely.
         if (!clip.hitTest(x, y, false)) return null;
 
-        var children:Array = collectClickableChildren(clip);
+        var children:Array = collectHitChildren(clip, anyElement);
         for (var i:Number = 0; i < children.length; i++) {
             var child:Object = children[i];
             // `_visible = false` elements don't render and don't receive
@@ -1417,15 +1444,17 @@ class Main {
             // fully-transparent elements (invisible-hitbox pattern).
             if (child._visible == false) continue;
             if (child instanceof MovieClip) {
-                var sub:Object = findTopmostHit(child, x, y, visited, depth + 1);
+                var sub:Object = findTopmostHit(child, x, y, visited, depth + 1, anyElement);
                 if (sub != null) return sub;
-                // A non-button-like MC is transparent to clicks: Flash lets
-                // the click fall through to whatever is behind it. So we
-                // only claim the hit for MCs that actually receive mouse
-                // events (onPress/onRelease/...). Plain container MCs stay
-                // in the recursion as transparent wrappers.
-                if (isMcClickable(child) && pointInChildStageBounds(child, x, y)) return child;
+                // Click mode: only claim the hit for MCs that actually
+                // receive mouse events (onPress/onRelease/...). Plain
+                // container MCs stay in the recursion as transparent
+                // wrappers. Element mode: any MC counts, since the user
+                // is inspecting structure, not click routing.
+                if ((anyElement || isMcClickable(child)) && pointInChildStageBounds(child, x, y)) return child;
             } else if (child instanceof Button) {
+                if (pointInChildStageBounds(child, x, y)) return child;
+            } else if (anyElement && child instanceof TextField) {
                 if (pointInChildStageBounds(child, x, y)) return child;
             }
         }
@@ -1433,18 +1462,21 @@ class Main {
     }
 
     /**
-     * All MovieClip/Button children of `parent`, merged from `for...in` and
-     * a timeline depth sweep (the sweep catches DontEnum DefineButton2
-     * Buttons that for...in hides), sorted by getDepth() descending.
+     * Children of `parent` that participate in hit-testing, merged from
+     * `for...in` and a timeline depth sweep (the sweep catches DontEnum
+     * DefineButton2 Buttons that for...in hides), sorted by getDepth()
+     * descending. Always includes MovieClip and Button; TextField is
+     * included only when `anyElement` is true (Element HitTest mode).
      * Note: AS2 has no readable `_depth` property — only `getDepth()`.
      */
-    private static function collectClickableChildren(parent:Object):Array {
+    private static function collectHitChildren(parent:Object, anyElement:Boolean):Array {
         if (parent == null) return [];
         var seen:Object = {};
         var out:Array = [];
         for (var nm:String in parent) {
             var fc:Object = parent[nm];
-            if (fc instanceof MovieClip || fc instanceof Button) {
+            if (fc instanceof MovieClip || fc instanceof Button
+                    || (anyElement && fc instanceof TextField)) {
                 seen[nm] = true;
                 out.push(fc);
             }
@@ -1455,7 +1487,8 @@ class Main {
                 if (child == null) continue;
                 var cname:String = String(child._name);
                 if (seen[cname]) continue;
-                if (child instanceof MovieClip || child instanceof Button) {
+                if (child instanceof MovieClip || child instanceof Button
+                        || (anyElement && child instanceof TextField)) {
                     seen[cname] = true;
                     out.push(child);
                 }
@@ -1486,7 +1519,10 @@ class Main {
         if (child instanceof MovieClip) {
             return child.hitTest(x, y, true) == true;
         }
-        if (child instanceof Button) {
+        // TextField has the same `getBounds`-via-AS2 problem as Button —
+        // the symbol's registration offset isn't introspectable, so the
+        // probe-vs-target dance is the most reliable bbox test.
+        if (child instanceof Button || child instanceof TextField) {
             var probe:MovieClip = getHitProbe();
             if (probe == null) return false;
             probe._x = x;
@@ -1538,6 +1574,20 @@ class Main {
      * the path survives across runs where N isn't stable.
      */
     public static function buildStagePath(clip:Object):String {
+        return buildStagePathInternal(clip, false);
+    }
+
+    /**
+     * Pure-name variant: keeps the literal `_name` (including the
+     * volatile `instance<N>` ones) at every level. Only useful for UI
+     * affordances that need to match the dumpDisplayTree representation
+     * (which is also dotted-name); never use this for replay paths.
+     */
+    public static function buildStagePathByName(clip:Object):String {
+        return buildStagePathInternal(clip, true);
+    }
+
+    private static function buildStagePathInternal(clip:Object, nameOnly:Boolean):String {
         if (clip == null) return null;
         var segments:Array = [];
         var current:Object = clip;
@@ -1546,7 +1596,7 @@ class Main {
             if (guard++ > 50) break; // runaway parent chain
             var n:String = String(current._name);
             if (n == null || n == "" || n == "undefined") break;
-            segments.unshift(buildPathSegment(current, n));
+            segments.unshift(nameOnly ? n : buildPathSegment(current, n));
             current = current._parent;
         }
         if (segments.length == 0) return "stage";
