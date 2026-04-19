@@ -157,25 +157,36 @@ function resolveAsset(idOrName: number | string): { id: number; name?: string; s
 }
 
 /**
- * The firmware's `formatOutput` helper wraps strings in extra quotes for
- * debugger display, and returns a shape `{ type: "...", value: ... }` for
- * primitives. Unwrap so callers see plain JS values.
+ * The firmware's `formatOutput` helper returns `{output: [{value: V}, ...]}`
+ * where string values are quoted for debugger display. Unwrap the singular
+ * common case to a bare JS value so callers can compare against literals.
+ * Multi-element arrays are returned as arrays of unwrapped values.
  */
-function extractValue(raw: unknown): unknown {
-    if (raw === null || raw === undefined) return raw;
-    if (typeof raw === "object") {
-        const o = raw as Record<string, unknown>;
-        if ("value" in o) {
-            const v = o.value;
-            if (typeof v === "string") return unwrapQuoted(v);
-            return v;
+function extractValue(result: unknown): unknown {
+    if (result && typeof result === "object" && "output" in (result as Record<string, unknown>)) {
+        const output = (result as Record<string, unknown>).output;
+        if (Array.isArray(output) && output.length > 0) {
+            if (output.length === 1) {
+                const first = output[0];
+                if (first && typeof first === "object" && "value" in first) {
+                    return unwrapQuoted((first as { value: unknown }).value);
+                }
+                return first;
+            }
+            return output.map((o) =>
+                o && typeof o === "object" && "value" in o
+                    ? unwrapQuoted((o as { value: unknown }).value)
+                    : o,
+            );
         }
+        return output;
     }
-    if (typeof raw === "string") return unwrapQuoted(raw);
-    return raw;
+    return unwrapQuoted(result);
 }
 
-function unwrapQuoted(s: string): string {
-    if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) return s.slice(1, -1);
-    return s;
+function unwrapQuoted(v: unknown): unknown {
+    if (typeof v === "string" && v.length >= 2 && v.startsWith('"') && v.endsWith('"')) {
+        return v.slice(1, -1);
+    }
+    return v;
 }
