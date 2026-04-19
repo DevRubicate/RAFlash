@@ -168,25 +168,30 @@ $(TEST_STAGEHAND_ACHIEVEMENTS_INSTALLED): $(TEST_STAGEHAND_ACHIEVEMENTS_FIXTURE)
 		--json=$(TEST_STAGEHAND_ACHIEVEMENTS_FIXTURE) \
 		--sentinel=$@
 
-# Run all tests through unified runner
+# Run all tests through unified runner.
+# Piped through `cat` so Deno's stdout is a plain pipe rather than a
+# Windows console (ConPTY). Under ConPTY on Git Bash, rapid output from
+# the runner and its subprocesses interleaves and produces garbled
+# cursor positions in the terminal. `bash -c 'set -o pipefail'`
+# preserves the runner's exit code across the pipe.
 test: $(TEST_AVM1_SWF) $(TEST_AVM2_SWF) avm1-build avm1-wrapper-build avm2-build assets stage $(TEST_INTEGRATION_GAME_SWF) $(TEST_STAGEHAND_GAME_SWF) $(TEST_STAGEHAND_GAME_RAFLASH) $(TEST_STAGEHAND_ACHIEVEMENTS_INSTALLED)
-	@$(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts
+	@bash -c 'set -o pipefail; $(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts 2>&1 | cat'
 
-# Individual suite targets
+# Individual suite targets (piped through `cat` for the same reason as `test`)
 test-avm1: $(TEST_AVM1_SWF)
-	@$(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts avm1
+	@bash -c 'set -o pipefail; $(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts avm1 2>&1 | cat'
 
 test-avm2: $(TEST_AVM2_SWF)
-	@$(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts avm2
+	@bash -c 'set -o pipefail; $(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts avm2 2>&1 | cat'
 
 test-engine:
-	@$(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts engine
+	@bash -c 'set -o pipefail; $(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts engine 2>&1 | cat'
 
 test-display:
-	@$(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts display
+	@bash -c 'set -o pipefail; $(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts display 2>&1 | cat'
 
 test-integration: avm1-build $(TEST_INTEGRATION_GAME_SWF)
-	@$(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts integration
+	@bash -c 'set -o pipefail; $(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts integration 2>&1 | cat'
 
 test-stagehand: avm1-build avm1-wrapper-build avm2-build assets stage $(TEST_STAGEHAND_GAME_SWF) $(TEST_STAGEHAND_GAME_RAFLASH) $(TEST_STAGEHAND_ACHIEVEMENTS_INSTALLED)
-	@$(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts stagehand
+	@bash -c 'set -o pipefail; $(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts stagehand 2>&1 | cat'

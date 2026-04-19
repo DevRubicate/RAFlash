@@ -39,5 +39,3 @@ await Deno.copyFile(jsonPath, installPath);
 
 await Deno.mkdir(".build/RACache", { recursive: true });
 await Deno.writeTextFile(sentinelPath, `${hash}\n${installPath}\n${new Date().toISOString()}\n`);
-
-console.log(`installed ${jsonPath} -> ${installPath}`);

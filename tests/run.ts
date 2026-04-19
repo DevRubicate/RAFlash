@@ -20,30 +20,18 @@ import { runFlashSuite } from "./flash-suite.ts";
 // Output formatting
 // -------------------------------------------------------------------------
 
-const colors = {
-    reset: "\x1b[0m",
-    green: "\x1b[32m",
-    red: "\x1b[31m",
-    yellow: "\x1b[33m",
-    cyan: "\x1b[36m",
-    dim: "\x1b[2m",
-    bold: "\x1b[1m",
-};
-
 function printSuiteHeader(name: string): void {
     console.log("");
-    console.log(`${colors.bold}\u2550`.repeat(50) + colors.reset);
-    console.log(`${colors.bold}  ${name}${colors.reset}`);
-    console.log(`${colors.bold}\u2550`.repeat(50) + colors.reset);
+    console.log(`=== ${name} ===`);
 }
 
 function printResult(result: TestResult): void {
     if (result.passed) {
-        console.log(`  ${colors.green}PASS${colors.reset}  ${result.name}`);
+        console.log(`  PASS  ${result.name}`);
     } else {
-        console.log(`  ${colors.red}FAIL${colors.reset}  ${result.name}`);
+        console.log(`  FAIL  ${result.name}`);
         if (result.error) {
-            console.log(`        ${colors.dim}${result.error}${colors.reset}`);
+            console.log(`        ${result.error}`);
         }
     }
 }
@@ -52,17 +40,15 @@ function printSuiteFooter(suite: SuiteResult): void {
     const total = suite.passed + suite.failed;
     const time = (suite.durationMs / 1000).toFixed(1);
     if (suite.failed === 0) {
-        console.log(`  ${colors.green}${total} passed${colors.reset} ${colors.dim}(${time}s)${colors.reset}`);
+        console.log(`  ${total} passed (${time}s)`);
     } else {
-        console.log(`  ${colors.red}${suite.failed} failed${colors.reset}, ${colors.green}${suite.passed} passed${colors.reset} ${colors.dim}(${time}s)${colors.reset}`);
+        console.log(`  ${suite.failed} failed, ${suite.passed} passed (${time}s)`);
     }
 }
 
 function printSummary(suites: SuiteResult[]): void {
     console.log("");
-    console.log(`${colors.bold}\u2550`.repeat(50) + colors.reset);
-    console.log(`${colors.bold}  SUMMARY${colors.reset}`);
-    console.log(`${colors.bold}\u2550`.repeat(50) + colors.reset);
+    console.log(`=== SUMMARY ===`);
 
     let totalPassed = 0;
     let totalFailed = 0;
@@ -75,25 +61,14 @@ function printSummary(suites: SuiteResult[]): void {
 
         const count = suite.passed + suite.failed;
         const time = (suite.durationMs / 1000).toFixed(1);
-        const nameCol = suite.name.padEnd(20);
-        const passStr = `${suite.passed} passed`.padEnd(12);
-        const failStr = suite.failed > 0
-            ? `${colors.red}${suite.failed} failed${colors.reset}`
-            : "";
-
-        console.log(`  ${nameCol} ${count.toString().padStart(4)} tests   ${passStr} ${failStr}  ${colors.dim}${time}s${colors.reset}`);
+        const failStr = suite.failed > 0 ? `${suite.failed} failed` : "";
+        console.log(`  ${suite.name.padEnd(20)} ${String(count).padStart(4)} tests   ${`${suite.passed} passed`.padEnd(12)} ${failStr}  ${time}s`);
     }
-
-    console.log(`  ${"─".repeat(48)}`);
 
     const totalCount = totalPassed + totalFailed;
     const totalTimeStr = (totalTime / 1000).toFixed(1);
-
-    if (totalFailed === 0) {
-        console.log(`  ${colors.green}${colors.bold}Total${colors.reset}${" ".repeat(15)} ${totalCount.toString().padStart(4)} tests   ${totalPassed} passed               ${colors.dim}${totalTimeStr}s${colors.reset}`);
-    } else {
-        console.log(`  ${colors.red}${colors.bold}Total${colors.reset}${" ".repeat(15)} ${totalCount.toString().padStart(4)} tests   ${totalPassed} passed   ${colors.red}${totalFailed} failed${colors.reset}  ${colors.dim}${totalTimeStr}s${colors.reset}`);
-    }
+    const failStr = totalFailed > 0 ? `${totalFailed} failed` : "";
+    console.log(`  ${"Total".padEnd(20)} ${String(totalCount).padStart(4)} tests   ${`${totalPassed} passed`.padEnd(12)} ${failStr}  ${totalTimeStr}s`);
     console.log("");
 }
 
@@ -252,7 +227,7 @@ const SUITES: Record<string, () => Promise<SuiteResult>> = {
         for (const file of files) {
             const fileResult = await runRatestFile(file);
             const rel = file.split(/[\\/]/).pop() ?? file;
-            console.log(`  ${colors.cyan}${rel}${colors.reset}`);
+            console.log(`  ${rel}`);
             for (const r of fileResult.results) {
                 printResult(r);
                 allResults.push(r);
