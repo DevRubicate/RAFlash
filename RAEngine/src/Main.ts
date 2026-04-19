@@ -404,6 +404,11 @@ interface Settings {
     // CLI-arg launches (which skip the picker) can default to the user the
     // person was already running under. Falls back to "Guest" on first run.
     lastUser: string;
+    // Global delay (ms) inserted between every step during .ratest
+    // playback. Lets the user trade deterministic timing for speed —
+    // raise when a game's reactions lag behind element visibility,
+    // lower (down to 0) when playing back a well-behaved recording.
+    playbackDelayMs: number;
 }
 const defaultSettings: Settings = {
     firmwareMode: "child",
@@ -415,6 +420,7 @@ const defaultSettings: Settings = {
     avm2ExecutionMode: "compiled",
     interpreterFastPath: true,
     lastUser: "Guest",
+    playbackDelayMs: 200,
 };
 let settings: Settings = { ...defaultSettings };
 
@@ -1652,6 +1658,8 @@ let recordingBuffer: RecordingEvent[] = [];
 let recordingStartTime: number | null = null;
 
 let playbackAbort = false;
+let playbackPaused = false;
+let playbackAdvance = false;
 
 /**
  * Resolve with `true` when the firmware next emits `gameLoaded`, or
@@ -2685,11 +2693,20 @@ async function handleApiRequest(
         }
 
         case "playRatest": {
-            if (!AppData.gameHash) return { success: false, error: "No game loaded" };
-            if (!flashConnected) return { success: false, error: "Flash Player is not running — reload the game to run tests" };
+            // On every exit path we must broadcast ratestEnd so the UI
+            // can reset its running state. The client can't rely on this
+            // request's HTTP response — long tests exceed the network
+            // layer's 30s request timeout, so the response may resolve
+            // with an error while the run is still in progress.
+            const earlyFail = (error: string): { success: false; error: string } => {
+                broadcastToDevtools("ratestEnd", { passed: 0, failed: 1, total: 1, error, aborted: false });
+                return { success: false, error };
+            };
+            if (!AppData.gameHash) return earlyFail("No game loaded");
+            if (!flashConnected) return earlyFail("Flash Player is not running — reload the game to run tests");
             const name = String(input.params.file || "");
             if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
-                return { success: false, error: `Invalid .ratest filename: ${name}` };
+                return earlyFail(`Invalid .ratest filename: ${name}`);
             }
             const path = `RACache/ratests/${AppData.gameHash}/${name}`;
 
@@ -2701,13 +2718,13 @@ async function handleApiRequest(
                 const text = await Deno.readTextFile(path);
                 parsed = parseRatest(path, text);
             } catch (e) {
-                return { success: false, error: `parse ${path}: ${(e as Error).message}` };
+                return earlyFail(`parse ${path}: ${(e as Error).message}`);
             }
             if (!parsed.directives.hash) {
-                return { success: false, error: `${name}: missing required "hash <md5>" directive` };
+                return earlyFail(`${name}: missing required "hash <md5>" directive`);
             }
             if (parsed.directives.hash !== AppData.gameHash) {
-                return { success: false, error: `${name} is for hash ${parsed.directives.hash}, but the loaded game is ${AppData.gameHash}` };
+                return earlyFail(`${name} is for hash ${parsed.directives.hash}, but the loaded game is ${AppData.gameHash}`);
             }
 
             // Normal resetGame leaves asset.state alone (TRIGGERED persists
@@ -2730,12 +2747,17 @@ async function handleApiRequest(
             emitLog("ratest", "info", `Running ${name} (${parsed.steps.length} steps)`);
             broadcastToDevtools("ratestStart", { file: name, total: parsed.steps.length });
             playbackAbort = false;
+            playbackPaused = false;
+            playbackAdvance = false;
 
             const resetResp = await performResetGame();
             if (!resetResp.success) {
-                return { success: false, error: `resetGame: ${resetResp.error ?? "unknown error"}` };
+                const error = `resetGame: ${resetResp.error ?? "unknown error"}`;
+                broadcastToDevtools("ratestEnd", { passed: 0, failed: 1, total: 1, error, aborted: false });
+                return { success: false, error };
             }
 
+            const visibleProperty = avmConfig?.mode === "AVM2" ? "visible" : "_visible";
             const page = new LiveStagehand(sendToFirmware, async (path: string) => {
                 // Click fallback for DefineButton2 / BUTTONCONDACTION: focus
                 // the element via Selection.setFocus, then post Enter to
@@ -2752,10 +2774,27 @@ async function handleApiRequest(
                 await new Promise((r) => setTimeout(r, 30));
                 const VK_RETURN = 0x0D;
                 return WindowManager.postKeypress(pid, VK_RETURN);
-            });
+            }, visibleProperty);
             const results: Array<{ name: string; passed: boolean; error?: string; durationMs: number }> = [];
             let aborted = false;
             for (let i = 0; i < parsed.steps.length; i++) {
+                // Universal inter-step delay. Applied before every step
+                // except the first so the total is `(N-1) * delay` —
+                // intuitive for "200ms between steps" rather than having
+                // an unexplained 200ms prefix.
+                if (i > 0 && settings.playbackDelayMs > 0) {
+                    await new Promise((r) => setTimeout(r, settings.playbackDelayMs));
+                }
+                // Pause-gate: block at the top of each iteration while
+                // playbackPaused is set, unless the user aborts or asks
+                // to advance a single step.
+                while (playbackPaused && !playbackAbort) {
+                    if (playbackAdvance) {
+                        playbackAdvance = false;
+                        break;
+                    }
+                    await new Promise((r) => setTimeout(r, 50));
+                }
                 if (playbackAbort) {
                     aborted = true;
                     results.push({
@@ -2804,6 +2843,8 @@ async function handleApiRequest(
             }
 
             playbackAbort = false;
+            playbackPaused = false;
+            playbackAdvance = false;
             const passed = results.filter((r) => r.passed).length;
             const failed = results.filter((r) => !r.passed).length;
             const firstError = results.find((r) => !r.passed);
@@ -2816,21 +2857,46 @@ async function handleApiRequest(
                 summary = `${passed} passed`;
             }
             emitLog("ratest", failed === 0 ? "info" : "warn", `${name}: ${summary}`);
-            return {
-                success: true,
-                params: {
-                    passed,
-                    failed,
-                    total: passed + failed,
-                    error: firstError ? `${firstError.name}: ${firstError.error}` : undefined,
-                },
+            // Broadcast ratestEnd for the UI to flip out of the running
+            // state. The playRatest HTTP response can arrive later than
+            // this (or time out at the socket layer if the run is long),
+            // so completion is signalled via event, not response.
+            const endPayload = {
+                passed,
+                failed,
+                total: passed + failed,
+                error: firstError ? `${firstError.name}: ${firstError.error}` : undefined,
+                aborted,
             };
+            broadcastToDevtools("ratestEnd", endPayload);
+            return { success: true, params: endPayload };
         }
 
         case "abortRatest": {
             // Idempotent: setting the flag when nothing's running is harmless —
             // it resets at the start of the next playRatest.
             playbackAbort = true;
+            return { success: true };
+        }
+
+        case "pauseRatest": {
+            // Pauses between steps; the current step, if already in
+            // flight, runs to completion before the loop waits.
+            playbackPaused = true;
+            return { success: true };
+        }
+
+        case "resumeRatest": {
+            playbackPaused = false;
+            playbackAdvance = false;
+            return { success: true };
+        }
+
+        case "advanceRatest": {
+            // One-shot: runs the next step, then re-pauses. Only
+            // meaningful while paused — otherwise the flag is cleared by
+            // the normal run loop without effect.
+            playbackAdvance = true;
             return { success: true };
         }
 

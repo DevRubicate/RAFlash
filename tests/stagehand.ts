@@ -56,6 +56,7 @@ export interface StagehandLike {
         predicate: (value: T) => boolean,
         opts?: { timeoutMs?: number; pollMs?: number },
     ): Promise<T>;
+    waitForElement(path: string, opts?: { timeoutMs?: number }): Promise<void>;
     close(): Promise<void>;
 }
 
@@ -354,6 +355,22 @@ export class Stagehand {
     }
 
     /**
+     * Poll `path` until it resolves to a truthy value — i.e., the named
+     * display-list element exists. Thin wrapper over `waitFor`, used by
+     * the `wait <path>` ratest step to gate clicks on element presence
+     * instead of arbitrary `pause N` delays.
+     */
+    async waitForElement(path: string, opts: { timeoutMs?: number } = {}): Promise<void> {
+        const timeoutMs = opts.timeoutMs ?? 15000;
+        // Poll `<path>._visible` instead of `<path>`: the result is empty
+        // when the element doesn't exist yet, `false` when it exists but
+        // is hidden, and `true` once it's both present and visible —
+        // which is the readiness state we actually want before clicking.
+        // (`_visible` is AS2/AVM1; the test runner only targets AVM1.)
+        await this.waitFor(`${path}._visible`, isElementReady, { timeoutMs, pollMs: 50 });
+    }
+
+    /**
      * Poll `formula` every `pollMs` until `predicate(value)` returns true
      * or `timeoutMs` elapses.
      */
@@ -566,4 +583,31 @@ function unwrapQuoted(v: unknown): unknown {
         return v.slice(1, -1);
     }
     return v;
+}
+
+/**
+ * Predicate for `waitForElement`: returns true when the polled
+ * `<path>._visible` (or `.visible` on AVM2) has resolved to a truthy
+ * value for every matched element — i.e., the element exists AND is
+ * visible. Tolerates both the raw `{ output: [...] }` envelope (used
+ * by LiveStagehand.evaluate) and the extracted value shape (used by
+ * Stagehand.evaluate above), so the same predicate works in both
+ * runtime adapters.
+ */
+export function isElementReady(v: unknown): boolean {
+    if (v == null) return false;
+    const isTruthy = (x: unknown): boolean =>
+        x !== false && x !== "false" && x !== 0 && x !== "0" && x != null && x !== "";
+    if (typeof v === "object") {
+        if ("output" in (v as Record<string, unknown>)) {
+            const out = (v as Record<string, unknown>).output;
+            if (!Array.isArray(out) || out.length === 0) return false;
+            return out.every((item) => {
+                const val = (item as { value?: unknown })?.value;
+                return isTruthy(val);
+            });
+        }
+        if (Array.isArray(v)) return v.length > 0 && v.every(isTruthy);
+    }
+    return isTruthy(v);
 }

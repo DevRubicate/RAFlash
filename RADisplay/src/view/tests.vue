@@ -101,6 +101,23 @@
                     <span v-else>Play</span>
                 </button>
                 <button
+                    v-if="running"
+                    class="pause-button"
+                    :class="{ active: paused }"
+                    @click="paused ? resume() : pause()"
+                >
+                    <span v-if="paused">Resume</span>
+                    <span v-else>Pause</span>
+                </button>
+                <button
+                    v-if="running && paused"
+                    class="step-button"
+                    @click="advance()"
+                    title="Run the next step, then stay paused"
+                >
+                    Step
+                </button>
+                <button
                     class="record-button"
                     :class="{ active: recording }"
                     :disabled="!canRecord"
@@ -120,7 +137,34 @@
                     <span v-if="hitTesting">Cancel HitTest</span>
                     <span v-else>HitTest</span>
                 </button>
+                <button
+                    class="delay-button"
+                    @click="openDelayModal()"
+                    title="Edit the global delay inserted between every playback step"
+                >
+                    Delay: {{ playbackDelayMs }}
+                </button>
             </template>
+        </div>
+
+        <div v-if="delayModalOpen" class="hit-test-modal-backdrop" @click.self="cancelDelayModal()">
+            <div class="hit-test-modal">
+                <div class="hit-test-modal-title">Inter-step playback delay</div>
+                <input
+                    class="delay-input"
+                    type="number"
+                    min="0"
+                    step="10"
+                    v-model.number="delayDraft"
+                    ref="delayInputEl"
+                    @keydown.enter="confirmDelayModal()"
+                    @keydown.escape="cancelDelayModal()"
+                />
+                <div class="hit-test-modal-actions">
+                    <button class="confirm-button" @click="confirmDelayModal()">Save</button>
+                    <button class="cancel-button" @click="cancelDelayModal()">Cancel</button>
+                </div>
+            </div>
         </div>
 
         <div v-if="hitTestResult" class="hit-test-modal-backdrop">
@@ -441,8 +485,11 @@
     }
 
     .play-button,
+    .pause-button,
+    .step-button,
     .record-button,
     .hit-test-button,
+    .delay-button,
     .confirm-button,
     .cancel-button {
         color: white;
@@ -478,6 +525,22 @@
 
     .hit-test-button.active {
         background: var(--c-primary);
+    }
+
+    .pause-button {
+        background: #374151;
+    }
+
+    .pause-button.active {
+        background: var(--c-primary);
+    }
+
+    .step-button {
+        background: #374151;
+    }
+
+    .delay-button {
+        background: #374151;
     }
 
     .hit-test-modal-backdrop {
@@ -567,16 +630,22 @@
     }
 
     .play-button:disabled,
+    .pause-button:disabled,
+    .step-button:disabled,
     .record-button:disabled,
     .hit-test-button:disabled,
+    .delay-button:disabled,
     .confirm-button:disabled {
         opacity: 0.4;
         cursor: not-allowed;
     }
 
     .play-button:not(:disabled):hover,
+    .pause-button:not(:disabled):hover,
+    .step-button:not(:disabled):hover,
     .record-button:not(:disabled):hover,
     .hit-test-button:not(:disabled):hover,
+    .delay-button:not(:disabled):hover,
     .confirm-button:not(:disabled):hover,
     .cancel-button:hover {
         opacity: 0.85;
@@ -594,6 +663,23 @@
     }
 
     .filename-input:focus {
+        outline: none;
+        border-color: var(--c-primary);
+    }
+
+    .delay-input {
+        align-self: flex-start;
+        width: 120px;
+        background: var(--c-surface);
+        color: var(--c-text);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-md);
+        padding: 0.45rem 0.625rem;
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+    }
+
+    .delay-input:focus {
         outline: none;
         border-color: var(--c-primary);
     }
@@ -627,6 +713,7 @@
     const gameHash = ref(null);
     const dir = ref(null);
     const running = ref(false);
+    const paused = ref(false);
     const result = ref(null);
     const steps = ref([]);
     const stepLogEl = ref(null);
@@ -642,6 +729,11 @@
     const copied = ref(false);
     const stepsCopied = ref(false);
     let stepsCopiedTimer = null;
+
+    const playbackDelayMs = ref(200);
+    const delayModalOpen = ref(false);
+    const delayDraft = ref(200);
+    const delayInputEl = ref(null);
 
     const confirmingDelete = ref(null);
     let confirmingDeleteTimer = null;
@@ -667,6 +759,35 @@
 
     Network.addEventListener('ratestStart', () => {
         steps.value = [];
+    });
+
+    // Completion signal: the engine emits this for every playRatest
+    // attempt — successful runs, failures, aborts, and early errors.
+    // UI state flips here (not on the playRatest HTTP response) because
+    // long tests exceed the 30s request timeout.
+    Network.addEventListener('ratestEnd', (data) => {
+        const res = {
+            passed: data.passed ?? 0,
+            failed: data.failed ?? 0,
+            total: data.total ?? 0,
+            error: data.error,
+        };
+        result.value = res;
+        const { passed, failed, total, error } = res;
+        const nextIndex = steps.value.length > 0
+            ? Math.max(...steps.value.map((s) => s.index)) + 1
+            : 0;
+        steps.value.push({
+            index: nextIndex,
+            phase: failed === 0 ? 'pass' : 'fail',
+            source: failed === 0
+                ? `Passed ${passed}/${total}`
+                : `Failed ${failed}/${total}${error ? ` — ${error}` : ''}`,
+            isSummary: true,
+        });
+        scrollLogToBottom();
+        running.value = false;
+        paused.value = false;
     });
 
     Network.addEventListener('ratestStep', (data) => {
@@ -809,41 +930,66 @@
         }
     };
 
-    const play = async () => {
+    const play = () => {
         if (!selected.value) return;
         running.value = true;
+        paused.value = false;
         result.value = null;
         lastSaved.value = null;
         steps.value = [];
-        try {
-            const response = await Network.send({
-                command: 'playRatest',
-                params: { file: selected.value },
-            });
-            const res = response.success
-                ? response.params
-                : { passed: 0, failed: 1, total: 1, error: response.error ?? 'Unknown error' };
-            result.value = res;
-            const { passed, failed, total, error } = res;
-            const nextIndex = steps.value.length > 0
-                ? Math.max(...steps.value.map((s) => s.index)) + 1
-                : 0;
-            steps.value.push({
-                index: nextIndex,
-                phase: failed === 0 ? 'pass' : 'fail',
-                source: failed === 0
-                    ? `Passed ${passed}/${total}`
-                    : `Failed ${failed}/${total}${error ? ` — ${error}` : ''}`,
-                isSummary: true,
-            });
-            scrollLogToBottom();
-        } finally {
-            running.value = false;
-        }
+        // Fire-and-forget: completion is signalled via the 'ratestEnd'
+        // event, because the network layer's 30s request timeout would
+        // otherwise resolve this promise long before a long test run
+        // actually finishes.
+        Network.send({
+            command: 'playRatest',
+            params: { file: selected.value },
+        }).catch((err) => console.error('playRatest failed:', err));
     };
 
     const stop = async () => {
         await Network.send({ command: 'abortRatest', params: {} });
+    };
+
+    const pause = async () => {
+        const resp = await Network.send({ command: 'pauseRatest', params: {} });
+        if (resp.success) paused.value = true;
+    };
+
+    const resume = async () => {
+        const resp = await Network.send({ command: 'resumeRatest', params: {} });
+        if (resp.success) paused.value = false;
+    };
+
+    const advance = async () => {
+        await Network.send({ command: 'advanceRatest', params: {} });
+    };
+
+    const openDelayModal = () => {
+        delayDraft.value = playbackDelayMs.value;
+        delayModalOpen.value = true;
+        nextTick(() => delayInputEl.value?.select?.());
+    };
+
+    const cancelDelayModal = () => {
+        delayModalOpen.value = false;
+    };
+
+    const confirmDelayModal = async () => {
+        const n = Math.max(0, Math.floor(Number(delayDraft.value) || 0));
+        // Round-trip through getSettings so we don't clobber other
+        // fields on the way back: saveSettings replaces the whole blob.
+        const current = await Network.send({ command: 'getSettings', params: {} });
+        if (!current.success) { delayModalOpen.value = false; return; }
+        const next = { ...current.params, playbackDelayMs: n };
+        // Strip read-only fields the engine appends on read.
+        delete next.version;
+        delete next.isRaflash;
+        delete next.hasRaflash;
+        delete next.gameHash;
+        await Network.send({ command: 'saveSettings', params: { settings: next } });
+        playbackDelayMs.value = n;
+        delayModalOpen.value = false;
     };
 
     const toggleRecord = async () => {
@@ -951,7 +1097,12 @@
     App.initialize().then(async () => {
         App.ready = true;
         const settings = await Network.send({ command: 'getSettings', params: {} });
-        if (settings.success) gameHash.value = settings.params.gameHash ?? null;
+        if (settings.success) {
+            gameHash.value = settings.params.gameHash ?? null;
+            if (typeof settings.params.playbackDelayMs === 'number') {
+                playbackDelayMs.value = settings.params.playbackDelayMs;
+            }
+        }
         await refreshList();
     });
 </script>

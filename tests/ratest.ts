@@ -210,6 +210,12 @@ function parseStep(lineNo: number, source: string, cmd: string, rest: string): S
             }
             const split = splitOnOp(r);
             if (!split) {
+                // `wait <path>` (no comparison op): element-polling form.
+                // Blocks until the DSL path resolves to a truthy value
+                // (i.e., the display-list element exists).
+                if (cmd === "wait" && r.trim() !== "") {
+                    return { ...base, kind: "wait", path: r.trim(), timeoutMs };
+                }
                 throw new RatestParseError(lineNo, `${cmd} requires a comparison: <formula> <op> <value>`);
             }
             return {
@@ -252,6 +258,8 @@ function parseStep(lineNo: number, source: string, cmd: string, rest: string): S
 function splitOnOp(s: string): { formula: string; op: string; value: string } | null {
     let inQuote = false;
     let qChar = "";
+    let bracketDepth = 0;
+    let parenDepth = 0;
     for (let i = 0; i < s.length; i++) {
         const c = s[i];
         if (inQuote) {
@@ -259,6 +267,15 @@ function splitOnOp(s: string): { formula: string; op: string; value: string } | 
             continue;
         }
         if (c === '"' || c === "'") { inQuote = true; qChar = c; continue; }
+        if (c === "[") { bracketDepth++; continue; }
+        if (c === "]") { bracketDepth--; continue; }
+        if (c === "(") { parenDepth++; continue; }
+        if (c === ")") { parenDepth--; continue; }
+        // Only split at the *top-level* operator. A path like
+        // `stage[type(this) == 'MovieClip' && ._x == 167]` has `==`
+        // inside brackets/parens that belong to the path syntax, not
+        // to the outer `wait`/`assert` comparison.
+        if (bracketDepth > 0 || parenDepth > 0) continue;
         for (const op of OPS) {
             if (s.substring(i, i + op.length) === op) {
                 return {
@@ -631,19 +648,24 @@ export async function runStep(page: StagehandLike, step: Step, results: TestResu
                 return;
             }
             case "wait": {
-                const timeoutMs = step.timeoutMs ?? 5000;
-                const last = await page.waitFor(
-                    step.formula!,
-                    (v) => compareValues(v, step.op!, step.value),
-                    { timeoutMs },
-                );
+                if (step.path != null) {
+                    // Element-polling form: wait until the path resolves.
+                    await page.waitForElement(step.path, { timeoutMs: step.timeoutMs ?? 15000 });
+                } else {
+                    // Formula-polling form: wait until the comparison holds.
+                    const last = await page.waitFor(
+                        step.formula!,
+                        (v) => compareValues(v, step.op!, step.value),
+                        { timeoutMs: step.timeoutMs ?? 5000 },
+                    );
+                    void last;
+                }
                 results.push({
                     name,
                     passed: true,
                     durationMs: performance.now() - t0,
                     error: undefined,
                 });
-                void last;
                 return;
             }
             case "assertTriggered": {
