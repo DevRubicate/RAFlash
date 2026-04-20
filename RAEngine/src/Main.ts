@@ -432,11 +432,6 @@ interface Settings {
     // CLI-arg launches (which skip the picker) can default to the user the
     // person was already running under. Falls back to "Guest" on first run.
     lastUser: string;
-    // Global delay (ms) inserted between every step during .ratest
-    // playback. Lets the user trade deterministic timing for speed —
-    // raise when a game's reactions lag behind element visibility,
-    // lower (down to 0) when playing back a well-behaved recording.
-    playbackDelayMs: number;
     // Whether `playRatest` should reset the game to its initial state
     // before starting. Turn off when mid-game iteration on a test —
     // e.g. recording the tail of a sequence and wanting to replay it
@@ -453,7 +448,6 @@ const defaultSettings: Settings = {
     avm2ExecutionMode: "compiled",
     interpreterFastPath: true,
     lastUser: "Guest",
-    playbackDelayMs: 200,
     playbackRestart: true,
 };
 let settings: Settings = { ...defaultSettings };
@@ -2963,13 +2957,6 @@ async function handleApiRequest(
             const stepCtx = { achievementsEnabled, pendingAchievements };
             let aborted = false;
             for (let i = 0; i < parsed.steps.length; i++) {
-                // Universal inter-step delay. Applied before every step
-                // except the first so the total is `(N-1) * delay` —
-                // intuitive for "200ms between steps" rather than having
-                // an unexplained 200ms prefix.
-                if (i > 0 && settings.playbackDelayMs > 0) {
-                    await new Promise((r) => setTimeout(r, settings.playbackDelayMs));
-                }
                 // Pause-gate: block at the top of each iteration while
                 // playbackPaused is set, unless the user aborts or asks
                 // to advance a single step.

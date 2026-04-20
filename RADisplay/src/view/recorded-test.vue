@@ -6,13 +6,6 @@
             <div class="hash-missing" v-else>No game loaded</div>
             <div class="header-actions">
                 <button
-                    class="delay-button"
-                    @click="openDelayModal()"
-                    title="Edit the global delay inserted between every playback step"
-                >
-                    Delay: {{ playbackDelayMs }}
-                </button>
-                <button
                     class="restart-button"
                     @click="toggleRestart()"
                     title="When Yes, playback resets the game before running. When No, it plays against the current game state."
@@ -274,26 +267,6 @@
                     <button class="cancel-button" @click="closeEditModal()">Cancel</button>
                     <button class="delete-button" @click="deleteEditingStep()">Delete</button>
                     <button class="confirm-button" :disabled="!editDraft.trim()" @click="confirmEdit()">Save</button>
-                </div>
-            </div>
-        </div>
-
-        <div v-if="delayModalOpen" class="hit-test-modal-backdrop" @click.self="cancelDelayModal()">
-            <div class="hit-test-modal">
-                <div class="hit-test-modal-title">Inter-step playback delay</div>
-                <input
-                    class="delay-input"
-                    type="number"
-                    min="0"
-                    step="10"
-                    v-model.number="delayDraft"
-                    ref="delayInputEl"
-                    @keydown.enter="confirmDelayModal()"
-                    @keydown.escape="cancelDelayModal()"
-                />
-                <div class="hit-test-modal-actions">
-                    <button class="confirm-button" @click="confirmDelayModal()">Save</button>
-                    <button class="cancel-button" @click="cancelDelayModal()">Cancel</button>
                 </div>
             </div>
         </div>
@@ -700,7 +673,6 @@
     .step-button,
     .record-button,
     .save-button,
-    .delay-button,
     .restart-button,
     .achievements-button,
     .realtime-button,
@@ -751,10 +723,6 @@
     }
 
     .step-button {
-        background: #374151;
-    }
-
-    .delay-button {
         background: #374151;
     }
 
@@ -818,7 +786,6 @@
     .step-button:disabled,
     .record-button:disabled,
     .save-button:disabled,
-    .delay-button:disabled,
     .restart-button:disabled,
     .achievements-button:disabled,
     .realtime-button:disabled,
@@ -832,30 +799,12 @@
     .step-button:not(:disabled):hover,
     .record-button:not(:disabled):hover,
     .save-button:not(:disabled):hover,
-    .delay-button:not(:disabled):hover,
     .restart-button:not(:disabled):hover,
     .achievements-button:not(:disabled):hover,
     .realtime-button:not(:disabled):hover,
     .confirm-button:not(:disabled):hover,
     .cancel-button:hover {
         opacity: 0.85;
-    }
-
-    .delay-input {
-        align-self: flex-start;
-        width: 120px;
-        background: var(--c-surface);
-        color: var(--c-text);
-        border: 1px solid var(--c-border);
-        border-radius: var(--radius-md);
-        padding: 0.45rem 0.625rem;
-        font-family: var(--font-mono);
-        font-size: 0.8125rem;
-    }
-
-    .delay-input:focus {
-        outline: none;
-        border-color: var(--c-primary);
     }
 
     .edit-modal {
@@ -1123,7 +1072,6 @@
         if (changed) await syncBufferToBackend(selected.value);
     };
 
-    const playbackDelayMs = ref(200);
     const playbackRestart = ref(true);
     // Per-session toggle (intentionally not persisted): controls whether
     // achievement triggers get captured during recording and asserted
@@ -1134,9 +1082,6 @@
     // real-world timing. No = turn-based mode — recording inserts
     // `wait <path>` so playback waits for buttons to become visible.
     const realtimeMode = ref(true);
-    const delayModalOpen = ref(false);
-    const delayDraft = ref(200);
-    const delayInputEl = ref(null);
 
     const contextMenu = ref(null);
 
@@ -1473,23 +1418,6 @@
         await Network.send({ command: 'advanceRatest', params: {} });
     };
 
-    const openDelayModal = () => {
-        delayDraft.value = playbackDelayMs.value;
-        delayModalOpen.value = true;
-        nextTick(() => delayInputEl.value?.select?.());
-    };
-
-    const cancelDelayModal = () => {
-        delayModalOpen.value = false;
-    };
-
-    const confirmDelayModal = async () => {
-        const n = Math.max(0, Math.floor(Number(delayDraft.value) || 0));
-        await persistSettingPatch({ playbackDelayMs: n });
-        playbackDelayMs.value = n;
-        delayModalOpen.value = false;
-    };
-
     const toggleRestart = async () => {
         const next = !playbackRestart.value;
         await persistSettingPatch({ playbackRestart: next });
@@ -1745,9 +1673,6 @@
         const settings = await Network.send({ command: 'getSettings', params: {} });
         if (settings.success) {
             gameHash.value = settings.params.gameHash ?? null;
-            if (typeof settings.params.playbackDelayMs === 'number') {
-                playbackDelayMs.value = settings.params.playbackDelayMs;
-            }
             if (typeof settings.params.playbackRestart === 'boolean') {
                 playbackRestart.value = settings.params.playbackRestart;
             }
