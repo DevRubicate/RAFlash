@@ -232,10 +232,15 @@ JSONDiff.watch('assets/*/state', (segments) => {
     if (rerecordActive && rerecordExpectedAchievementIds.has(asset.id)) {
         return;
     }
+    const line = `achievement ${asset.id}`;
     broadcastToDevtools("recordingLine", {
-        source: `achievement ${asset.id}`,
+        source: line,
         label: asset.name ?? null,
     });
+    // Plain recording mirrors into the backend buffer. Rerecord captures
+    // go a different route (splice into an existing script at the paused
+    // position) and stay frontend-managed via recordingLine events.
+    if (recordingActive) appendToRecordingBuffer(line);
 });
 
 const DEFAULT_PORT = 18080;
@@ -1512,7 +1517,7 @@ let flashProcess: Deno.ChildProcess | null = null;
 
 // --headless mode state: when set, the file picker is skipped (game
 // auto-loads), UI windows are suppressed, and once the game is up a
-// .ratest is executed via the normal LiveStagehand path. Exit code
+// .ratest is executed via the normal LiveRecordedTest path. Exit code
 // reflects pass/fail.
 let headlessMode: { gamePath: string; testPath: string } | null = null;
 // --headless-json: emit one JSON line per step event + a summary line on
@@ -1699,6 +1704,66 @@ let recordingActive = false;
 // lines. Set per-recording via the `achievementsEnabled` param of
 // startRecording. Defaults to true to match the UI's default toggle state.
 let recordingAchievementsEnabled = true;
+// Realtime mode (action games): each captured click emits `pause <ms>`
+// reflecting the wall-clock delay since the previous click, then `click`.
+// When false (turn-based mode), the legacy `wait <path>` + `click` pair is
+// emitted instead, letting playback poll until the element is visible.
+// Set per-recording via the `realtimeEnabled` param of startRecording.
+let recordingRealtimeEnabled = true;
+// Timestamp of the last click captured during the current recording, used
+// to compute pause durations in realtime mode. Reset at startRecording and
+// updated on every click capture. null means "no prior click yet" — the
+// first click in a session emits only `click` (no leading pause).
+let lastRecordingClickMs: number | null = null;
+// Ephemeral ratest buffers: filename → line array for tests with unsaved
+// edits. In-memory only (lost on RAFlash quit, matching how Notepad/
+// MSPaint treat unsaved buffers). Every read path (listRatests,
+// previewRatest, playRatest) consults this before falling back to disk;
+// saveRatest flushes the entry to disk and removes it. Keys are bare
+// filenames (e.g., "foo.ratest") — game hash is implicit in the
+// currently-loaded AppData.gameHash.
+const ratestBuffers = new Map<string, string[]>();
+// Filename currently being recorded to, or null when not recording. Set
+// at startRecording (either from the frontend's passed `filename` or
+// auto-allocated for a new recording), cleared on stop/cancel. Click and
+// achievement capture paths append to ratestBuffers[recordingFilename]
+// as lines are emitted.
+let recordingFilename: string | null = null;
+
+/**
+ * Append a single ratest line to the active recording's ephemeral buffer.
+ * No-op if no recording filename is set (shouldn't happen during an active
+ * recording, but we don't want a stray capture to create an orphan entry).
+ */
+function appendToRecordingBuffer(line: string): void {
+    if (recordingFilename === null) return;
+    const existing = ratestBuffers.get(recordingFilename) ?? [];
+    existing.push(line);
+    ratestBuffers.set(recordingFilename, existing);
+}
+
+/**
+ * Generate a unique "New Recording N.ratest" name that doesn't collide
+ * with any existing on-disk file or ephemeral buffer entry for the
+ * currently-loaded game.
+ */
+async function allocateNewRecordingName(): Promise<string> {
+    const taken = new Set<string>(ratestBuffers.keys());
+    if (AppData.gameHash) {
+        const dir = `RACache/ratests/${AppData.gameHash}`;
+        try {
+            for await (const entry of Deno.readDir(dir)) {
+                if (entry.isFile && entry.name.endsWith(".ratest")) taken.add(entry.name);
+            }
+        } catch (e) {
+            if (!(e instanceof Deno.errors.NotFound)) throw e;
+        }
+    }
+    for (let n = 1; ; n++) {
+        const candidate = `New Recording ${n}.ratest`;
+        if (!taken.has(candidate)) return candidate;
+    }
+}
 // Rerecord mode: a playback-with-overlay-capture run. Distinct from
 // recordingActive because click capture is gated on the playback pause
 // state (only paused clicks become recordingLine events) and asset
@@ -2709,17 +2774,28 @@ async function handleApiRequest(
         case "listRatests": {
             if (!AppData.gameHash) return { success: false, error: "No game loaded" };
             const dir = `RACache/ratests/${AppData.gameHash}`;
-            const files: string[] = [];
+            const onDiskNames = new Set<string>();
             try {
                 for await (const entry of Deno.readDir(dir)) {
-                    if (entry.isFile && entry.name.endsWith(".ratest")) files.push(entry.name);
+                    if (entry.isFile && entry.name.endsWith(".ratest")) onDiskNames.add(entry.name);
                 }
             } catch (e) {
                 if (!(e instanceof Deno.errors.NotFound)) {
                     return { success: false, error: `Failed to read ${dir}: ${(e as Error).message}` };
                 }
             }
-            files.sort();
+            // Union of disk files and in-memory buffers. A file shows up
+            // in the list if it exists on either layer. `dirty` means the
+            // buffer has an entry that hasn't been flushed to disk yet —
+            // either a brand-new recording (no on-disk file) or an edited
+            // copy of one. `onDisk` tells the UI whether Discard has any
+            // disk version to fall back to.
+            const names = new Set<string>([...onDiskNames, ...ratestBuffers.keys()]);
+            const files = [...names].sort().map((name) => ({
+                name,
+                onDisk: onDiskNames.has(name),
+                dirty: ratestBuffers.has(name),
+            }));
             return { success: true, params: { files, dir } };
         }
 
@@ -2731,8 +2807,17 @@ async function handleApiRequest(
             }
             const path = `RACache/ratests/${AppData.gameHash}/${name}`;
             const { parseRatest } = await import("../../tests/ratest.ts");
+            // Buffer first, disk second. Synthesize the `hash` directive
+            // for buffer content so parseRatest's header check passes;
+            // hash is implicit when we're working against the current game.
+            const buffered = ratestBuffers.get(name);
             try {
-                const text = await Deno.readTextFile(path);
+                let text: string;
+                if (buffered !== undefined) {
+                    text = `hash ${AppData.gameHash}\n\n${buffered.join("\n")}\n`;
+                } else {
+                    text = await Deno.readTextFile(path);
+                }
                 const parsed = parseRatest(path, text);
                 const steps = parsed.steps.map((s, i) => ({
                     index: i,
@@ -2765,7 +2850,7 @@ async function handleApiRequest(
             const path = `RACache/ratests/${AppData.gameHash}/${name}`;
 
             const { parseRatest, runStep } = await import("../../tests/ratest.ts");
-            const { LiveStagehand } = await import("./LiveStagehand.ts");
+            const { LiveRecordedTest } = await import("./LiveRecordedTest.ts");
 
             // Per-run toggle from the UI: when false, `achievement` lines
             // in the script are no-ops (skipped, not asserted). Defaults
@@ -2776,9 +2861,15 @@ async function handleApiRequest(
             // the script as recordingLine events.
             const rerecordMode = !!(input.params as { rerecordMode?: boolean })?.rerecordMode;
 
+            // Prefer the ephemeral buffer over disk so the user plays the
+            // exact content they see in the editor — unsaved edits count.
+            // Discard is the explicit path back to the on-disk version.
+            const buffered = ratestBuffers.get(name);
             let parsed: ReturnType<typeof parseRatest>;
             try {
-                const text = await Deno.readTextFile(path);
+                const text = buffered !== undefined
+                    ? `hash ${AppData.gameHash}\n\n${buffered.join("\n")}\n`
+                    : await Deno.readTextFile(path);
                 parsed = parseRatest(path, text);
             } catch (e) {
                 return earlyFail(`parse ${path}: ${(e as Error).message}`);
@@ -2845,7 +2936,7 @@ async function handleApiRequest(
                 }
             }
 
-            const page = new LiveStagehand(sendToFirmware, async (path: string) => {
+            const page = new LiveRecordedTest(sendToFirmware, async (path: string) => {
                 // Click fallback for DefineButton2 / BUTTONCONDACTION: focus
                 // the element via Selection.setFocus, then post Enter to
                 // the Flash Player window. No cursor movement.
@@ -3046,17 +3137,55 @@ async function handleApiRequest(
             return { success: true };
         }
 
+        case "setRatestBuffer": {
+            // Upsert the ephemeral buffer for `file`. Called by the UI on
+            // every step mutation (reorder, edit, insert, delete) so the
+            // backend holds the authoritative unsaved state. No disk I/O
+            // happens here — Save is the only flush path.
+            if (!AppData.gameHash) return { success: false, error: "No game loaded" };
+            const name = String(input.params.file || "");
+            if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
+                return { success: false, error: `Invalid .ratest filename: ${name}` };
+            }
+            const linesParam = (input.params as { lines?: unknown }).lines;
+            if (!Array.isArray(linesParam)) return { success: false, error: "lines required" };
+            const lines = linesParam.map((l) => String(l));
+            ratestBuffers.set(name, lines);
+            return { success: true };
+        }
+
+        case "discardRatestBuffer": {
+            // Drop the ephemeral buffer entry, reverting the UI view back
+            // to whatever's on disk on the next previewRatest call. Safe
+            // to call even when no entry exists.
+            const name = String(input.params.file || "");
+            if (!name) return { success: false, error: "file required" };
+            ratestBuffers.delete(name);
+            return { success: true };
+        }
+
         case "deleteRatest": {
             if (!AppData.gameHash) return { success: false, error: "No game loaded" };
             const name = String(input.params.file || "");
             if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
                 return { success: false, error: `Invalid .ratest filename: ${name}` };
             }
+            // Drop the buffer entry first; even if the file has no on-disk
+            // counterpart (buffer-only "New Recording N"), the user should
+            // see it disappear from the list.
+            const hadBuffer = ratestBuffers.delete(name);
             const filepath = `RACache/ratests/${AppData.gameHash}/${name}`;
             try {
                 await Deno.remove(filepath);
             } catch (e) {
-                return { success: false, error: `delete ${filepath}: ${(e as Error).message}` };
+                // Missing on-disk is fine when we just deleted a pure
+                // buffer entry; report failure only when neither layer
+                // had the file.
+                if (e instanceof Deno.errors.NotFound) {
+                    if (!hadBuffer) return { success: false, error: `delete ${filepath}: not found` };
+                } else {
+                    return { success: false, error: `delete ${filepath}: ${(e as Error).message}` };
+                }
             }
             return { success: true };
         }
@@ -3070,20 +3199,40 @@ async function handleApiRequest(
             if (invalid(to)) return { success: false, error: `Invalid destination filename: ${to}` };
             if (!to.endsWith(".ratest")) return { success: false, error: `Destination must end in .ratest: ${to}` };
             if (from === to) return { success: true };
+            // Collision check covers both layers: either an on-disk file
+            // or a buffer entry at `to` would be clobbered.
+            if (ratestBuffers.has(to)) return { success: false, error: `${to} already exists` };
             const fromPath = `RACache/ratests/${AppData.gameHash}/${from}`;
             const toPath = `RACache/ratests/${AppData.gameHash}/${to}`;
             try {
-                // Refuse to clobber an existing file — Deno.rename would silently overwrite.
                 try {
                     await Deno.stat(toPath);
                     return { success: false, error: `${to} already exists` };
                 } catch (e) {
                     if (!(e instanceof Deno.errors.NotFound)) throw e;
                 }
-                await Deno.rename(fromPath, toPath);
+                // Only rename on disk when there's something there. A
+                // pure-buffer entry (never saved) has no on-disk file.
+                try {
+                    await Deno.rename(fromPath, toPath);
+                } catch (e) {
+                    if (!(e instanceof Deno.errors.NotFound)) throw e;
+                    if (!ratestBuffers.has(from)) {
+                        return { success: false, error: `rename ${from} → ${to}: not found` };
+                    }
+                }
             } catch (e) {
                 return { success: false, error: `rename ${from} → ${to}: ${(e as Error).message}` };
             }
+            // Move the buffer entry and retarget the active recording
+            // filename so incoming clicks continue appending to the
+            // right key.
+            const bufferLines = ratestBuffers.get(from);
+            if (bufferLines !== undefined) {
+                ratestBuffers.delete(from);
+                ratestBuffers.set(to, bufferLines);
+            }
+            if (recordingFilename === from) recordingFilename = to;
             return { success: true };
         }
 
@@ -3092,16 +3241,55 @@ async function handleApiRequest(
             if (!flashConnected) return { success: false, error: "Flash Player is not running — reload the game to record" };
             if (recordingActive) return { success: false, error: "A recording is already in progress" };
 
-            // Continue mode just controls game-reset behavior; the file
-            // identity (if any) is the frontend's concern — it knows which
-            // file it loaded and which steps to preserve.
+            // Continue mode preserves the file's existing steps; the
+            // frontend passes the target filename. For new recordings,
+            // the filename is optional — if absent we auto-allocate a
+            // "New Recording N.ratest" that doesn't collide with disk or
+            // buffer entries.
             const continueMode = !!(input.params as { continueMode?: boolean })?.continueMode;
+            const filenameParam = String((input.params as { filename?: string })?.filename || "").trim();
+            if (filenameParam && (filenameParam.includes("/") || filenameParam.includes("\\") || filenameParam.includes(".."))) {
+                return { success: false, error: `Invalid .ratest filename: ${filenameParam}` };
+            }
+            if (continueMode && !filenameParam) {
+                return { success: false, error: "continueMode requires filename" };
+            }
+            const targetFilename = filenameParam
+                ? (filenameParam.endsWith(".ratest") ? filenameParam : `${filenameParam}.ratest`)
+                : await allocateNewRecordingName();
+
+            // Seed the buffer. Continue mode pulls from disk if we don't
+            // already have a buffer entry (the user may have edited the
+            // file in memory before hitting Continue Recording). New
+            // recordings start with an empty buffer.
+            if (continueMode) {
+                if (!ratestBuffers.has(targetFilename)) {
+                    const path = `RACache/ratests/${AppData.gameHash}/${targetFilename}`;
+                    const { parseRatest } = await import("../../tests/ratest.ts");
+                    try {
+                        const text = await Deno.readTextFile(path);
+                        const parsed = parseRatest(path, text);
+                        ratestBuffers.set(targetFilename, parsed.steps.map((s) => s.source));
+                    } catch (e) {
+                        return { success: false, error: `load ${targetFilename}: ${(e as Error).message}` };
+                    }
+                }
+            } else {
+                ratestBuffers.set(targetFilename, []);
+            }
+            recordingFilename = targetFilename;
             // Achievements toggle: when false, asset triggers during the
             // recording session do NOT emit `achievement` lines. Defaults
             // to true so callers that don't pass the flag get the new
             // behavior automatically.
             const achievementsEnabledParam = (input.params as { achievementsEnabled?: boolean })?.achievementsEnabled;
             recordingAchievementsEnabled = achievementsEnabledParam !== false;
+            // Realtime toggle: default true matches the UI default. In this
+            // mode, click capture emits `pause <ms>` instead of `wait <path>`
+            // so playback reproduces the player's real-world tempo rather
+            // than skipping ahead as soon as a button becomes visible.
+            const realtimeEnabledParam = (input.params as { realtimeEnabled?: boolean })?.realtimeEnabled;
+            recordingRealtimeEnabled = realtimeEnabledParam !== false;
 
             if (!continueMode) {
                 // Match playRatest: reset every asset to ACTIVE so triggers
@@ -3122,40 +3310,46 @@ async function handleApiRequest(
             }
 
             recordingActive = true;
-            broadcastToDevtools("recordingStart", { continueMode });
+            broadcastToDevtools("recordingStart", { continueMode, filename: targetFilename });
             if (continueMode) {
-                emitLog("ratest", "info", "Continue recording — preserving existing steps");
+                emitLog("ratest", "info", `Continue recording ${targetFilename} — preserving existing steps`);
             } else {
                 emitLog(
                     "ratest",
                     "info",
                     settings.playbackRestart
-                        ? "Recording started — resetting game"
-                        : "Recording started — skipping reset (Restart: No)",
+                        ? `Recording ${targetFilename} — resetting game`
+                        : `Recording ${targetFilename} — skipping reset (Restart: No)`,
                 );
             }
 
+            const abortStart = (error: string): { success: false; error: string } => {
+                recordingActive = false;
+                if (!continueMode) ratestBuffers.delete(targetFilename);
+                recordingFilename = null;
+                broadcastToDevtools("recordingCancel", {});
+                return { success: false, error };
+            };
+
             if (!continueMode && settings.playbackRestart) {
                 const resetResp = await performResetGame();
-                if (!resetResp.success) {
-                    recordingActive = false;
-                    broadcastToDevtools("recordingCancel", {});
-                    return { success: false, error: `resetGame: ${resetResp.error ?? "unknown error"}` };
-                }
+                if (!resetResp.success) return abortStart(`resetGame: ${resetResp.error ?? "unknown error"}`);
             }
 
             const r = await sendToFirmware("setRecording", { recording: true });
-            if (!r.success) {
-                recordingActive = false;
-                broadcastToDevtools("recordingCancel", {});
-                return r;
-            }
-            return { success: true };
+            if (!r.success) return abortStart(String(r.error ?? "setRecording failed"));
+            // Anchor the realtime timer *after* reset + setRecording finish,
+            // so the first click's pause reflects time the player actually
+            // spent waiting (loading screens, intro animations, etc.) rather
+            // than time consumed by engine-side setup.
+            lastRecordingClickMs = Date.now();
+            return { success: true, params: { filename: targetFilename } };
         }
 
         case "cancelRecording": {
             const wasActive = recordingActive;
             recordingActive = false;
+            recordingFilename = null;
             if (wasActive) {
                 sendToFirmware("setRecording", { recording: false }).catch(() => {});
                 broadcastToDevtools("recordingCancel", {});
@@ -3178,6 +3372,7 @@ async function handleApiRequest(
         case "stopRecording": {
             if (!recordingActive) return { success: false, error: "Not recording" };
             recordingActive = false;
+            recordingFilename = null;
             sendToFirmware("setRecording", { recording: false }).catch(() => {});
             emitLog("ratest", "info", "Recording stopped");
             broadcastToDevtools("recordingStopped", {});
@@ -3195,9 +3390,13 @@ async function handleApiRequest(
             }
             const safeName = filename.endsWith(".ratest") ? filename : `${filename}.ratest`;
 
-            const linesParam = (input.params as { lines?: unknown }).lines;
-            if (!Array.isArray(linesParam)) return { success: false, error: "lines required" };
-            const lines = linesParam.map((l) => String(l));
+            // Save flushes the ephemeral buffer; the backend owns the
+            // unsaved content, so callers no longer pass `lines`. If
+            // there's no buffer entry, there's nothing to save — the UI
+            // should disable Save in that case, but fail loudly if it
+            // slips through.
+            const lines = ratestBuffers.get(safeName);
+            if (lines === undefined) return { success: false, error: `No unsaved changes for ${safeName}` };
 
             const content = `hash ${AppData.gameHash}\n\n${lines.join("\n")}\n`;
             const dir = `RACache/ratests/${AppData.gameHash}`;
@@ -3208,6 +3407,9 @@ async function handleApiRequest(
             } catch (e) {
                 return { success: false, error: `write: ${(e as Error).message}` };
             }
+            // Flush succeeded: drop the buffer so listRatests shows this
+            // file as clean and subsequent previews come from disk.
+            ratestBuffers.delete(safeName);
 
             emitLog("ratest", "info", `Recording saved: ${safeName} (${lines.length} lines)`);
             broadcastToDevtools("recordingSaved", { file: safeName, stepCount: lines.length });
@@ -3859,12 +4061,39 @@ function handleFirmwareData(data: string): void {
                     // user's signal that a manual interaction should be
                     // spliced into the recording at the current position.
                     if (typeof parsed.data.path === "string") {
-                        // Emit canonical ratest lines: a `wait` so playback
-                        // polls until the element exists, then the `click`.
-                        // Same shape as what saveRatest will write to disk.
                         const path = parsed.data.path;
-                        broadcastToDevtools("recordingLine", { source: `wait ${path}` });
-                        broadcastToDevtools("recordingLine", { source: `click ${path}` });
+                        // Plain recording with realtime mode on: emit the
+                        // elapsed wall-clock time since the previous click
+                        // as a `pause`, so playback reproduces player tempo
+                        // for action games. Rerecord inserts always fall
+                        // through to the legacy wait+click path — timing
+                        // during a manual splice doesn't match the original
+                        // recording's cadence, and `wait` is the safer
+                        // default there.
+                        if (recordingActive && recordingRealtimeEnabled) {
+                            const now = Date.now();
+                            const anchor = lastRecordingClickMs ?? now;
+                            const deltaMs = Math.max(0, now - anchor);
+                            const pauseLine = `pause ${deltaMs}`;
+                            const clickLine = `click ${path}`;
+                            broadcastToDevtools("recordingLine", { source: pauseLine });
+                            broadcastToDevtools("recordingLine", { source: clickLine });
+                            appendToRecordingBuffer(pauseLine);
+                            appendToRecordingBuffer(clickLine);
+                            lastRecordingClickMs = now;
+                        } else {
+                            // Legacy turn-based form: poll until the element
+                            // exists, then click. Matches what saveRatest
+                            // will write to disk.
+                            const waitLine = `wait ${path}`;
+                            const clickLine = `click ${path}`;
+                            broadcastToDevtools("recordingLine", { source: waitLine });
+                            broadcastToDevtools("recordingLine", { source: clickLine });
+                            if (recordingActive) {
+                                appendToRecordingBuffer(waitLine);
+                                appendToRecordingBuffer(clickLine);
+                            }
+                        }
                     } else {
                         // Firmware saw a click but couldn't resolve a clickable
                         // target under the cursor. Surface it so the user can
@@ -4034,7 +4263,7 @@ function launchFlashPlayer(): Deno.ChildProcess {
  */
 async function runHeadlessTest(testPath: string): Promise<number> {
     const { parseRatest, runStep } = await import("../../tests/ratest.ts");
-    const { LiveStagehand } = await import("./LiveStagehand.ts");
+    const { LiveRecordedTest } = await import("./LiveRecordedTest.ts");
 
     let parsed: ReturnType<typeof parseRatest>;
     try {
@@ -4053,7 +4282,7 @@ async function runHeadlessTest(testPath: string): Promise<number> {
         return 2;
     }
 
-    const page = new LiveStagehand(sendToFirmware, async (path: string) => {
+    const page = new LiveRecordedTest(sendToFirmware, async (path: string) => {
         const pid = flashPlayerPid;
         if (pid == null) return false;
         const compiledPath = compileFormula(path);
@@ -4191,7 +4420,7 @@ async function main(): Promise<void> {
     // given game and exits with pass/fail. Uses the normal app launch path
     // (HTTP server, sitelock proxy, firmware, Flash Player) — just skips
     // the file picker, devtools windows, and user input. The test executes
-    // via the same LiveStagehand + runStep primitives the devtools Play
+    // via the same LiveRecordedTest + runStep primitives the devtools Play
     // button uses. Scoped during main() only; read from here on as `headlessMode`.
     if (Deno.args.includes("--headless")) {
         headlessJson = Deno.args.includes("--headless-json");

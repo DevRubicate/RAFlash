@@ -26,6 +26,13 @@
                 >
                     Achievements: {{ achievementsMode ? 'Yes' : 'No' }}
                 </button>
+                <button
+                    class="realtime-button"
+                    @click="toggleRealtime()"
+                    title="When Yes (action games), recording inserts `pause <ms>` between clicks to preserve real-world timing. When No (turn-based games), recording inserts `wait <path>` so playback waits for buttons to become visible."
+                >
+                    Realtime: {{ realtimeMode ? 'Yes' : 'No' }}
+                </button>
             </div>
         </div>
 
@@ -38,10 +45,7 @@
                     <li
                         v-for="file in displayFiles"
                         :key="file"
-                        :class="{
-                            selected: file === selected,
-                            'pending-rename': isPendingRename(file),
-                        }"
+                        :class="{ selected: file === selected }"
                         @click="renamingFile === file ? null : (selected = file)"
                         @contextmenu.prevent="renamingFile === file ? null : openContextMenu(file, $event)"
                     >
@@ -63,7 +67,7 @@
                             >*</span>
                             <span
                                 class="file-name"
-                                :title="isPendingRename(file) ? `Pending rename from ${file}` : file"
+                                :title="file"
                             >{{ displayName(file) }}</span>
                             <button
                                 class="file-menu"
@@ -137,68 +141,54 @@
         </div>
 
         <div class="footer">
-            <template v-if="pendingSave">
-                <input
-                    class="filename-input"
-                    v-model="saveFilename"
-                    ref="saveInputEl"
-                    placeholder="filename"
-                    @keydown.enter="confirmSave()"
-                    @keydown.escape="cancelSave()"
-                />
-                <button class="confirm-button" :disabled="!saveFilename.trim()" @click="confirmSave()">Save</button>
-                <button class="cancel-button" @click="cancelSave()">Cancel</button>
-            </template>
-            <template v-else>
-                <button
-                    v-if="!recording && !running"
-                    class="save-button"
-                    :disabled="!canSave"
-                    @click="openSavePrompt()"
-                    title="Persist changes for the current selection (and any in-memory recording) to disk"
-                >
-                    Save
-                </button>
-                <button
-                    v-if="running"
-                    class="play-button active"
-                    @click="stop()"
-                >
-                    Stop
-                </button>
-                <button
-                    v-if="running"
-                    class="pause-button"
-                    :class="{ active: paused }"
-                    @click="paused ? resume() : pause()"
-                >
-                    <span v-if="paused">Resume</span>
-                    <span v-else>Pause</span>
-                </button>
-                <button
-                    v-if="running && paused"
-                    class="step-button"
-                    @click="advance()"
-                    title="Run the next step, then stay paused"
-                >
-                    Step
-                </button>
-                <button
-                    v-if="recording"
-                    class="record-button active"
-                    @click="stopRecord()"
-                >
-                    Stop Recording
-                </button>
-                <button
-                    v-if="!recording && !running"
-                    class="record-button"
-                    :disabled="!canRecord"
-                    @click="startNewRecord()"
-                >
-                    New Record
-                </button>
-            </template>
+            <button
+                v-if="running"
+                class="play-button active"
+                @click="stop()"
+            >
+                Stop
+            </button>
+            <button
+                v-if="running"
+                class="pause-button"
+                :class="{ active: paused }"
+                @click="paused ? resume() : pause()"
+            >
+                <span v-if="paused">Resume</span>
+                <span v-else>Pause</span>
+            </button>
+            <button
+                v-if="running && paused"
+                class="step-button"
+                @click="advance()"
+                title="Run the next step, then stay paused"
+            >
+                Step
+            </button>
+            <button
+                v-if="recording"
+                class="record-button active"
+                @click="stopRecord()"
+            >
+                Stop Recording
+            </button>
+            <button
+                v-if="!recording && !running"
+                class="record-button"
+                :disabled="!canRecord"
+                @click="startNewRecord()"
+            >
+                New Recording
+            </button>
+            <button
+                v-if="!recording && !running"
+                class="save-button footer-save"
+                :disabled="!canSave"
+                @click="saveSelected()"
+                title="Flush unsaved changes to disk"
+            >
+                Save
+            </button>
         </div>
 
         <div
@@ -334,6 +324,7 @@
         margin-left: auto;
         display: flex;
         gap: 0.5rem;
+        flex-shrink: 0;
     }
 
     .title {
@@ -594,10 +585,6 @@
         color: #ffffff;
     }
 
-    .file-list li.pending-rename .file-name {
-        font-weight: 700;
-    }
-
     .file-dirty-mark {
         flex-shrink: 0;
         color: #fcd34d;
@@ -716,6 +703,7 @@
     .delay-button,
     .restart-button,
     .achievements-button,
+    .realtime-button,
     .confirm-button,
     .cancel-button {
         color: white;
@@ -726,6 +714,7 @@
         padding: 0.5rem 1.25rem;
         border-radius: var(--radius-md);
         cursor: pointer;
+        white-space: nowrap;
         transition: opacity var(--duration) var(--ease), background var(--duration) var(--ease);
     }
 
@@ -749,6 +738,10 @@
         background: var(--c-primary);
     }
 
+    .footer-save {
+        margin-left: auto;
+    }
+
     .pause-button {
         background: #374151;
     }
@@ -770,6 +763,10 @@
     }
 
     .achievements-button {
+        background: #374151;
+    }
+
+    .realtime-button {
         background: #374151;
     }
 
@@ -823,6 +820,8 @@
     .save-button:disabled,
     .delay-button:disabled,
     .restart-button:disabled,
+    .achievements-button:disabled,
+    .realtime-button:disabled,
     .confirm-button:disabled {
         opacity: 0.4;
         cursor: not-allowed;
@@ -835,25 +834,11 @@
     .save-button:not(:disabled):hover,
     .delay-button:not(:disabled):hover,
     .restart-button:not(:disabled):hover,
+    .achievements-button:not(:disabled):hover,
+    .realtime-button:not(:disabled):hover,
     .confirm-button:not(:disabled):hover,
     .cancel-button:hover {
         opacity: 0.85;
-    }
-
-    .filename-input {
-        flex: 0 0 240px;
-        background: var(--c-surface);
-        color: var(--c-text);
-        border: 1px solid var(--c-border);
-        border-radius: var(--radius-md);
-        padding: 0.45rem 0.625rem;
-        font-family: var(--font-mono);
-        font-size: 0.8125rem;
-    }
-
-    .filename-input:focus {
-        outline: none;
-        border-color: var(--c-primary);
     }
 
     .delay-input {
@@ -998,38 +983,18 @@
     // template. Lets us call scrollIntoView without re-querying.
     let playingRowEl = null;
     // The file the current `steps` belong to, if any. Set by previewRatest
-    // (selecting a file), by startContinueRecord (explicit pre-load),
-    // and by saveRatest (after a successful save). null means a brand-new
-    // recording with no on-disk home yet — Save prompts for a name.
+    // (selecting a file), by startContinueRecord, and by startNewRecord
+    // (backend allocates the filename and returns it in the response).
     const loadedFromFile = ref(null);
-    // True whenever `steps` differs from disk — set by capture/edit/
-    // delete/reorder/insert, cleared on save or fresh-load.
-    const unsavedRecording = ref(false);
-    // Per-file stash of dirty step arrays, keyed by on-disk filename.
-    // Populated when switching away from a dirty file, drained when
-    // switching back. Lets the user move between files mid-edit without
-    // losing in-memory work.
-    const unsavedSteps = ref({});
-    // Files that exist only in memory — a New Record session in flight.
-    // They show up in the list alongside on-disk files so the user can
-    // see what they're recording, but Save turns them into real files.
-    // Cleared entries on: save (file hits disk), delete, discard.
-    const ephemeralFiles = ref([]);
-    const isEphemeral = (file) => ephemeralFiles.value.includes(file);
-    // Displayed list: on-disk files first, then ephemerals. Preserves
-    // backend sort for disk files (currently alphabetical) so the newly
-    // minted ephemeral lands at the bottom of the list where it's easy
-    // to find.
-    const displayFiles = computed(() => {
-        const disk = files.value.filter((f) => !ephemeralFiles.value.includes(f));
-        return [...disk, ...ephemeralFiles.value];
-    });
-    const isDirty = (file) => isEphemeral(file) || (file === loadedFromFile.value
-        ? unsavedRecording.value
-        : Object.prototype.hasOwnProperty.call(unsavedSteps.value, file));
-    const pendingSave = ref(false);
-    const saveFilename = ref('');
-    const saveInputEl = ref(null);
+    // File list shape from the backend: [{name, onDisk, dirty}]. `dirty`
+    // means the backend's ratestBuffers Map has an entry for that file
+    // (a new recording, an edited copy of a disk file, or both). `onDisk`
+    // tells us whether Discard has anything to fall back to. This is the
+    // single source of truth — no more per-file stash, no ephemeral
+    // tracking, no "unsaved" flag on the frontend.
+    const fileEntry = (name) => files.value.find((f) => f.name === name);
+    const isDirty = (file) => !!fileEntry(file)?.dirty;
+    const displayFiles = computed(() => files.value.map((f) => f.name));
 
     // UI-action error surface. Playback errors come through the step log
     // via ratestStep/ratestEnd; this is for things like "delete failed"
@@ -1056,7 +1021,22 @@
     const editingStepIsNew = ref(false);
     const canEditSteps = computed(() => !running.value && !recording.value);
 
-    const moveStep = (uid, delta) => {
+    // Push the current frontend step list as the authoritative buffer
+    // content for `file` on the backend. Every UI-side mutation calls
+    // this so the backend's ratestBuffers Map stays in sync with what the
+    // user sees. Step mutations are gated off during recording (via
+    // canEditSteps), so this never races with the backend's own
+    // recording-line appends.
+    const syncBufferToBackend = async (file) => {
+        if (!file) return;
+        const lines = steps.value
+            .filter((s) => !s.isSummary && typeof s.source === 'string')
+            .map((s) => s.source);
+        await Network.send({ command: 'setRatestBuffer', params: { file, lines } });
+        await refreshList();
+    };
+
+    const moveStep = async (uid, delta) => {
         const i = steps.value.findIndex((s) => s.uid === uid);
         if (i < 0) return;
         const j = i + delta;
@@ -1065,7 +1045,7 @@
         const next = steps.value.slice();
         [next[i], next[j]] = [next[j], next[i]];
         steps.value = next;
-        unsavedRecording.value = true;
+        await syncBufferToBackend(selected.value);
     };
 
     const addStepBelow = async (uid) => {
@@ -1075,7 +1055,6 @@
         const next = steps.value.slice();
         next.splice(i + 1, 0, fresh);
         steps.value = next;
-        unsavedRecording.value = true;
         await openEditModal(fresh, true);
     };
 
@@ -1090,10 +1069,11 @@
         }
     };
 
-    const closeEditModal = () => {
+    const closeEditModal = async () => {
         // Cancelling on a brand-new row that was never given content
         // discards it — otherwise the user would see a phantom blank row.
-        if (editingStepIsNew.value && editingStep.value) {
+        const wasNew = editingStepIsNew.value;
+        if (wasNew && editingStep.value) {
             const target = editingStep.value;
             const i = steps.value.findIndex((s) => s.uid === target.uid);
             if (i >= 0 && !(steps.value[i].source ?? '').trim()) {
@@ -1103,34 +1083,44 @@
         editingStep.value = null;
         editDraft.value = '';
         editingStepIsNew.value = false;
+        // A brand-new row inserted via addStepBelow has already shifted
+        // the buffer view; if we kept it (non-empty source) the insertion
+        // itself still needs syncing. If we dropped it above, sync reverts
+        // the transient insert on the backend too.
+        if (wasNew) await syncBufferToBackend(selected.value);
     };
 
-    const confirmEdit = () => {
+    const confirmEdit = async () => {
         const target = editingStep.value;
         if (!target) return;
         const newSource = editDraft.value.trim();
         if (!newSource) return;
         const i = steps.value.findIndex((s) => s.uid === target.uid);
+        let changed = false;
         if (i >= 0 && steps.value[i].source !== newSource) {
             steps.value[i] = { ...steps.value[i], source: newSource };
-            unsavedRecording.value = true;
+            changed = true;
         }
+        const wasNew = editingStepIsNew.value;
         editingStep.value = null;
         editDraft.value = '';
         editingStepIsNew.value = false;
+        if (changed || wasNew) await syncBufferToBackend(selected.value);
     };
 
-    const deleteEditingStep = () => {
+    const deleteEditingStep = async () => {
         const target = editingStep.value;
         if (!target) return;
         const i = steps.value.findIndex((s) => s.uid === target.uid);
+        let changed = false;
         if (i >= 0) {
             steps.value = steps.value.filter((s) => s.uid !== target.uid);
-            unsavedRecording.value = true;
+            changed = true;
         }
         editingStep.value = null;
         editDraft.value = '';
         editingStepIsNew.value = false;
+        if (changed) await syncBufferToBackend(selected.value);
     };
 
     const playbackDelayMs = ref(200);
@@ -1139,38 +1129,34 @@
     // achievement triggers get captured during recording and asserted
     // during playback. Resets to Yes on every RAFlash launch.
     const achievementsMode = ref(true);
+    // Per-session toggle (intentionally not persisted): Yes = action-game
+    // mode — recording inserts `pause <ms>` between clicks to preserve
+    // real-world timing. No = turn-based mode — recording inserts
+    // `wait <path>` so playback waits for buttons to become visible.
+    const realtimeMode = ref(true);
     const delayModalOpen = ref(false);
     const delayDraft = ref(200);
     const delayInputEl = ref(null);
 
     const contextMenu = ref(null);
 
-    // Pending renames queued by the user; flushed only when the affected
-    // file is selected and the user clicks Save. Keyed by the on-disk
-    // filename, never the display name. Deletes are NOT pending — they hit
-    // disk immediately because there's no row left to "select to save".
-    const pendingRenames = ref({});
-
-    // Strip the `.ratest` suffix for display — every file in the list has
-    // it, so it's pure noise. Renames are entered without it too.
+    // Strip the `.ratest` suffix for display — every file in the list
+    // has it, so it's pure noise.
     const stripExt = (name) => (name || '').replace(/\.ratest$/, '');
-    const displayName = (file) => stripExt(pendingRenames.value[file] || file);
-    const isPendingRename = (file) => Object.prototype.hasOwnProperty.call(pendingRenames.value, file);
-    const selectedHasPendingRename = computed(() =>
-        selected.value !== null && isPendingRename(selected.value),
-    );
-    // Save is per-file: it covers the in-memory recording (which has its
-    // own implicit focus) plus the pending rename of the selected row.
-    // Other rows' pending renames stay queued until those rows are selected.
-    const canSave = computed(() => unsavedRecording.value || selectedHasPendingRename.value);
+    const displayName = (file) => stripExt(file);
 
-    // Covers both content drift (in-memory steps diverged from disk) and
-    // metadata drift (a pending rename waiting for Save). "Discard changes"
-    // clears both, so both count when deciding whether to enable the menu.
-    // Ephemeral files have no disk version to revert to, so Discard makes
-    // no sense for them — they can only be removed via Delete.
-    const hasDiscardableChanges = (file) =>
-        !isEphemeral(file) && (isDirty(file) || isPendingRename(file));
+    // Save is enabled when the selected file has a buffer entry (the
+    // backend's dirty flag). Rename and delete no longer gate Save —
+    // they hit the backend immediately.
+    const canSave = computed(() => selected.value !== null && isDirty(selected.value));
+
+    // Discard only makes sense when both layers exist: a buffer entry
+    // (otherwise there's nothing to drop) AND an on-disk version
+    // (otherwise there's nothing to revert to).
+    const hasDiscardableChanges = (file) => {
+        const entry = fileEntry(file);
+        return !!entry && entry.onDisk && entry.dirty;
+    };
 
     const renamingFile = ref(null);
     const renameValue = ref('');
@@ -1270,19 +1256,19 @@
         }
     });
 
-    listen('recordingStart', (data) => {
-        // Continue mode preserves the steps that were loaded from the
-        // selected file; new-record mode starts from a clean slate, but
-        // we stash any unsaved edits on the previously loaded file first
-        // so the user doesn't lose them on switch-back.
+    listen('recordingStart', async (data) => {
+        // The backend allocated/validated the target filename and seeded
+        // its buffer before firing this event. New-record mode wipes the
+        // step view; continue mode preserves whatever we pre-loaded.
         const continueMode = !!data?.continueMode;
+        const filename = data?.filename ?? null;
         if (!continueMode) {
-            stashCurrentIfDirty();
             steps.value = [];
-            loadedFromFile.value = null;
+            loadedFromFile.value = filename;
+            if (filename) selected.value = filename;
         }
         recording.value = true;
-        unsavedRecording.value = false;
+        await refreshList();
     });
 
     listen('recordingLine', (data) => {
@@ -1303,65 +1289,40 @@
             next.splice(pos, 0, fresh);
             steps.value = next;
             rerecordInsertPosition = pos + 1;
+            // Rerecord inserts go through the splice path; the backend
+            // doesn't auto-append them to any buffer, so push the
+            // updated list ourselves to keep state consistent.
+            syncBufferToBackend(loadedFromFile.value);
         } else {
             steps.value.push(fresh);
+            // Plain recording: the backend has already appended to its
+            // buffer natively, so we don't round-trip setRatestBuffer
+            // here. refreshList picks up the new dirty flag.
+            refreshList();
         }
-        unsavedRecording.value = true;
         scrollLogToBottom();
     });
 
-    listen('recordingStopped', () => {
+    listen('recordingStopped', async () => {
         recording.value = false;
+        await refreshList();
     });
 
-    listen('recordingCancel', () => {
+    listen('recordingCancel', async () => {
         recording.value = false;
-        unsavedRecording.value = false;
+        await refreshList();
     });
 
-    listen('recordingSaved', (data) => {
+    listen('recordingSaved', async (data) => {
         recording.value = false;
-        unsavedRecording.value = false;
         loadedFromFile.value = data.file;
-        // The just-saved file is now in sync with disk; drop any stale
-        // stash entry it may have had.
-        if (Object.prototype.hasOwnProperty.call(unsavedSteps.value, data.file)) {
-            const next = { ...unsavedSteps.value };
-            delete next[data.file];
-            unsavedSteps.value = next;
-        }
-        // Graduate an ephemeral to a real on-disk file: refreshList will
-        // pick it up from disk on the next cycle, so the display entry
-        // should come from `files`, not `ephemeralFiles`.
-        if (ephemeralFiles.value.includes(data.file)) {
-            ephemeralFiles.value = ephemeralFiles.value.filter((f) => f !== data.file);
-        }
+        await refreshList();
     });
-
-    // Stash the currently-loaded file's dirty steps so they can be
-    // restored on switch-back. Called from the watcher and from the
-    // recordingStart handler when a new (non-continue) recording wipes
-    // the live state.
-    const stashCurrentIfDirty = () => {
-        if (unsavedRecording.value && loadedFromFile.value) {
-            unsavedSteps.value = {
-                ...unsavedSteps.value,
-                [loadedFromFile.value]: steps.value.slice(),
-            };
-        }
-    };
 
     watch(selected, async (file) => {
         if (running.value || recording.value) return;
-        // Already showing this file — nothing to do. If the user just
-        // re-clicked the selected row, the watcher wouldn't fire anyway;
-        // this guard catches the case where startContinueRecord pre-loads
-        // the file and only then bumps `selected`, which would otherwise
-        // race with our explicit load below.
+        // Already showing this file — nothing to do.
         if (loadedFromFile.value === file) return;
-
-        stashCurrentIfDirty();
-        unsavedRecording.value = false;
 
         if (!file) {
             steps.value = [];
@@ -1369,18 +1330,8 @@
             return;
         }
 
-        // Restore from the per-file stash if it has entries — the user
-        // had edits in flight on this file before navigating away.
-        if (Object.prototype.hasOwnProperty.call(unsavedSteps.value, file)) {
-            steps.value = unsavedSteps.value[file].slice();
-            loadedFromFile.value = file;
-            unsavedRecording.value = true;
-            const next = { ...unsavedSteps.value };
-            delete next[file];
-            unsavedSteps.value = next;
-            return;
-        }
-
+        // The backend returns buffer content if dirty, else disk
+        // content — the frontend doesn't need to branch.
         const response = await Network.send({
             command: 'previewRatest',
             params: { file },
@@ -1431,10 +1382,10 @@
         if (response.success) {
             files.value = response.params.files ?? [];
             dir.value = response.params.dir ?? null;
-            // An ephemeral recording has no disk row yet but still belongs
-            // in the list. Only clear the selection if the file is missing
-            // from BOTH disk and the ephemeral set.
-            if (selected.value && !files.value.includes(selected.value) && !isEphemeral(selected.value)) {
+            // Backend list already unions disk + buffer entries; a file
+            // that disappears from both layers (e.g., deleted) gets
+            // deselected automatically.
+            if (selected.value && !files.value.find((f) => f.name === selected.value)) {
                 selected.value = null;
             }
         } else {
@@ -1444,15 +1395,11 @@
     };
 
     // Shared prelude for play() and rerecord(): ensure `steps` holds the
-    // on-disk script with stable uids, snapshot those uids so the
-    // backend's ratestStep indices can be mapped back to rows even if
-    // the list mutates during rerecord, and reset the highlight state.
-    // Returns true on success.
+    // current script with stable uids (buffer content if dirty, else
+    // disk), snapshot those uids so the backend's ratestStep indices can
+    // be mapped back to rows even if the list mutates during rerecord,
+    // and reset the highlight state. Returns true on success.
     const preparePlayback = async (target) => {
-        if (isEphemeral(target)) {
-            showError(`Save "${displayName(target)}" before playing it.`);
-            return false;
-        }
         if (loadedFromFile.value !== target || selected.value !== target) {
             const previewResp = await Network.send({
                 command: 'previewRatest',
@@ -1462,14 +1409,12 @@
                 showError(`Couldn't load ${target}: ${previewResp.error ?? 'unknown error'}`);
                 return false;
             }
-            stashCurrentIfDirty();
             steps.value = (previewResp.params.steps ?? []).map((s) => newStep({
                 source: s.source,
                 phase: 'start',
             }));
             loadedFromFile.value = target;
             selected.value = target;
-            unsavedRecording.value = false;
         }
         playbackUids.value = steps.value.map((s) => s.uid);
         rerecordInsertPosition = 0;
@@ -1555,6 +1500,10 @@
         achievementsMode.value = !achievementsMode.value;
     };
 
+    const toggleRealtime = () => {
+        realtimeMode.value = !realtimeMode.value;
+    };
+
     // Round-trip through getSettings so we don't clobber other fields
     // on the way back: saveSettings replaces the whole blob.
     const persistSettingPatch = async (patch) => {
@@ -1569,73 +1518,51 @@
         await Network.send({ command: 'saveSettings', params: { settings: next } });
     };
 
-    // Allocate "New Recording N.ratest" with N chosen to not collide with
-    // anything already known: disk files, pending rename targets, or other
-    // in-flight ephemerals. Rename targets count so you can't queue
-    // "New Recording 1" as a rename and then get a fresh New Record that
-    // shadows it.
-    const allocateNewRecordingName = () => {
-        const taken = new Set([
-            ...files.value,
-            ...ephemeralFiles.value,
-            ...Object.values(pendingRenames.value),
-        ]);
-        for (let n = 1; ; n++) {
-            const candidate = `New Recording ${n}.ratest`;
-            if (!taken.has(candidate)) return candidate;
-        }
-    };
-
     const startNewRecord = async () => {
+        // The backend allocates the "New Recording N.ratest" filename,
+        // seeds an empty buffer, and echoes it in the response. The
+        // recordingStart event handler mirrors it into selected/loaded.
         const response = await Network.send({
             command: 'startRecording',
-            params: { achievementsEnabled: achievementsMode.value },
+            params: {
+                achievementsEnabled: achievementsMode.value,
+                realtimeEnabled: realtimeMode.value,
+            },
         });
         if (!response.success) {
             showError(`Couldn't start recording: ${response.error ?? 'unknown error'}`);
-            return;
         }
-        // The recordingStart event has already fired by the time this
-        // resolves and reset loadedFromFile to null. Auto-assign an
-        // ephemeral name now so the session shows up in the file list
-        // and Save writes straight to disk without prompting.
-        const name = allocateNewRecordingName();
-        ephemeralFiles.value = [...ephemeralFiles.value, name];
-        loadedFromFile.value = name;
-        selected.value = name;
-        // Mark dirty so the *-asterisk and Save button show up even
-        // before the first recorded interaction arrives.
-        unsavedRecording.value = true;
     };
 
     const startContinueRecord = async (file) => {
-        // The file's steps must already be in `steps` before we kick the
-        // backend, since recordingStart with continueMode=true preserves
-        // whatever's currently in the log. Load synchronously here rather
-        // than racing the selected-file watcher.
-        if (loadedFromFile.value !== file || selected.value !== file) {
-            const previewResp = await Network.send({
-                command: 'previewRatest',
-                params: { file },
-            });
-            if (!previewResp.success) {
-                showError(`Couldn't load ${file}: ${previewResp.error ?? 'unknown error'}`);
-                return;
-            }
+        // Backend seeds its buffer from disk when the file isn't already
+        // buffered, so no pre-load is needed here. The previewRatest
+        // below populates the UI step list from the (now-seeded) buffer.
+        const response = await Network.send({
+            command: 'startRecording',
+            params: {
+                continueMode: true,
+                filename: file,
+                achievementsEnabled: achievementsMode.value,
+                realtimeEnabled: realtimeMode.value,
+            },
+        });
+        if (!response.success) {
+            showError(`Couldn't continue recording: ${response.error ?? 'unknown error'}`);
+            return;
+        }
+        const previewResp = await Network.send({
+            command: 'previewRatest',
+            params: { file },
+        });
+        if (previewResp.success) {
             steps.value = (previewResp.params.steps ?? []).map((s) => newStep({
                 source: s.source,
                 phase: 'start',
             }));
-            loadedFromFile.value = file;
-            selected.value = file;
         }
-        const response = await Network.send({
-            command: 'startRecording',
-            params: { continueMode: true, achievementsEnabled: achievementsMode.value },
-        });
-        if (!response.success) {
-            showError(`Couldn't continue recording: ${response.error ?? 'unknown error'}`);
-        }
+        loadedFromFile.value = file;
+        selected.value = file;
     };
 
     const stopRecord = async () => {
@@ -1647,95 +1574,25 @@
         }
     };
 
-    // Resolve the on-disk filename to write to. A previewed-or-continued
-    // file is the target; a brand-new recording with no source needs the
-    // filename prompt.
-    const saveTargetFile = computed(() => loadedFromFile.value);
-
-    const openSavePrompt = async () => {
-        if (!canSave.value) return;
-        if (unsavedRecording.value && !saveTargetFile.value) {
-            const now = new Date();
-            const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-            saveFilename.value = `recording-${stamp}`;
-            pendingSave.value = true;
-            await nextTick();
-            if (saveInputEl.value) {
-                saveInputEl.value.focus();
-                saveInputEl.value.select();
-            }
+    // Save flushes the backend's ephemeral buffer for the selected file
+    // to disk. The filename is always known (backend assigned it at
+    // record time or it came from the file list), so there's no prompt.
+    // Rename is now immediate (handled by renameRatest) and doesn't
+    // piggyback on Save.
+    const saveSelected = async () => {
+        if (!selected.value || !canSave.value) return;
+        const resp = await Network.send({
+            command: 'saveRatest',
+            params: { filename: selected.value },
+        });
+        if (!resp.success) {
+            showError(`Save failed: ${resp.error ?? 'unknown error'}`);
             return;
         }
-        await saveSelected();
-    };
-
-    // Per-file save: flush the in-memory steps (a recording, an edit, or
-    // both) plus the pending rename for the selected row. Pending renames
-    // for OTHER rows stay queued until those rows are selected.
-    //
-    // Order matters when both a write and a rename apply: write to the
-    // current on-disk name first, then rename, otherwise the write would
-    // target a stale path.
-    const saveSelected = async (recordingFilename) => {
-        if (unsavedRecording.value) {
-            const filename = recordingFilename || saveTargetFile.value;
-            if (!filename) {
-                showError('No filename to save to.');
-                return;
-            }
-            const lines = steps.value
-                .filter((s) => !s.isSummary && typeof s.source === 'string')
-                .map((s) => s.source);
-            const resp = await Network.send({
-                command: 'saveRatest',
-                params: { filename, lines },
-            });
-            if (!resp.success) {
-                showError(`Save failed: ${resp.error ?? 'unknown error'}`);
-                return;
-            }
-        }
-
-        if (selected.value && isPendingRename(selected.value)) {
-            const from = selected.value;
-            const to = pendingRenames.value[from];
-            const resp = await Network.send({
-                command: 'renameRatest',
-                params: { from, to },
-            });
-            if (resp.success) {
-                const next = { ...pendingRenames.value };
-                delete next[from];
-                pendingRenames.value = next;
-                selected.value = to;
-                if (loadedFromFile.value === from) loadedFromFile.value = to;
-            } else {
-                showError(`Couldn't rename ${from} to ${to}: ${resp.error ?? 'unknown error'}`);
-            }
-        }
-
         await refreshList();
     };
 
-    const confirmSave = async () => {
-        const name = saveFilename.value.trim();
-        if (!name) return;
-        pendingSave.value = false;
-        saveFilename.value = '';
-        await saveSelected(name);
-    };
-
-    const cancelSave = () => {
-        // Dismiss the prompt only — the buffer stays so the user can save
-        // later (or trigger discard by selecting a different file).
-        pendingSave.value = false;
-        saveFilename.value = '';
-    };
-
     const askRename = async (file) => {
-        // Seed from the pending name so re-renaming an already-renamed file
-        // shows what the user last typed, not the stale on-disk name.
-        // displayName already strips the .ratest suffix.
         renameValue.value = displayName(file);
         renamingFile.value = file;
         await nextTick();
@@ -1745,7 +1602,7 @@
         }
     };
 
-    const confirmRename = () => {
+    const confirmRename = async () => {
         const from = renamingFile.value;
         if (!from) return;
         const raw = renameValue.value.trim();
@@ -1753,16 +1610,21 @@
         renameValue.value = '';
         if (!raw) return;
         const to = raw.endsWith('.ratest') ? raw : `${raw}.ratest`;
-        if (to === from) {
-            // Renaming back to the original name clears any pending rename.
-            if (isPendingRename(from)) {
-                const next = { ...pendingRenames.value };
-                delete next[from];
-                pendingRenames.value = next;
-            }
+        if (to === from) return;
+        // Rename is immediate on both layers — backend renames disk
+        // file + buffer key atomically, so the UI list reflects it on
+        // the next refreshList.
+        const resp = await Network.send({
+            command: 'renameRatest',
+            params: { from, to },
+        });
+        if (!resp.success) {
+            showError(`Couldn't rename ${from} to ${to}: ${resp.error ?? 'unknown error'}`);
             return;
         }
-        pendingRenames.value = { ...pendingRenames.value, [from]: to };
+        if (selected.value === from) selected.value = to;
+        if (loadedFromFile.value === from) loadedFromFile.value = to;
+        await refreshList();
     };
 
     const cancelRename = () => {
@@ -1771,47 +1633,22 @@
     };
 
     const doDelete = async (file) => {
-        // Ephemerals live only in the frontend — there's no on-disk file
-        // for the backend to delete. Strip the local bookkeeping so the
-        // row disappears, then bail out.
-        if (isEphemeral(file)) {
-            ephemeralFiles.value = ephemeralFiles.value.filter((f) => f !== file);
-            if (selected.value === file) selected.value = null;
-            if (loadedFromFile.value === file) {
-                loadedFromFile.value = null;
-                steps.value = [];
-                unsavedRecording.value = false;
-            }
-            if (Object.prototype.hasOwnProperty.call(unsavedSteps.value, file)) {
-                const next = { ...unsavedSteps.value };
-                delete next[file];
-                unsavedSteps.value = next;
-            }
-            return;
-        }
+        // Backend handles both layers atomically — drops the buffer
+        // entry (if any) and removes the on-disk file (if any).
         const response = await Network.send({
             command: 'deleteRatest',
             params: { file },
         });
-        if (response.success) {
-            if (selected.value === file) selected.value = null;
-            // Drop any queued rename for the file that no longer exists.
-            if (isPendingRename(file)) {
-                const next = { ...pendingRenames.value };
-                delete next[file];
-                pendingRenames.value = next;
-            }
-            // Drop any stashed unsaved edits — they referred to a file
-            // that no longer exists.
-            if (Object.prototype.hasOwnProperty.call(unsavedSteps.value, file)) {
-                const next = { ...unsavedSteps.value };
-                delete next[file];
-                unsavedSteps.value = next;
-            }
-            await refreshList();
-        } else {
+        if (!response.success) {
             showError(`Couldn't delete ${file}: ${response.error ?? 'unknown error'}`);
+            return;
         }
+        if (selected.value === file) selected.value = null;
+        if (loadedFromFile.value === file) {
+            loadedFromFile.value = null;
+            steps.value = [];
+        }
+        await refreshList();
     };
 
     const requestDiscard = (file) => {
@@ -1823,24 +1660,22 @@
         discardConfirmFile.value = null;
     };
 
-    // Reload `file` from disk, throwing away any pending rename and any
-    // in-memory step edits (live or stashed). Only files that actually
-    // exist on disk can be discarded — saveless new recordings don't have
-    // a list row and therefore can't reach this path.
+    // Discard drops the backend's buffer entry for `file`; the next
+    // previewRatest returns the on-disk version. Only files with a
+    // disk-side counterpart are eligible (hasDiscardableChanges
+    // enforces this), so we always have something to reload.
     const confirmDiscard = async () => {
         const file = discardConfirmFile.value;
         discardConfirmFile.value = null;
         if (!file) return;
 
-        if (isPendingRename(file)) {
-            const next = { ...pendingRenames.value };
-            delete next[file];
-            pendingRenames.value = next;
-        }
-        if (Object.prototype.hasOwnProperty.call(unsavedSteps.value, file)) {
-            const next = { ...unsavedSteps.value };
-            delete next[file];
-            unsavedSteps.value = next;
+        const discardResp = await Network.send({
+            command: 'discardRatestBuffer',
+            params: { file },
+        });
+        if (!discardResp.success) {
+            showError(`Couldn't discard ${file}: ${discardResp.error ?? 'unknown error'}`);
+            return;
         }
 
         if (loadedFromFile.value === file) {
@@ -1856,8 +1691,8 @@
                 source: s.source,
                 phase: 'start',
             }));
-            unsavedRecording.value = false;
         }
+        await refreshList();
     };
 
     const openContextMenu = (file, event) => {
@@ -1872,15 +1707,7 @@
     const contextPlay = () => {
         const file = contextMenu.value?.file;
         closeContextMenu();
-        if (!file) return;
-        // Ephemerals haven't been written to disk yet, so the backend
-        // has nothing to load. Surface a readable message instead of
-        // letting playRatest fail with a cryptic file-not-found error.
-        if (isEphemeral(file)) {
-            showError(`Save "${displayName(file)}" before playing it.`);
-            return;
-        }
-        play(file);
+        if (file) play(file);
     };
 
     const contextContinueRecord = () => {
