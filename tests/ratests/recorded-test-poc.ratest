@@ -1,16 +1,16 @@
-# Stagehand POC — data-driven integration test
-# Exercises the Stagehand harness against StagehandGame.swf.
+# Recorded Test POC — data-driven integration test
+# Exercises the Recorded Test harness against RecordedTestGame.swf.
 #
 # The game is identified by the MD5 of the compiled SWF — the same identity
 # RAFlash uses to attach achievements to a game. Build output is deterministic
-# under MTASC, so this hash is stable as long as StagehandGame.as is unchanged.
-# If you modify StagehandGame.as and rebuild, run:
+# under MTASC, so this hash is stable as long as RecordedTestGame.as is unchanged.
+# If you modify RecordedTestGame.as and rebuild, run:
 #
-#     deno run --allow-read tests/ratest-hash.ts .tests/StagehandGame.swf
+#     deno run --allow-read tests/ratest-hash.ts .tests/RecordedTestGame.swf
 #
 # to recompute the hash and update the line below.
 
-hash a017605927b9ffed98479051ea7b90c6
+hash dbe666563e6ba40b047f991da0d042e6
 port 18090
 
 # ---- Phase 1: initial state ----

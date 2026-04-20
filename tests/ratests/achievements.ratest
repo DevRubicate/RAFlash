@@ -1,6 +1,6 @@
 # Achievement loading + trigger tracking regression test.
 #
-# The Makefile copies tests/ratests/fixtures/stagehand-achievements.json to
+# The Makefile copies tests/ratests/fixtures/recorded-test-achievements.json to
 # .build/RACache/games/{hash}.json so the ratest runner auto-loads the
 # achievements when it launches this game. The firmware evaluates them
 # every frame (its own 60fps onEnterFrame), so triggers arrive over the
@@ -11,7 +11,7 @@
 #   1002 "Three Clicks"  -- stage.fireCount >= 3
 #   1003 "Game Started"  -- stage.state == "playing"
 
-hash a017605927b9ffed98479051ea7b90c6
+hash dbe666563e6ba40b047f991da0d042e6
 port 18094
 
 # Nothing should have triggered at startup.

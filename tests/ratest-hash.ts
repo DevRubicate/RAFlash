@@ -2,7 +2,7 @@
  * Prints the identity hash of each game file passed on the command line,
  * in the exact format expected by a .ratest file's `hash` directive.
  *
- *     deno run --allow-read tests/ratest-hash.ts .tests/StagehandGame.swf
+ *     deno run --allow-read tests/ratest-hash.ts .tests/RecordedTestGame.swf
  *     deno run --allow-read tests/ratest-hash.ts .tests/Game.raflash
  *     deno run --allow-read tests/ratest-hash.ts .tests/*.swf .tests/*.raflash
  *

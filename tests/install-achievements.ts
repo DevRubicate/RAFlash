@@ -1,6 +1,6 @@
 /**
  * Install an achievement fixture JSON into RAFlash's on-disk cache so the
- * Stagehand harness auto-loads it during `.ratest` runs.
+ * Recorded Test harness auto-loads it during `.ratest` runs.
  *
  *     deno run --allow-read --allow-write tests/install-achievements.ts \
  *         --swf=<path-to-swf>        -- game whose MD5 hash keys the JSON

@@ -1130,8 +1130,8 @@ class Main {
 
             case "invokeMethod":
                 // Resolve a path formula to a target object and call a named
-                // method on it with the supplied args. Used by the Stagehand
-                // test harness to drive interaction (clicks, ticks, ...)
+                // method on it with the supplied args. Used by the Recorded
+                // Test harness to drive interaction (clicks, ticks, ...)
                 // without having to inject input events into Flash Player.
                 _stageContext[0] = gameRoot;
                 var imFormula:Array = params.pathFormula;

@@ -1,5 +1,5 @@
 /**
- * LiveStagehand — a `StagehandLike` adapter that drives the live firmware
+ * LiveRecordedTest — a `RecordedTest` adapter that drives the live firmware
  * connection managed by RAEngine's Main.ts, so a `.ratest` file can play
  * back against the currently-running game instead of spawning a fresh
  * Flash Player process.
@@ -12,7 +12,7 @@
  */
 import { Formula } from "./formula/Formula.ts";
 import { AppData } from "./AppData.ts";
-import type { StagehandLike } from "../../tests/ratest.ts";
+import type { RecordedTest } from "../../tests/ratest.ts";
 
 type SendToFirmware = (
     command: string,
@@ -29,7 +29,7 @@ type SendToFirmware = (
  */
 export type ActivateViaFocus = (path: string) => Promise<boolean>;
 
-export class LiveStagehand implements StagehandLike {
+export class LiveRecordedTest implements RecordedTest {
     constructor(
         private readonly send: SendToFirmware,
         private readonly activateViaFocus?: ActivateViaFocus,

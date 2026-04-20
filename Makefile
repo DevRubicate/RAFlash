@@ -7,7 +7,7 @@ DENO=deno
 MTASC_HEADER=800:575:60
 
 # Dummy target to force rebuild
-.PHONY: all check clean run assets test test-avm1 test-engine test-display test-avm2 test-integration test-stagehand avm1-build avm1-bootstrap-build avm1-wrapper-build avm2-build compile dist release stage FORCE
+.PHONY: all check clean run assets test test-avm1 test-engine test-display test-avm2 test-integration test-recorded-test avm1-build avm1-bootstrap-build avm1-wrapper-build avm2-build compile dist release stage FORCE
 
 # Default target - full build including standalone executable
 all: compile
@@ -127,13 +127,13 @@ TEST_AVM1_MAIN=AVM1Firmware/tests/TestRunner.as
 TEST_AVM2_SWF=.tests/AVM2Tests.swf
 TEST_INTEGRATION_GAME_SWF=.tests/IntegrationGame.swf
 TEST_INTEGRATION_GAME_MAIN=AVM1Firmware/tests/IntegrationGame.as
-TEST_STAGEHAND_GAME_SWF=.tests/StagehandGame.swf
-TEST_STAGEHAND_GAME_MAIN=AVM1Firmware/tests/StagehandGame.as
-TEST_STAGEHAND_GAME_RAFLASH=.tests/StagehandGame.raflash
-TEST_STAGEHAND_GAME_RAFLASH_HASH=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-TEST_STAGEHAND_ACHIEVEMENTS_FIXTURE=tests/ratests/fixtures/stagehand-achievements.json
-TEST_STAGEHAND_ACHIEVEMENTS_INSTALL_SCRIPT=tests/install-achievements.ts
-TEST_STAGEHAND_ACHIEVEMENTS_INSTALLED=.build/RACache/.stagehand-fixture-installed
+TEST_RECORDED_TEST_GAME_SWF=.tests/RecordedTestGame.swf
+TEST_RECORDED_TEST_GAME_MAIN=AVM1Firmware/tests/RecordedTestGame.as
+TEST_RECORDED_TEST_GAME_RAFLASH=.tests/RecordedTestGame.raflash
+TEST_RECORDED_TEST_GAME_RAFLASH_HASH=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+TEST_RECORDED_TEST_ACHIEVEMENTS_FIXTURE=tests/ratests/fixtures/recorded-test-achievements.json
+TEST_RECORDED_TEST_ACHIEVEMENTS_INSTALL_SCRIPT=tests/install-achievements.ts
+TEST_RECORDED_TEST_ACHIEVEMENTS_INSTALLED=.build/RACache/.recorded-test-fixture-installed
 
 $(TEST_AVM1_SWF): FORCE
 	@mkdir -p $(dir $@)
@@ -147,25 +147,25 @@ $(TEST_INTEGRATION_GAME_SWF): FORCE
 	@mkdir -p $(dir $@)
 	@$(MTASC) -cp AVM1Firmware/tests -swf $@ -main $(TEST_INTEGRATION_GAME_MAIN) -header $(MTASC_HEADER)
 
-$(TEST_STAGEHAND_GAME_SWF): FORCE
+$(TEST_RECORDED_TEST_GAME_SWF): FORCE
 	@mkdir -p $(dir $@)
-	@$(MTASC) -cp AVM1Firmware/tests -swf $@ -main $(TEST_STAGEHAND_GAME_MAIN) -header $(MTASC_HEADER)
+	@$(MTASC) -cp AVM1Firmware/tests -swf $@ -main $(TEST_RECORDED_TEST_GAME_MAIN) -header $(MTASC_HEADER)
 
-# .raflash fixture: zip the stagehand game with a distinctive hashOverride so
-# the .raflash resolver has a permanent regression test for that code path.
-$(TEST_STAGEHAND_GAME_RAFLASH): $(TEST_STAGEHAND_GAME_SWF)
+# .raflash fixture: zip the recorded-test game with a distinctive hashOverride
+# so the .raflash resolver has a permanent regression test for that code path.
+$(TEST_RECORDED_TEST_GAME_RAFLASH): $(TEST_RECORDED_TEST_GAME_SWF)
 	@$(DENO) run --allow-read --allow-write tests/build-raflash.ts \
-		--swf=$(TEST_STAGEHAND_GAME_SWF) \
+		--swf=$(TEST_RECORDED_TEST_GAME_SWF) \
 		--out=$@ \
-		--hashOverride=$(TEST_STAGEHAND_GAME_RAFLASH_HASH) \
-		--title="Stagehand Game (.raflash fixture)"
+		--hashOverride=$(TEST_RECORDED_TEST_GAME_RAFLASH_HASH) \
+		--title="Recorded Test Game (.raflash fixture)"
 
 # Install the achievement fixture at .build/RACache/games/{hash}.json so the
-# Stagehand harness picks it up during achievement.ratest runs.
-$(TEST_STAGEHAND_ACHIEVEMENTS_INSTALLED): $(TEST_STAGEHAND_ACHIEVEMENTS_FIXTURE) $(TEST_STAGEHAND_GAME_SWF) $(TEST_STAGEHAND_ACHIEVEMENTS_INSTALL_SCRIPT)
-	@$(DENO) run --allow-read --allow-write $(TEST_STAGEHAND_ACHIEVEMENTS_INSTALL_SCRIPT) \
-		--swf=$(TEST_STAGEHAND_GAME_SWF) \
-		--json=$(TEST_STAGEHAND_ACHIEVEMENTS_FIXTURE) \
+# recorded-test harness picks it up during achievement.ratest runs.
+$(TEST_RECORDED_TEST_ACHIEVEMENTS_INSTALLED): $(TEST_RECORDED_TEST_ACHIEVEMENTS_FIXTURE) $(TEST_RECORDED_TEST_GAME_SWF) $(TEST_RECORDED_TEST_ACHIEVEMENTS_INSTALL_SCRIPT)
+	@$(DENO) run --allow-read --allow-write $(TEST_RECORDED_TEST_ACHIEVEMENTS_INSTALL_SCRIPT) \
+		--swf=$(TEST_RECORDED_TEST_GAME_SWF) \
+		--json=$(TEST_RECORDED_TEST_ACHIEVEMENTS_FIXTURE) \
 		--sentinel=$@
 
 # Run all tests through unified runner.
@@ -174,7 +174,7 @@ $(TEST_STAGEHAND_ACHIEVEMENTS_INSTALLED): $(TEST_STAGEHAND_ACHIEVEMENTS_FIXTURE)
 # the runner and its subprocesses interleaves and produces garbled
 # cursor positions in the terminal. `bash -c 'set -o pipefail'`
 # preserves the runner's exit code across the pipe.
-test: $(TEST_AVM1_SWF) $(TEST_AVM2_SWF) avm1-build avm1-wrapper-build avm2-build assets stage $(TEST_INTEGRATION_GAME_SWF) $(TEST_STAGEHAND_GAME_SWF) $(TEST_STAGEHAND_GAME_RAFLASH) $(TEST_STAGEHAND_ACHIEVEMENTS_INSTALLED)
+test: $(TEST_AVM1_SWF) $(TEST_AVM2_SWF) avm1-build avm1-wrapper-build avm2-build assets stage $(TEST_INTEGRATION_GAME_SWF) $(TEST_RECORDED_TEST_GAME_SWF) $(TEST_RECORDED_TEST_GAME_RAFLASH) $(TEST_RECORDED_TEST_ACHIEVEMENTS_INSTALLED)
 	@bash -c 'set -o pipefail; $(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts 2>&1 | cat'
 
 # Individual suite targets (piped through `cat` for the same reason as `test`)
@@ -193,5 +193,5 @@ test-display:
 test-integration: avm1-build $(TEST_INTEGRATION_GAME_SWF)
 	@bash -c 'set -o pipefail; $(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts integration 2>&1 | cat'
 
-test-stagehand: avm1-build avm1-wrapper-build avm2-build assets stage $(TEST_STAGEHAND_GAME_SWF) $(TEST_STAGEHAND_GAME_RAFLASH) $(TEST_STAGEHAND_ACHIEVEMENTS_INSTALLED)
-	@bash -c 'set -o pipefail; $(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts stagehand 2>&1 | cat'
+test-recorded-test: avm1-build avm1-wrapper-build avm2-build assets stage $(TEST_RECORDED_TEST_GAME_SWF) $(TEST_RECORDED_TEST_GAME_RAFLASH) $(TEST_RECORDED_TEST_ACHIEVEMENTS_INSTALLED)
+	@bash -c 'set -o pipefail; $(DENO) run $(DENO_TEST_PERMISSIONS) tests/run.ts recorded-test 2>&1 | cat'

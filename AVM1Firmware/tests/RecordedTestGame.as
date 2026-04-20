@@ -1,8 +1,8 @@
 /**
- * Stagehand Integration Test Game
+ * Recorded-Test Integration Test Game
  *
- * A minimal AS2 game designed to be driven externally by the Stagehand
- * test harness (tests/stagehand.ts). All state advancement is explicit —
+ * A minimal AS2 game designed to be driven externally by the Recorded
+ * Test harness (tests/ratest.ts). All state advancement is explicit —
  * the game does NOT use onEnterFrame to mutate state, so the simulation
  * only moves forward when the harness calls game.tick() (via the
  * firmware's invokeMethod command).
@@ -24,7 +24,7 @@
  *   stage.bulletCount       -- number of active bullets (== stage.bullets.length)
  *   stage.lastFired         -- tickCount at which the last bullet was fired
  */
-class StagehandGame {
+class RecordedTestGame {
     public static function main():Void {
         // --- Core state ---
         _root.fireCount = 0;

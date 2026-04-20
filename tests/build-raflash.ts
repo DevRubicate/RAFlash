@@ -6,7 +6,7 @@
  *         [--hashOverride=<md5>] [--title=<name>]
  *
  * Used by the Makefile to generate a deterministic .raflash fixture for
- * the Stagehand test suite so the .raflash resolution path has permanent
+ * the Recorded Test suite so the .raflash resolution path has permanent
  * regression coverage.
  */
 

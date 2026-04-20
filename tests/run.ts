@@ -10,7 +10,7 @@
  *   deno run --allow-all tests/run.ts engine        # RAEngine only
  *   deno run --allow-all tests/run.ts avm1 avm2     # multiple suites
  *
- * Suite names: avm1, avm2, engine, display, integration
+ * Suite names: avm1, avm2, engine, display, integration, recorded-test
  */
 
 import { getRegisteredTests, type SuiteResult, type TestResult } from "./framework.ts";
@@ -218,8 +218,8 @@ const SUITES: Record<string, () => Promise<SuiteResult>> = {
         return result;
     },
 
-    stagehand: async () => {
-        printSuiteHeader("Stagehand (.ratest)");
+    "recorded-test": async () => {
+        printSuiteHeader("Recorded Test");
         const { runRatestFile, discoverRatestFiles } = await import("./ratest.ts");
         const files = await discoverRatestFiles(`${Deno.cwd()}/tests/ratests`);
         const allResults: TestResult[] = [];
@@ -236,7 +236,7 @@ const SUITES: Record<string, () => Promise<SuiteResult>> = {
             if (fileResult.failed > 0) break;
         }
         const combined: SuiteResult = {
-            name: "Stagehand (.ratest)",
+            name: "Recorded Test",
             passed: allResults.filter((r) => r.passed).length,
             failed: allResults.filter((r) => !r.passed).length,
             results: allResults,
@@ -248,7 +248,7 @@ const SUITES: Record<string, () => Promise<SuiteResult>> = {
 };
 
 // Default order when running all suites
-const DEFAULT_ORDER = ["avm1", "avm2", "engine", "display", "integration", "stagehand"];
+const DEFAULT_ORDER = ["avm1", "avm2", "engine", "display", "integration", "recorded-test"];
 
 // -------------------------------------------------------------------------
 // Main

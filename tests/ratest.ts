@@ -10,7 +10,7 @@
  * Execution: `runRatestFile(path)` resolves the test's `hash` directive
  * to an on-disk game, then spawns `Main.ts --headless --headless-json`
  * against it and streams per-step results back from stdout. The parser,
- * `runStep`, and `StagehandLike` live here because Main.ts's devtools
+ * `runStep`, and `RecordedTest` live here because Main.ts's devtools
  * Play button and `runHeadlessTest` both consume them.
  *
  * Grammar (each non-blank non-comment line is one statement):
@@ -79,12 +79,12 @@ import type { SuiteResult, TestResult } from "./framework.ts";
 // -------------------------------------------------------------------------
 
 /**
- * The subset of Stagehand's public API that `runStep` depends on. Lives
- * here (not in an implementation file) because both Main.ts's devtools
- * Play path and Main.ts's headless runner feed `runStep` their own
- * `LiveStagehand` — the interface is the contract between them.
+ * The public surface that `runStep` drives. Lives here (not in an
+ * implementation file) because both Main.ts's devtools Play path and
+ * Main.ts's headless runner feed `runStep` their own `LiveRecordedTest`
+ * — the interface is the contract between them.
  */
-export interface StagehandLike {
+export interface RecordedTest {
     evaluate<T = unknown>(formula: string): Promise<T>;
     setValue(path: string, property: string, value: string | number | boolean | null): Promise<void>;
     invoke<T = unknown>(path: string, method: string, args?: unknown[]): Promise<T>;
@@ -667,7 +667,7 @@ export interface RunContext {
     onAchievementOutcome?: (target: number | string, passed: boolean, error: string | undefined, durationMs: number) => void;
 }
 
-export async function runStep(page: StagehandLike, step: Step, results: TestResult[], ctx: RunContext = {}): Promise<void> {
+export async function runStep(page: RecordedTest, step: Step, results: TestResult[], ctx: RunContext = {}): Promise<void> {
     const t0 = performance.now();
     const name = `${step.source}`;
     try {
