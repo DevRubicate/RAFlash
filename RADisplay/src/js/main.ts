@@ -168,4 +168,8 @@ window.addEventListener('keydown', (e: KeyboardEvent) => {
     }
 });
 
+window.addEventListener('contextmenu', (e: MouseEvent) => {
+    e.preventDefault();
+});
+
 mountApp();
