@@ -97,6 +97,73 @@ function patchAbcStringsInPlace(abc: Uint8Array): number {
     return patches;
 }
 
+/**
+ * True iff any DoABC/DoABC2 tag's strings pool contains the byte sequence
+ * `__RAShim_S0_`. Used as the idempotency check — far more precise than
+ * a whole-body scan, which produced false positives whenever those bytes
+ * happened to land inside an embedded JPEG/MP3/font table and silently
+ * skipped a SWF that had never been rewritten.
+ */
+function abcStringsContain(abc: Uint8Array, needle: Uint8Array): boolean {
+    let pos = 4; // skip minor_version + major_version
+    let n: number;
+    [n, pos] = readU30(abc, pos);
+    for (let i = 0; i < Math.max(0, n - 1); i++) { [, pos] = readU30(abc, pos); }
+    [n, pos] = readU30(abc, pos);
+    for (let i = 0; i < Math.max(0, n - 1); i++) { [, pos] = readU30(abc, pos); }
+    [n, pos] = readU30(abc, pos);
+    pos += Math.max(0, n - 1) * 8;
+    [n, pos] = readU30(abc, pos);
+    for (let i = 0; i < Math.max(0, n - 1); i++) {
+        const [size, newPos] = readU30(abc, pos);
+        pos = newPos;
+        if (size === needle.length) {
+            let match = true;
+            for (let j = 0; j < size; j++) {
+                if (abc[pos + j] !== needle[j]) { match = false; break; }
+            }
+            if (match) return true;
+        }
+        pos += size;
+    }
+    return false;
+}
+
+/**
+ * Walk a SWF body's tag stream and run `check` against the ABC payload of
+ * every DoABC/DoABC2 tag. Returns true on the first hit. Bounds-check on
+ * truncated/malformed tag streams returns false.
+ */
+function anyAbcMatches(body: Uint8Array, check: (abc: Uint8Array) => boolean): boolean {
+    let pos = findTagsStart(body);
+    while (pos + 2 <= body.length) {
+        const tagHeader = readU16LE(body, pos);
+        const code = tagHeader >> 6;
+        let lenField = tagHeader & 0x3F;
+        let bodyOffset = pos + 2;
+        if (lenField === 0x3F) {
+            if (pos + 6 > body.length) return false;
+            lenField = readU32LE(body, pos + 2);
+            bodyOffset = pos + 6;
+        }
+        const next = bodyOffset + lenField;
+        if (next < bodyOffset || next > body.length) return false;
+        if (code === TAG_DOABC2) {
+            // DoABC2 prefixes a flags(u32) + null-terminated name; skip past those.
+            let abcStart = bodyOffset + 4;
+            while (abcStart < next && body[abcStart] !== 0) abcStart++;
+            abcStart++; // past the name's null terminator
+            if (abcStart < next && check(body.subarray(abcStart, next))) return true;
+        } else if (code === TAG_DOABC) {
+            if (check(body.subarray(bodyOffset, next))) return true;
+        } else if (code === TAG_END) {
+            return false;
+        }
+        pos = next;
+    }
+    return false;
+}
+
 function decompressSwf(swf: Uint8Array): { header: Uint8Array; body: Uint8Array; sig: string } {
     const sig = String.fromCharCode(swf[0], swf[1], swf[2]);
     if (sig === "CWS") {
@@ -126,17 +193,6 @@ function recompressSwf(header: Uint8Array, body: Uint8Array, originalSig: string
     out.set(newHeader);
     out.set(body, 8);
     return out;
-}
-
-function containsBytes(haystack: Uint8Array, needle: Uint8Array): boolean {
-    if (needle.length === 0 || haystack.length < needle.length) return false;
-    outer: for (let i = 0; i <= haystack.length - needle.length; i++) {
-        for (let j = 0; j < needle.length; j++) {
-            if (haystack[i + j] !== needle[j]) continue outer;
-        }
-        return true;
-    }
-    return false;
 }
 
 /** Byte offset of the first SWF tag (after rect + frame_rate + frame_count). */
@@ -191,11 +247,13 @@ export function rewriteGameForSharedObjectShim(
     const { header, body, sig: originalSig } = decompressSwf(swf);
     const mutBody = new Uint8Array(body);
 
-    // Idempotency: if the body already contains the shim class identifier,
-    // someone's already rewritten this SWF — running the pass again would
-    // redirect the shim's internal references to native SharedObject back
-    // at itself, causing infinite recursion at flush time.
-    if (containsBytes(mutBody, REPLACEMENT)) {
+    // Idempotency: scan only DoABC string pools for the shim's class
+    // identifier. A whole-body scan was overbroad — the byte sequence
+    // can land inside embedded JPEG/MP3/font tables and falsely trigger
+    // the skip on a SWF that's never been rewritten. Running the pass
+    // twice on a real rewrite would otherwise redirect the shim's own
+    // SharedObject references at itself and recurse infinitely on flush.
+    if (anyAbcMatches(mutBody, (abc) => abcStringsContain(abc, REPLACEMENT))) {
         return swf;
     }
 

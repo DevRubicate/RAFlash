@@ -793,7 +793,17 @@ class Main extends MovieClip {
             shimCls.setSlot(currentSlot);
             var relaySelf = this;
             shimCls.setRelay(function(name:String, localPath:String, data:Dynamic):Void {
-                relaySelf.sendMessage("saveEvent", { name: name, localPath: localPath, data: data });
+                // sendMessage's haxe.Json.stringify throws on circular refs
+                // or non-serializable values (functions, ByteArrays, etc.)
+                // inside `data`. Without this catch, the shim's outer
+                // try/catch silently swallowed the failure and RAFlash had
+                // no idea the mirror save was lost. Log so the engine's
+                // event log shows it.
+                try {
+                    relaySelf.sendMessage("saveEvent", { name: name, localPath: localPath, data: data });
+                } catch (e:Dynamic) {
+                    relaySelf.log("saveEvent mirror failed for \"" + name + "\": " + Std.string(e));
+                }
             });
         } catch (e:Dynamic) {
             // Non-fatal — game still saves natively, just without RAFlash mirroring.

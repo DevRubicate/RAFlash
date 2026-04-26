@@ -1813,6 +1813,25 @@ async function resolveGameHashFromPath(path: string): Promise<string | null> {
 }
 
 /**
+ * Reject obviously-malformed game paths from the file picker before we
+ * use them to compute a hash and key into saves/<hash>/. Mirrors the
+ * defense-in-depth style of `readDirectory`: must be absolute and free
+ * of literal `..` segments. Returns the resolved path on success or
+ * null on rejection. The slot handlers (listSlots/setSlot/etc.) only
+ * compute a content hash from this path — there's no real security
+ * boundary in a local app — but a malformed path either produces a
+ * confusing "Failed to resolve game hash" error or, worse, silently
+ * keys into a slot directory the user didn't expect.
+ */
+function validateGamePath(raw: string): string | null {
+    if (!raw) return null;
+    const resolved = resolve(raw);
+    if (!isAbsolute(resolved)) return null;
+    if (resolved.includes("..")) return null;
+    return resolved;
+}
+
+/**
  * Sanitize a slot name to filesystem- and URL-safe characters. Rejects
  * pure-dot names (".", "..", "..." etc.) — those would normalize to a
  * parent-directory reference under `path.join`, so a slot named ".."
@@ -2536,13 +2555,15 @@ async function handleApiRequest(
         }
         // === Save slot management (file-picker-driven) =====================
         case "listSlots": {
-            const path = String(input.params.path || "");
+            const path = validateGamePath(String(input.params.path || ""));
+            if (!path) return { success: false, error: "Invalid path" };
             const result = await getSlotInventory(path);
             if (!result) return { success: false, error: "Failed to resolve game hash" };
             return { success: true, params: result };
         }
         case "setSlot": {
-            const path = String(input.params.path || "");
+            const path = validateGamePath(String(input.params.path || ""));
+            if (!path) return { success: false, error: "Invalid path" };
             const slot = sanitizeSlotName(String(input.params.slot || ""));
             if (!slot) return { success: false, error: "Invalid slot name" };
             const hash = await resolveGameHashFromPath(path);
@@ -2551,7 +2572,8 @@ async function handleApiRequest(
             return { success: true };
         }
         case "createSlot": {
-            const path = String(input.params.path || "");
+            const path = validateGamePath(String(input.params.path || ""));
+            if (!path) return { success: false, error: "Invalid path" };
             const slot = sanitizeSlotName(String(input.params.slot || ""));
             if (!slot) return { success: false, error: "Invalid slot name" };
             const hash = await resolveGameHashFromPath(path);
@@ -2560,7 +2582,8 @@ async function handleApiRequest(
             return { success: true };
         }
         case "renameSlot": {
-            const path = String(input.params.path || "");
+            const path = validateGamePath(String(input.params.path || ""));
+            if (!path) return { success: false, error: "Invalid path" };
             const oldSlot = sanitizeSlotName(String(input.params.oldSlot || ""));
             const newSlot = sanitizeSlotName(String(input.params.newSlot || ""));
             if (!oldSlot || !newSlot) return { success: false, error: "Invalid slot name" };
@@ -2582,7 +2605,8 @@ async function handleApiRequest(
             return { success: true };
         }
         case "deleteSlot": {
-            const path = String(input.params.path || "");
+            const path = validateGamePath(String(input.params.path || ""));
+            if (!path) return { success: false, error: "Invalid path" };
             const slot = sanitizeSlotName(String(input.params.slot || ""));
             if (!slot) return { success: false, error: "Invalid slot name" };
             if (slot === "default") return { success: false, error: "Cannot delete the default slot" };

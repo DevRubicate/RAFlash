@@ -632,7 +632,13 @@ class Main {
                     data: data
                 });
             } catch (e:Error) {
-                // Never let the relay break the game's save path.
+                // sendMessage's JSON serializer throws on values it can't
+                // round-trip (e.g. SO data containing functions or cycles).
+                // Surface the failure as a log line so the engine's event
+                // log shows it instead of silently dropping the mirror.
+                try {
+                    Main.logError("saveEvent mirror failed for \"" + name + "\"", e);
+                } catch (e2:Error) { /* logger itself broke; nothing to do */ }
             }
         };
     }

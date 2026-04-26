@@ -22,7 +22,10 @@
                 <button
                     class="realtime-button"
                     @click="toggleRealtime()"
-                    title="When Yes (action games), recording inserts `pause <ms>` between clicks to preserve real-world timing. When No (turn-based games), recording inserts `wait <path>` so playback waits for buttons to become visible."
+                    :disabled="recording"
+                    :title="recording
+                        ? 'Realtime mode is fixed for the duration of a recording. Stop the recording to change it.'
+                        : 'When Yes (action games), recording inserts `pause <ms>` between clicks to preserve real-world timing. When No (turn-based games), recording inserts `wait <path>` so playback waits for buttons to become visible.'"
                 >
                     Realtime: {{ realtimeMode ? 'Yes' : 'No' }}
                 </button>
