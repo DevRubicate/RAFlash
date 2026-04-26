@@ -15,6 +15,13 @@ const SWP_NOSIZE = 0x0001;
 const SWP_NOMOVE = 0x0002;
 const SM_CXSCREEN = 0;
 const SM_CYSCREEN = 1;
+// Virtual-screen metrics span every monitor in the user's setup. Used by
+// position-restore logic so a window remembered on a secondary monitor
+// isn't rejected as "off-screen" relative to the primary alone.
+const SM_XVIRTUALSCREEN = 76;
+const SM_YVIRTUALSCREEN = 77;
+const SM_CXVIRTUALSCREEN = 78;
+const SM_CYVIRTUALSCREEN = 79;
 const SW_HIDE = 0;
 const SW_SHOW = 5;
 const WM_SETICON = 0x0080;
@@ -199,6 +206,27 @@ export class WindowManager {
         return {
             width: user32.symbols.GetSystemMetrics(SM_CXSCREEN),
             height: user32.symbols.GetSystemMetrics(SM_CYSCREEN),
+        };
+    }
+
+    /**
+     * Bounding rect of the virtual screen — the union of every connected
+     * monitor. On a single-monitor setup this matches getScreenSize() at
+     * origin (0,0). On multi-monitor setups it can extend negative (a
+     * monitor to the left of/above primary) and well past the primary's
+     * width/height. Use this when validating a remembered window position
+     * so a window the user dragged to a secondary monitor isn't snapped
+     * back to primary on next launch.
+     */
+    static getVirtualScreenRect(): { x: number; y: number; width: number; height: number } {
+        if (!user32) {
+            return { x: 0, y: 0, width: 1920, height: 1080 };
+        }
+        return {
+            x: user32.symbols.GetSystemMetrics(SM_XVIRTUALSCREEN),
+            y: user32.symbols.GetSystemMetrics(SM_YVIRTUALSCREEN),
+            width: user32.symbols.GetSystemMetrics(SM_CXVIRTUALSCREEN),
+            height: user32.symbols.GetSystemMetrics(SM_CYVIRTUALSCREEN),
         };
     }
 

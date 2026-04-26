@@ -469,28 +469,51 @@ async function loadSettings(): Promise<void> {
     }
 }
 
-async function saveSettings(newSettings: Settings): Promise<void> {
-    settings = { ...defaultSettings, ...newSettings };
-    await Deno.mkdir("RACache", { recursive: true });
-    await Deno.writeTextFile("RACache/settings.json", JSON.stringify(settings, null, 2));
+// Serializes every writer of RACache/settings.json. Without this,
+// saveSettings() and saveWindowPosition() can interleave: position-update
+// mutates `settings.windowPositions`, then saveSettings reassigns the
+// `settings` reference, then position-update's writeTextFile fires and
+// stringifies the (now-replaced) settings — losing the position update.
+// Each enqueued task awaits the previous one before reading/writing.
+let settingsWriteChain: Promise<void> = Promise.resolve();
+function enqueueSettingsWrite(mutate: () => void): Promise<void> {
+    const next = settingsWriteChain.then(async () => {
+        mutate();
+        await Deno.mkdir("RACache", { recursive: true });
+        await Deno.writeTextFile("RACache/settings.json", JSON.stringify(settings, null, 2));
+    });
+    // Swallow rejections in the chain itself so one failure doesn't
+    // poison every subsequent write; the returned promise still
+    // surfaces the error to its specific caller.
+    settingsWriteChain = next.catch(() => {});
+    return next;
 }
 
-// Look up a saved geometry for a window URL, validating that it still lands
-// on a usable area of the primary screen. If the user unplugged a monitor
-// or shrank their resolution, fall back to the caller's default placement.
+async function saveSettings(newSettings: Settings): Promise<void> {
+    await enqueueSettingsWrite(() => {
+        settings = { ...defaultSettings, ...newSettings };
+    });
+}
+
+// Look up a saved geometry for a window URL, validating that it still
+// lands on a usable area of the user's virtual screen — the union of all
+// connected monitors. Falls back to the caller's default placement when
+// the saved position is mostly off-screen (e.g. user unplugged the
+// monitor it was on, or downsized resolution). The 100px horizontal /
+// 50px vertical margins ensure at least the title bar stays grabbable.
 function getSavedWindowPosition(url: string): WindowGeometry | null {
     const saved = settings.windowPositions[url];
     if (!saved) return null;
-    const screen = WindowManager.getScreenSize();
-    if (saved.x + saved.width < 100 || saved.x > screen.width - 100) return null;
-    if (saved.y < 0 || saved.y > screen.height - 50) return null;
+    const v = WindowManager.getVirtualScreenRect();
+    if (saved.x + saved.width < v.x + 100 || saved.x > v.x + v.width - 100) return null;
+    if (saved.y + saved.height < v.y + 50 || saved.y > v.y + v.height - 50) return null;
     return saved;
 }
 
 async function saveWindowPosition(url: string, geom: WindowGeometry): Promise<void> {
-    settings.windowPositions = { ...settings.windowPositions, [url]: geom };
-    await Deno.mkdir("RACache", { recursive: true });
-    await Deno.writeTextFile("RACache/settings.json", JSON.stringify(settings, null, 2));
+    await enqueueSettingsWrite(() => {
+        settings.windowPositions = { ...settings.windowPositions, [url]: geom };
+    });
 }
 
 // Wrapper around HTMLWindow.create that wires in saved-position lookup and
@@ -1748,7 +1771,9 @@ async function readGameSwf(): Promise<Uint8Array> {
  */
 function getSafeCurrentSlot(): string {
     const raw = AppData.data?.gameConfig?.currentSlot ?? "default";
-    const cleaned = String(raw).replace(/[^\w\-.]/g, "_");
+    // Reuse sanitizeSlotName so a corrupt RACache entry (e.g., currentSlot="..")
+    // can't slip through and turn save mirroring into path traversal.
+    const cleaned = sanitizeSlotName(String(raw));
     return cleaned.length > 0 ? cleaned : "default";
 }
 
@@ -1787,10 +1812,22 @@ async function resolveGameHashFromPath(path: string): Promise<string | null> {
     }
 }
 
-/** Sanitize a slot name to filesystem- and URL-safe characters. */
+/**
+ * Sanitize a slot name to filesystem- and URL-safe characters. Rejects
+ * pure-dot names (".", "..", "..." etc.) — those would normalize to a
+ * parent-directory reference under `path.join`, so a slot named ".."
+ * combined with deleteSlot's `Deno.remove(..., {recursive: true})` would
+ * wipe the entire `saves/<hash>/` tree. Returns "" for any input that
+ * collapses to a forbidden name; callers MUST treat that as a hard error.
+ */
 function sanitizeSlotName(raw: string): string {
     const cleaned = raw.replace(/[^\w\-.]/g, "_").trim();
-    return cleaned.length > 0 ? cleaned : "";
+    if (cleaned.length === 0) return "";
+    // Reject names consisting only of dots — these act as path traversal
+    // when joined onto a directory: join("a/b", "..") === "a", and
+    // join("a/b", ".") === "a/b" (i.e. the slot collapses to its parent).
+    if (/^\.+$/.test(cleaned)) return "";
+    return cleaned;
 }
 
 type GameConfigFile = { gameConfig?: { currentSlot?: string } & Record<string, unknown> } & Record<string, unknown>;
@@ -3237,13 +3274,17 @@ async function handleApiRequest(
             // Normal resetGame leaves asset.state alone (TRIGGERED persists
             // as the user's unlock record). Tests need a clean slate, so
             // reactivate every asset and broadcast so the UI matches.
-            // Goes through WAITING (not ACTIVE) so the firmware observes
-            // one non-triggering frame before the achievement is eligible
-            // — same guard as a fresh load.
+            // Always re-arm the WAITING guard — including for assets that
+            // are already ACTIVE — so the firmware observes one
+            // non-triggering frame against the post-reset game state
+            // before the achievement is eligible. Without this, an ACTIVE
+            // asset whose trigger condition is satisfied by the game's
+            // initial state would fire on the first eval frame after
+            // reset, defeating the guard.
             const stateEdits: Array<[string, unknown]> = [];
             for (let i = 0; i < AppData.data.assets.length; i++) {
                 const asset = AppData.data.assets[i];
-                if (asset.state !== "WAITING" && asset.state !== "ACTIVE") {
+                if (asset.state !== "WAITING" && asset.state !== "INACTIVE") {
                     asset.state = "WAITING";
                     stateEdits.push([`assets/${i}/state`, "WAITING"]);
                 }
@@ -3642,11 +3683,13 @@ async function handleApiRequest(
 
             if (!continueMode) {
                 // Match playRatest: reset every asset (via WAITING) so triggers
-                // during the recording produce state-transition diffs we can tap.
+                // during the recording produce state-transition diffs we can
+                // tap. Re-arms ACTIVE → WAITING too, so the insta-trigger
+                // guard runs against the post-reset game state.
                 const stateEdits: Array<[string, unknown]> = [];
                 for (let i = 0; i < AppData.data.assets.length; i++) {
                     const asset = AppData.data.assets[i];
-                    if (asset.state !== "WAITING" && asset.state !== "ACTIVE") {
+                    if (asset.state !== "WAITING" && asset.state !== "INACTIVE") {
                         asset.state = "WAITING";
                         stateEdits.push([`assets/${i}/state`, "WAITING"]);
                     }
@@ -4508,7 +4551,11 @@ function handleFirmwareData(data: string): void {
                 // /__rafslot/<slot> localPath suffix, so the two stay in sync.
                 if (AppData.gameHash) {
                     const rawName = String(parsed.data?.name ?? "unnamed");
-                    const safeName = rawName.replace(/[^\w\-.]/g, "_");
+                    // Sanitize the same way as slot names — and reject pure-dot
+                    // results so a SO named ".." can't end up as a file named
+                    // `..json`. Falls back to "unnamed" on collapse.
+                    let safeName = rawName.replace(/[^\w\-.]/g, "_");
+                    if (safeName.length === 0 || /^\.+$/.test(safeName)) safeName = "unnamed";
                     const safeSlot = getSafeCurrentSlot();
                     const dir = join("saves", AppData.gameHash, "slots", safeSlot);
                     const filePath = join(dir, `${safeName}.json`);
@@ -4864,10 +4911,15 @@ async function main(): Promise<void> {
     // Headless runs don't contend for the single-instance slot — a developer
     // may reasonably want to run one headless against a test while another
     // RAFlash is open. Port allocation finds free ports regardless.
+    //
+    // Probe the user-chosen base port (if --port was supplied) rather than
+    // the literal HTTP_PORT default — otherwise two `--port 19000` runs
+    // both pass the check, then race on bind, leaving one to die opaquely.
     if (!isPostUpdateLaunch && !headlessMode) {
+        const probePort = portOverride ?? HTTP_PORT;
         let existingInstance = false;
         try {
-            const probe = await fetch(`http://127.0.0.1:${HTTP_PORT}/instance-check`, {
+            const probe = await fetch(`http://127.0.0.1:${probePort}/instance-check`, {
                 signal: AbortSignal.timeout(200),
             });
             if (probe.ok) {
