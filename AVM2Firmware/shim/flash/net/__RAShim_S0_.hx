@@ -10,15 +10,61 @@ package flash.net;
  * Each instance wraps a real `flash.net.SharedObject` so the game's save
  * still persists to disk exactly as before. We additionally invoke a
  * static `_relay` callback on every flush so RAEngine can mirror the
- * data into RACache/SaveFiles. The firmware installs the relay after
- * the game's SWF loads.
+ * data into saves/<gameHash>/slots/<slot>/<name>.json. The firmware
+ * installs the relay (and sets the active slot) after the game's SWF
+ * loads.
  */
 class __RAShim_S0_ {
     public static var _relay:Dynamic = null;
     public static function setRelay(f:Dynamic):Void { _relay = f; }
 
+    /**
+     * Active save slot. Lazy-resolved from the GAME's loader URL on first
+     * access — RAEngine bakes `?rafslot=<slot>` into the URL Flash uses
+     * to load the game, so the shim sees the correct slot synchronously
+     * before any native getLocal call. The firmware's setSlot() is also
+     * available as a fallback (e.g. for tests or environments where the
+     * URL parsing fails). Defaults to "default" if neither path resolves.
+     */
+    public static var _slot:String = "default";
+    public static var _slotResolved:Bool = false;
+    public static function setSlot(s:String):Void {
+        if (s == null || s == "") s = "default";
+        _slot = s;
+        _slotResolved = true;
+    }
+    private static function resolveSlotFromUrl():Void {
+        _slotResolved = true;
+        try {
+            var url:String = flash.Lib.current.loaderInfo.url;
+            if (url == null) return;
+            var idx:Int = url.indexOf("rafslot=");
+            if (idx < 0) return;
+            var s:String = url.substr(idx + 8);
+            var amp:Int = s.indexOf("&");
+            if (amp >= 0) s = s.substr(0, amp);
+            if (s.length > 0) _slot = s;
+        } catch (e:Dynamic) { /* fall through with default */ }
+    }
+
+    /**
+     * Suffix the save name (NOT the localPath) with the active slot. Flash
+     * Player validates that localPath is a prefix of the SWF's URL path —
+     * appending /__rafslot/<slot> there triggers Error #2134. The name
+     * argument has no such constraint, so the slot lives there instead.
+     * Each slot gets its own .sol file: `<name>__rafslot__<slot>.sol`.
+     * The "default" slot keeps the unsuffixed name so a single-slot game
+     * stays compatible with its existing .sol on disk.
+     */
+    private static function slottedName(name:String):String {
+        if (!_slotResolved) resolveSlotFromUrl();
+        return (_slot == null || _slot == "" || _slot == "default")
+            ? name
+            : name + "__rafslot__" + _slot;
+    }
+
     public static function getLocal(name:String, ?localPath:String, ?secure:Bool):__RAShim_S0_ {
-        var native:flash.net.SharedObject = flash.net.SharedObject.getLocal(name, localPath, secure == null ? false : secure);
+        var native:flash.net.SharedObject = flash.net.SharedObject.getLocal(slottedName(name), localPath, secure == null ? false : secure);
         return new __RAShim_S0_(native, name, localPath);
     }
 

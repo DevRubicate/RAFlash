@@ -1643,6 +1643,23 @@ async function readGameSwf(): Promise<Uint8Array> {
     return Deno.readFile(selectedGamePath);
 }
 
+/**
+ * Filesystem- and URL-safe view of AppData.data.gameConfig.currentSlot.
+ * Restricted to [A-Za-z0-9_.-] so the same string can be used as a path
+ * segment AND as a query-string value the firmware parses without URL
+ * decoding (see AVM1 Main.as / AVM2 Main.hx port-param parsers).
+ */
+function getSafeCurrentSlot(): string {
+    const raw = AppData.data?.gameConfig?.currentSlot ?? "default";
+    const cleaned = String(raw).replace(/[^\w\-.]/g, "_");
+    return cleaned.length > 0 ? cleaned : "default";
+}
+
+/** Append `key=val` to a URL's query string, choosing `?` or `&` as needed. */
+function appendQuery(url: string, kv: string): string {
+    return url + (url.indexOf("?") >= 0 ? "&" : "?") + kv;
+}
+
 // Shim DoABC tags lazy-loaded from firmware/AVM2Shim.swf. Used by the AVM2
 // SharedObject rewriter to splice the shim class into game SWFs.
 let cachedShimAbcTags: Uint8Array[] | null = null;
@@ -2187,11 +2204,12 @@ function startHttpServerInner() {
                         try { fwDomain = new URL(originUrl).host; }
                         catch { /* use default domain */ }
                     }
+                    const slotParam = `&slot=${getSafeCurrentSlot()}`;
                     if (avmConfig.mode === "AVM2") {
-                        const fwUrl = `http://${fwDomain}/avm2-firmware.swf?mode=child&port=${FLASH_PORT}`;
+                        const fwUrl = `http://${fwDomain}/avm2-firmware.swf?mode=child&port=${FLASH_PORT}${slotParam}`;
                         file = injectAVM2FirmwareLoader(file, fwUrl) as Uint8Array<ArrayBuffer>;
                     } else {
-                        const fwUrl = `http://${fwDomain}/avm1-firmware.swf?port=${FLASH_PORT}`;
+                        const fwUrl = `http://${fwDomain}/avm1-firmware.swf?port=${FLASH_PORT}${slotParam}`;
                         file = injectFirmwareLoader(file, fwUrl) as Uint8Array<ArrayBuffer>;
                     }
                 }
@@ -3744,11 +3762,12 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
                 if (rsOriginUrl) {
                     try { rsDomain = new URL(rsOriginUrl).host; } catch { /* malformed URL, use default */ }
                 }
+                const rsSlotParam = `&slot=${getSafeCurrentSlot()}`;
                 if (avmConfig.mode === "AVM2") {
-                    const rsFirmwareUrl = `http://${rsDomain}/avm2-firmware.swf?mode=child&port=${FLASH_PORT}`;
+                    const rsFirmwareUrl = `http://${rsDomain}/avm2-firmware.swf?mode=child&port=${FLASH_PORT}${rsSlotParam}`;
                     swfData = injectAVM2FirmwareLoader(swfData, rsFirmwareUrl);
                 } else {
-                    const rsFirmwareUrl = `http://${rsDomain}/avm1-firmware.swf?port=${FLASH_PORT}`;
+                    const rsFirmwareUrl = `http://${rsDomain}/avm1-firmware.swf?port=${FLASH_PORT}${rsSlotParam}`;
                     swfData = injectFirmwareLoader(swfData, rsFirmwareUrl);
                 }
             }
@@ -4220,16 +4239,20 @@ function handleFirmwareData(data: string): void {
                 }
             } else if (parsed.type === "saveEvent") {
                 // Game called SharedObject.flush(). Mirror the data into
-                // RACache/SaveFiles/<gameHash>/<name>.json so RAFlash owns a
+                // saves/<gameHash>/slots/<slot>/<name>.json so RAFlash owns a
                 // copy alongside the original .sol that Flash Player wrote.
+                // The native .sol is itself slot-namespaced via the shim's
+                // /__rafslot/<slot> localPath suffix, so the two stay in sync.
                 if (AppData.gameHash) {
                     const rawName = String(parsed.data?.name ?? "unnamed");
                     const safeName = rawName.replace(/[^\w\-.]/g, "_");
-                    const dir = join("RACache", "SaveFiles", AppData.gameHash);
+                    const safeSlot = getSafeCurrentSlot();
+                    const dir = join("saves", AppData.gameHash, "slots", safeSlot);
                     const filePath = join(dir, `${safeName}.json`);
                     const payload = {
                         name: rawName,
                         localPath: parsed.data?.localPath ?? null,
+                        slot: safeSlot,
                         savedAt: new Date().toISOString(),
                         data: parsed.data?.data ?? null,
                     };
@@ -4313,18 +4336,26 @@ function launchFlashPlayer(): Deno.ChildProcess {
         // before loading the next SWF into _level0. In child mode that's
         // game.swf; in parent mode that's the firmware wrapper.
         const gc = AppData.data.gameConfig;
+        const slot = getSafeCurrentSlot();
+        const slotParam = `&slot=${slot}`;
+        // Bake the slot into the GAME url too (as ?rafslot=) so the AVM2
+        // shim can resolve it synchronously from loaderInfo.url before the
+        // firmware ever runs — closes the race where the game saves on
+        // frame 1 with the shim's "default" slot still in effect.
+        const gameUrlWithSlot = appendQuery(resolved.url, `rafslot=${slot}`);
         const nextUrl = (mode === "child")
-            ? resolved.url
-            : `http://${resolved.domain}${avmConfig.firmwareUrl}?port=${FLASH_PORT}`;
+            ? gameUrlWithSlot
+            : `http://${resolved.domain}${avmConfig.firmwareUrl}?port=${FLASH_PORT}${slotParam}`;
         // Build query string manually — Flash Player's FlashVar parser
         // doesn't URL-decode values, so we must not encode them.
         const qScaleMode = gc.scaleMode || "neutral";
         const qAlign = gc.align ?? "neutral";
         launchUrl = `http://${resolved.domain}/avm1-bootstrap.swf?gameUrl=${nextUrl}&scaleMode=${qScaleMode}&align=${qAlign}`;
     } else if (mode === "child" || mode === "none") {
-        launchUrl = resolved.url;
+        launchUrl = appendQuery(resolved.url, `rafslot=${getSafeCurrentSlot()}`);
     } else {
-        launchUrl = `http://${resolved.domain}${avmConfig.firmwareUrl}?port=${FLASH_PORT}`;
+        const slotParam = `&slot=${getSafeCurrentSlot()}`;
+        launchUrl = `http://${resolved.domain}${avmConfig.firmwareUrl}?port=${FLASH_PORT}${slotParam}`;
     }
 
     // Headless on Windows: spawn via PowerShell with -WindowStyle Hidden

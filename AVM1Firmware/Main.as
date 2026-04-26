@@ -42,6 +42,12 @@ class Main {
     private static var fixTextFieldBindings:Boolean = true;
     private static var fixSoundAttach:Boolean = true;
 
+    // Active save slot, parsed from the firmware URL's ?slot= query param.
+    // patchSharedObject() wrappers prefix the localPath they pass to the
+    // native SharedObject.getLocal/getRemote with /__rafslot/<currentSlot>
+    // so each slot writes a separate .sol on disk.
+    private static var currentSlot:String = "default";
+
     // Profiling
     private static var profilingData:Object = {};
     private static var lastProfilingReport:Number = 0;
@@ -288,6 +294,16 @@ class Main {
                 if (ampIdx >= 0) portStr = portStr.substring(0, ampIdx);
                 var parsed:Number = parseInt(portStr);
                 if (!isNaN(parsed) && parsed > 0) PORT = parsed;
+            }
+            // Extract slot from ?slot=XXX. Used to namespace the SharedObject
+            // wrappers' native localPath so each save slot gets its own .sol
+            // storage under #SharedObjects/.
+            var slotIdx:Number = fwUrl.indexOf("slot=");
+            if (slotIdx >= 0) {
+                var slotStr:String = fwUrl.substring(slotIdx + 5);
+                var slotAmp:Number = slotStr.indexOf("&");
+                if (slotAmp >= 0) slotStr = slotStr.substring(0, slotAmp);
+                if (slotStr.length > 0) currentSlot = slotStr;
             }
         }
 
@@ -622,7 +638,12 @@ class Main {
         var _origGetLocal:Function = _global.SharedObject.getLocal;
         var _origGetRemote:Function = _global.SharedObject.getRemote;
         _global.SharedObject.getLocal = function(name:String, localPath:String, secure:Boolean):Object {
-            var so:Object = _origGetLocal.call(_global.SharedObject, name, localPath, secure);
+            var slottedName:String = Main.slottedSoName(name);
+            var so:Object = _origGetLocal.call(_global.SharedObject, slottedName, localPath, secure);
+            // Pass the ORIGINAL name (pre-slot) into the wrapper so the
+            // saveEvent message preserves the game's intent — the slot is
+            // already encoded in the JSON mirror's directory layout on the
+            // RAEngine side.
             Main.wrapSharedObjectFlush(so, name, localPath);
             return so;
         };
@@ -632,6 +653,21 @@ class Main {
             Main.wrapSharedObjectFlush(so, arguments[0], null);
             return so;
         };
+    }
+
+    /**
+     * Suffix the SharedObject name (NOT the localPath) with the active slot.
+     * Flash Player validates that localPath is a prefix of the SWF's URL
+     * path — anything else triggers Error #2134. The name has no such
+     * constraint, so each slot becomes a distinct .sol file:
+     * `<name>__rafslot__<slot>.sol`. The "default" slot keeps the unsuffixed
+     * name so a single-slot game stays compatible with its existing .sol.
+     */
+    private static function slottedSoName(name:String):String {
+        if (currentSlot == undefined || currentSlot == null || currentSlot == "" || currentSlot == "default") {
+            return name;
+        }
+        return name + "__rafslot__" + currentSlot;
     }
 
     /**

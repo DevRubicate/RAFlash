@@ -84,6 +84,7 @@ export interface GameConfig {
     scaleMode: string;  // "neutral", "showAll", "noBorder", "exactFit", "noScale"
     align: string;      // "neutral", "", "T", "B", "L", "R", "TL", "TR", "BL", "BR"
     networkRules: NetworkRule[];
+    currentSlot: string; // Active save slot — controls saves/<hash>/slots/<slot>/ and the namespaced native .sol path. Default "default".
     [key: string]: unknown;
 }
 

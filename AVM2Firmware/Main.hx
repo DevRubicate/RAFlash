@@ -37,6 +37,12 @@ class Main extends MovieClip {
     private var connected:Bool = false;
     private var messageBuffer:String = "";
 
+    // Active save slot, parsed from the firmware URL's ?slot= query param.
+    // Used at installSharedObjectShimRelay() time to set __RAShim_S0_._slot
+    // before the game's first SharedObject access ideally — small race
+    // window if the game saves before this firmware finishes booting.
+    private var currentSlot:String = "default";
+
     // Game state
     private var gameContainer:MovieClip;
     private var gameRoot:flash.display.DisplayObject;
@@ -107,6 +113,16 @@ class Main extends MovieClip {
                     if (ampIdx >= 0) portStr = portStr.substr(0, ampIdx);
                     var parsed:Null<Int> = Std.parseInt(portStr);
                     if (parsed != null && parsed > 0) PORT = parsed;
+                }
+                // Extract slot from ?slot=XXX (or &slot=XXX). Used to namespace
+                // the SharedObject shim's native localPath so each save slot
+                // gets its own .sol storage.
+                var slotIdx:Int = url.indexOf("slot=");
+                if (slotIdx >= 0) {
+                    var slotStr:String = url.substr(slotIdx + 5);
+                    var slotAmp:Int = slotStr.indexOf("&");
+                    if (slotAmp >= 0) slotStr = slotStr.substr(0, slotAmp);
+                    if (slotStr.length > 0) currentSlot = slotStr;
                 }
             }
         } catch (e:Dynamic) {
@@ -774,6 +790,7 @@ class Main extends MovieClip {
             }
             if (d == null || !d.hasDefinition("flash.net.__RAShim_S0_")) return;
             var shimCls:Dynamic = d.getDefinition("flash.net.__RAShim_S0_");
+            shimCls.setSlot(currentSlot);
             var relaySelf = this;
             shimCls.setRelay(function(name:String, localPath:String, data:Dynamic):Void {
                 relaySelf.sendMessage("saveEvent", { name: name, localPath: localPath, data: data });

@@ -6,7 +6,7 @@
  * game's SWF. The shim wraps a real native SharedObject (so the game's
  * save still persists exactly as before) and additionally invokes a
  * static relay callback on every flush — RAEngine installs the callback
- * after the game loads, then mirrors the data into RACache/SaveFiles.
+ * after the game loads, then mirrors the data into saves/<hash>/slots/<slot>/.
  *
  * Two operations on each game SWF:
  *

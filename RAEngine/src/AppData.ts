@@ -6,7 +6,7 @@ export class AppData {
     static data: AppDataStructure = {
         assets: [],
         codeNotes: [],
-        gameConfig: { title: '', badgeImage: '', originUrl: '', hashOverride: '', scaleMode: 'neutral', align: 'neutral', networkRules: [] },
+        gameConfig: { title: '', badgeImage: '', originUrl: '', hashOverride: '', scaleMode: 'neutral', align: 'neutral', networkRules: [], currentSlot: 'default' },
     };
 
     // Game-specific state file path
@@ -54,7 +54,7 @@ export class AppData {
         } catch (error) {
             if (error instanceof Deno.errors.NotFound) {
                 // New game, start fresh
-                this.data = { assets: [], codeNotes: [], gameConfig: { title: '', badgeImage: '', originUrl: '', hashOverride: '', scaleMode: 'neutral', align: 'neutral', networkRules: [] } };
+                this.data = { assets: [], codeNotes: [], gameConfig: { title: '', badgeImage: '', originUrl: '', hashOverride: '', scaleMode: 'neutral', align: 'neutral', networkRules: [], currentSlot: 'default' } };
                 return;
             }
             throw error;
@@ -100,6 +100,7 @@ export class AppData {
         if (gc.align == null) gc.align = 'neutral';
         if (gc.hashOverride == null) gc.hashOverride = '';
         if (gc.networkRules == null) gc.networkRules = [];
+        if (gc.currentSlot == null || gc.currentSlot === '') gc.currentSlot = 'default';
     }
 
     /**
@@ -356,6 +357,7 @@ export class AppData {
         properties: {
             title: { type: 'string' },
             badgeImage: { type: 'string' },
+            currentSlot: { type: 'string' },
         }
     };
 
