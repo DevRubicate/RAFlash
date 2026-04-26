@@ -1094,10 +1094,23 @@ function scanSwfResources(swfBytes: Uint8Array): {
  * uncompressed FWS. The new tag is inserted immediately before the first
  * ShowFrame tag, and the FileLength header is updated.
  */
-function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8Array {
+/**
+ * Splice the SharedObject monkey-patch DoAction into an AVM1 game SWF.
+ *
+ * The shim DoAction goes in before the FIRST DoAction/DoInitAction/ShowFrame
+ * in the tag stream so it executes before any of the game's own frame-1
+ * code or class-init actions can touch _global.SharedObject. Used in BOTH
+ * child mode and parent mode — neither firmware mode patches SharedObject
+ * at runtime anymore; both just register the relay callback and let the
+ * shim do the wrapping.
+ *
+ * If the input is compressed (CWS) it is decompressed and re-emitted as FWS.
+ * On any error or unsupported signature, returns the input unchanged.
+ */
+function injectAvm1Shim(swfBytes: Uint8Array): Uint8Array {
     try {
     if (swfBytes.length < 9) {
-        console.warn("injectFirmwareLoader: swf too short for header, returning unmodified");
+        console.warn("injectAvm1Shim: swf too short for header, returning unmodified");
         return swfBytes;
     }
     const sig = String.fromCharCode(swfBytes[0], swfBytes[1], swfBytes[2]);
@@ -1111,31 +1124,20 @@ function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8A
     } else if (sig === "FWS") {
         data = new Uint8Array(swfBytes);
     } else {
-        console.warn(`injectFirmwareLoader: unsupported signature ${sig}, returning unmodified`);
+        console.warn(`injectAvm1Shim: unsupported signature ${sig}, returning unmodified`);
         return swfBytes;
     }
 
-    // Skip RECT (variable width) + frameRate (2) + frameCount (2) to reach the tag stream
     const rectNBits = (data[8] >> 3) & 0x1F;
     const rectBytes = Math.ceil((5 + rectNBits * 4) / 8);
     const tagsOffset = 8 + rectBytes + 4;
     if (tagsOffset >= data.length) {
-        console.warn("injectFirmwareLoader: tag stream offset past end of file, returning unmodified");
+        console.warn("injectAvm1Shim: tag stream offset past end of file, returning unmodified");
         return swfBytes;
     }
 
-    // Walk the tag stream to find two insertion points:
-    //   - shimOffset: position of the first DoAction (12), DoInitAction (59),
-    //     or ShowFrame (1) — wherever the earliest action-bearing tag sits.
-    //     We splice the SharedObject monkey-patch DoAction here so it runs
-    //     BEFORE any of the game's frame-1 actions or class-init actions.
-    //   - insertOffset: position of the first ShowFrame, where the firmware
-    //     loader DoAction goes (existing behavior — runs after the game's
-    //     own frame-1 setup so the firmware sees a populated _root).
-    // Bounds-check every read so a truncated or malformed SWF can't cause an
-    // out-of-bounds read or an infinite loop on a bogus tagLength.
+    // Walk to the first DoAction/DoInitAction/ShowFrame.
     let offset = tagsOffset;
-    let insertOffset = -1;
     let shimOffset = -1;
     while (offset + 2 <= data.length) {
         const tcl = data[offset] | (data[offset + 1] << 8);
@@ -1144,30 +1146,112 @@ function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8A
         let headerSize = 2;
         if (tagLength === 0x3F) {
             if (offset + 6 > data.length) {
-                console.warn("injectFirmwareLoader: truncated long-form tag header, returning unmodified");
+                console.warn("injectAvm1Shim: truncated long-form tag header, returning unmodified");
                 return swfBytes;
             }
             tagLength = data[offset + 2] | (data[offset + 3] << 8) |
                        (data[offset + 4] << 16) | (data[offset + 5] << 24);
             headerSize = 6;
         }
-        if (shimOffset === -1 && (tagType === 1 || tagType === 12 || tagType === 59)) {
+        if (tagType === 1 || tagType === 12 || tagType === 59) {
             shimOffset = offset;
+            break;
+        }
+        if (tagType === 0) break;
+        const nextOffset = offset + headerSize + tagLength;
+        if (nextOffset <= offset || nextOffset > data.length) {
+            console.warn("injectAvm1Shim: tag would walk past end of file, returning unmodified");
+            return swfBytes;
+        }
+        offset = nextOffset;
+    }
+    if (shimOffset === -1) {
+        console.warn("injectAvm1Shim: no action-bearing tag found, returning unmodified");
+        return swfBytes;
+    }
+
+    const shimTag = wrapAvm1ShimInDoAction(buildSharedObjectShimAction());
+    const result = new Uint8Array(data.length + shimTag.length);
+    result.set(data.subarray(0, shimOffset), 0);
+    result.set(shimTag, shimOffset);
+    result.set(data.subarray(shimOffset), shimOffset + shimTag.length);
+
+    const newLen = result.length;
+    result[4] = newLen & 0xFF;
+    result[5] = (newLen >> 8) & 0xFF;
+    result[6] = (newLen >> 16) & 0xFF;
+    result[7] = (newLen >> 24) & 0xFF;
+
+    return result;
+    } catch (err) {
+        console.warn(`injectAvm1Shim: ${err}, returning unmodified`);
+        return swfBytes;
+    }
+}
+
+function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8Array {
+    // First splice the SharedObject shim (handles decompression). The output
+    // is FWS bytes, so the firmware-loader splice below skips the CWS branch.
+    const shimmed = injectAvm1Shim(swfBytes);
+    try {
+    if (shimmed.length < 9) {
+        console.warn("injectFirmwareLoader: swf too short for header, returning unmodified");
+        return shimmed;
+    }
+    const sig = String.fromCharCode(shimmed[0], shimmed[1], shimmed[2]);
+    let data: Uint8Array;
+    if (sig === "CWS") {
+        const decompressed = pako.inflate(shimmed.slice(8));
+        data = new Uint8Array(8 + decompressed.length);
+        data.set(shimmed.slice(0, 8));
+        data.set(decompressed, 8);
+        data[0] = 0x46;
+    } else if (sig === "FWS") {
+        data = new Uint8Array(shimmed);
+    } else {
+        console.warn(`injectFirmwareLoader: unsupported signature ${sig}, returning unmodified`);
+        return shimmed;
+    }
+
+    // Skip RECT (variable width) + frameRate (2) + frameCount (2) to reach the tag stream
+    const rectNBits = (data[8] >> 3) & 0x1F;
+    const rectBytes = Math.ceil((5 + rectNBits * 4) / 8);
+    const tagsOffset = 8 + rectBytes + 4;
+    if (tagsOffset >= data.length) {
+        console.warn("injectFirmwareLoader: tag stream offset past end of file, returning unmodified");
+        return shimmed;
+    }
+
+    // Find the first ShowFrame — that's where the firmware loader DoAction goes.
+    let offset = tagsOffset;
+    let insertOffset = -1;
+    while (offset + 2 <= data.length) {
+        const tcl = data[offset] | (data[offset + 1] << 8);
+        const tagType = tcl >> 6;
+        let tagLength = tcl & 0x3F;
+        let headerSize = 2;
+        if (tagLength === 0x3F) {
+            if (offset + 6 > data.length) {
+                console.warn("injectFirmwareLoader: truncated long-form tag header, returning unmodified");
+                return shimmed;
+            }
+            tagLength = data[offset + 2] | (data[offset + 3] << 8) |
+                       (data[offset + 4] << 16) | (data[offset + 5] << 24);
+            headerSize = 6;
         }
         if (tagType === 1) { insertOffset = offset; break; }
         if (tagType === 0) break;
         const nextOffset = offset + headerSize + tagLength;
         if (nextOffset <= offset || nextOffset > data.length) {
             console.warn("injectFirmwareLoader: tag would walk past end of file, returning unmodified");
-            return swfBytes;
+            return shimmed;
         }
         offset = nextOffset;
     }
     if (insertOffset === -1) {
         console.warn("injectFirmwareLoader: no ShowFrame tag found, returning unmodified");
-        return swfBytes;
+        return shimmed;
     }
-    if (shimOffset === -1) shimOffset = insertOffset;
 
     // ----- Build the action stream -----
     //
@@ -1325,28 +1409,11 @@ function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8A
         inserted.set(tagContent, 6);
     }
 
-    // Build the SharedObject shim DoAction tag, to be spliced at shimOffset
-    // (before any game DoAction/DoInitAction). This patches
-    // _global.SharedObject.getLocal/getRemote with slot-suffixing wrappers
-    // before the game's frame-1 actions get a chance to call them.
-    const shimTag = wrapAvm1ShimInDoAction(buildSharedObjectShimAction());
-
-    // Splice both tags in. shimOffset <= insertOffset by construction (the
-    // walk visits tags in order and stops at the first ShowFrame). When
-    // they're equal — i.e. the SWF has no DoAction/DoInitAction in frame 1
-    // before its first ShowFrame — we still want the shim FIRST in stream
-    // order so it executes first.
-    const totalInsert = shimTag.length + inserted.length;
-    const result = new Uint8Array(data.length + totalInsert);
-    result.set(data.subarray(0, shimOffset), 0);
-    let writePos = shimOffset;
-    result.set(shimTag, writePos);
-    writePos += shimTag.length;
-    result.set(data.subarray(shimOffset, insertOffset), writePos);
-    writePos += insertOffset - shimOffset;
-    result.set(inserted, writePos);
-    writePos += inserted.length;
-    result.set(data.subarray(insertOffset), writePos);
+    // Splice the firmware loader DoAction in just before the first ShowFrame.
+    const result = new Uint8Array(data.length + inserted.length);
+    result.set(data.subarray(0, insertOffset), 0);
+    result.set(inserted, insertOffset);
+    result.set(data.subarray(insertOffset), insertOffset + inserted.length);
 
     // Update FileLength header (bytes 4..7, UI32 LE)
     const newLen = result.length;
@@ -1357,12 +1424,12 @@ function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8A
 
     return result;
     } catch (err) {
-        // Final safety net: if anything in the parser/builder throws on a
-        // malformed SWF, log and return the original bytes so the game still
-        // launches (without injection — equivalent to "none" mode for this
-        // session). Better a degraded experience than a 500'd game request.
+        // Final safety net for the firmware-loader splice. The SO shim splice
+        // already succeeded (or failed safely), so return `shimmed` rather
+        // than the raw input — we'd rather keep a working save path than
+        // both lose the shim AND the firmware loader on a parse glitch.
         console.warn(`injectFirmwareLoader: ${err}, returning unmodified`);
-        return swfBytes;
+        return shimmed;
     }
 }
 
@@ -2305,29 +2372,36 @@ function startHttpServerInner() {
                 let file: Uint8Array<ArrayBuffer> = isGameSwf
                     ? await readGameSwf() as Uint8Array<ArrayBuffer>
                     : await Deno.readFile(filePath);
-                if (isGameSwf && resolveFirmwareMode() === "child") {
-                    // Build the firmware URL using the same domain the game is
-                    // served from (sitelock-spoofed origin if applicable) so the
-                    // firmware ends up in the same security sandbox as the game
-                    // and can enumerate its tree without cross-domain blocks.
-                    const originUrl = AppData.data.gameConfig.originUrl;
-                    let fwDomain = RAFLASH_DOMAIN;
-                    if (originUrl) {
-                        try { fwDomain = new URL(originUrl).host; }
-                        catch { /* use default domain */ }
-                    }
-                    const slotParam = `&slot=${getSafeCurrentSlot()}`;
-                    if (avmConfig.mode === "AVM2") {
-                        const fwUrl = `http://${fwDomain}/avm2-firmware.swf?mode=child&port=${FLASH_PORT}${slotParam}`;
-                        file = injectAVM2FirmwareLoader(file, fwUrl) as Uint8Array<ArrayBuffer>;
-                    } else {
-                        const fwUrl = `http://${fwDomain}/avm1-firmware.swf?port=${FLASH_PORT}${slotParam}`;
-                        file = injectFirmwareLoader(file, fwUrl) as Uint8Array<ArrayBuffer>;
-                    }
-                }
                 if (isGameSwf) {
-                    // Splice in the SharedObject shim (AVM2 only — AVM1 uses
-                    // _global.SharedObject monkey-patching from the firmware).
+                    const fwMode = resolveFirmwareMode();
+                    if (fwMode === "child") {
+                        // Build the firmware URL using the same domain the game is
+                        // served from (sitelock-spoofed origin if applicable) so the
+                        // firmware ends up in the same security sandbox as the game
+                        // and can enumerate its tree without cross-domain blocks.
+                        const originUrl = AppData.data.gameConfig.originUrl;
+                        let fwDomain = RAFLASH_DOMAIN;
+                        if (originUrl) {
+                            try { fwDomain = new URL(originUrl).host; }
+                            catch { /* use default domain */ }
+                        }
+                        const slotParam = `&slot=${getSafeCurrentSlot()}`;
+                        if (avmConfig.mode === "AVM2") {
+                            const fwUrl = `http://${fwDomain}/avm2-firmware.swf?mode=child&port=${FLASH_PORT}${slotParam}`;
+                            file = injectAVM2FirmwareLoader(file, fwUrl) as Uint8Array<ArrayBuffer>;
+                        } else {
+                            const fwUrl = `http://${fwDomain}/avm1-firmware.swf?port=${FLASH_PORT}${slotParam}`;
+                            file = injectFirmwareLoader(file, fwUrl) as Uint8Array<ArrayBuffer>;
+                        }
+                    } else if (avmConfig.mode === "AVM1" && fwMode === "parent") {
+                        // Parent mode: the firmware loads the game itself, so we
+                        // don't inject a firmware loader, but we DO inject the
+                        // SharedObject shim — it does the slot-suffixing and
+                        // flush-relay wrapping that the firmware used to do at
+                        // runtime, so both modes go through the same code path.
+                        file = injectAvm1Shim(file) as Uint8Array<ArrayBuffer>;
+                    }
+                    // AVM2 SO interception (always, regardless of firmware mode).
                     file = await maybeRewriteAvm2GameSwf(file) as Uint8Array<ArrayBuffer>;
                 }
                 const extension = isGameSwf ? "swf" : (filePath.split(".").pop() || "");
@@ -2839,8 +2913,11 @@ async function handleApiRequest(
             };
         }
         case "initializeData": {
-            // Send current app data to firmware
-            const gameUrl = AppData.data.gameConfig.originUrl ? resolveGameUrl().url : null;
+            // Send current app data to firmware. Bake the active slot into
+            // the gameUrl so the AVM1 shim — which lazy-resolves the slot
+            // from _root._url — sees it once the firmware loads the game
+            // (parent mode). Child mode doesn't use this URL.
+            const gameUrl = appendQuery(resolveGameUrl().url, `rafslot=${getSafeCurrentSlot()}`);
             const response = await sendToFirmware("setup", { data: AppData.data, gameUrl, settings });
             return response;
         }
@@ -3931,7 +4008,8 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
         if (httpBuffer.startsWith("GET /game.swf") || httpBuffer.startsWith(`GET ${expectedGamePath} `) || httpBuffer.startsWith(`GET ${expectedGamePath}?`)) {
             const rawSwfData = await readGameSwf();
             let swfData: Uint8Array = rawSwfData;
-            if (resolveFirmwareMode() === "child") {
+            const rsFwMode = resolveFirmwareMode();
+            if (rsFwMode === "child") {
                 // Inject firmware loader bytecode into the game SWF.
                 // Both injectors handle CWS→FWS decompression internally.
                 // The game SWF is NOT run through patchFirmwareSwf — that function
@@ -3951,8 +4029,12 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
                     const rsFirmwareUrl = `http://${rsDomain}/avm1-firmware.swf?port=${FLASH_PORT}${rsSlotParam}`;
                     swfData = injectFirmwareLoader(swfData, rsFirmwareUrl);
                 }
+            } else if (avmConfig.mode === "AVM1" && rsFwMode === "parent") {
+                // Parent mode: just splice the SharedObject shim — the firmware
+                // does the loading itself.
+                swfData = injectAvm1Shim(swfData);
             }
-            // Splice in the SharedObject shim (AVM2 only).
+            // AVM2 SO interception (always, regardless of firmware mode).
             swfData = await maybeRewriteAvm2GameSwf(swfData);
             const response = [
                 "HTTP/1.1 200 OK",
@@ -4156,7 +4238,7 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
         if (resolver) resolver();
         emitLog("engine", "info", "Firmware connected");
         // Send app data to firmware (don't await - would deadlock before read loop starts)
-        const gameUrl = AppData.data.gameConfig.originUrl ? resolveGameUrl().url : null;
+        const gameUrl = appendQuery(resolveGameUrl().url, `rafslot=${getSafeCurrentSlot()}`);
         sendToFirmware("setup", { data: AppData.data, gameUrl, settings }, 0).catch(() => {});
 
         // Process initial data

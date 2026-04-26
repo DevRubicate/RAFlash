@@ -42,12 +42,6 @@ class Main {
     private static var fixTextFieldBindings:Boolean = true;
     private static var fixSoundAttach:Boolean = true;
 
-    // Active save slot, parsed from the firmware URL's ?slot= query param.
-    // patchSharedObject() wrappers prefix the localPath they pass to the
-    // native SharedObject.getLocal/getRemote with /__rafslot/<currentSlot>
-    // so each slot writes a separate .sol on disk.
-    private static var currentSlot:String = "default";
-
     // Profiling
     private static var profilingData:Object = {};
     private static var lastProfilingReport:Number = 0;
@@ -294,16 +288,6 @@ class Main {
                 if (ampIdx >= 0) portStr = portStr.substring(0, ampIdx);
                 var parsed:Number = parseInt(portStr);
                 if (!isNaN(parsed) && parsed > 0) PORT = parsed;
-            }
-            // Extract slot from ?slot=XXX. Used to namespace the SharedObject
-            // wrappers' native localPath so each save slot gets its own .sol
-            // storage under #SharedObjects/.
-            var slotIdx:Number = fwUrl.indexOf("slot=");
-            if (slotIdx >= 0) {
-                var slotStr:String = fwUrl.substring(slotIdx + 5);
-                var slotAmp:Number = slotStr.indexOf("&");
-                if (slotAmp >= 0) slotStr = slotStr.substring(0, slotAmp);
-                if (slotStr.length > 0) currentSlot = slotStr;
             }
         }
 
@@ -607,13 +591,16 @@ class Main {
             };
         }
 
-        // Hook SharedObject so the game's saves get mirrored into RAEngine.
-        // Must run before loadMovie — once the game's frame actions execute,
-        // its references to SharedObject.getLocal are already bound to whatever
-        // was on _global at the time of the call.
-        patchSharedObject();
+        // Register the relay for the SharedObject bytecode shim that RAEngine
+        // splices into every game SWF (see RAEngine/src/swf/AVM1SharedObjectShim.ts).
+        // The shim handles slot suffixing and flush wrapping itself; we just
+        // forward the saveEvent to the engine.
+        installSharedObjectRelay();
 
-        // Load game from server (or spoofed domain URL for sitelock bypass)
+        // Load game from server (or spoofed domain URL for sitelock bypass).
+        // The URL has `?rafslot=<slot>` baked in by RAEngine so the shim,
+        // running inside the game with _lockroot=true, can read the slot
+        // from _root._url synchronously on its first SharedObject call.
         var gameUrl:String = (url != undefined && url != null) ? url : "http://raflash.local/game.swf";
         gameLoader.loadMovie(gameUrl);
 
@@ -627,10 +614,10 @@ class Main {
 
     /**
      * Install the relay callback used by the SharedObject bytecode shim
-     * (see RAEngine/src/swf/AVM1SharedObjectShim.ts). In child mode the
-     * shim wraps every flush() on every SharedObject instance to call into
-     * `_global.__RAShim_relay` if set; this method registers our relay so
-     * each save also fires a saveEvent message to RAEngine.
+     * (see RAEngine/src/swf/AVM1SharedObjectShim.ts). The shim is spliced
+     * into every game SWF and wraps each flush() to call _global.__RAShim_relay
+     * when set. Both child and parent firmware modes use this relay — neither
+     * patches SharedObject at runtime anymore.
      *
      * The shim handles slot suffixing on its own — lazy-resolved from
      * _root._url ?rafslot=<slot> baked in at game-launch time — so we
@@ -647,85 +634,6 @@ class Main {
             } catch (e:Error) {
                 // Never let the relay break the game's save path.
             }
-        };
-    }
-
-    /**
-     * Replace the static getLocal/getRemote on _global.SharedObject with
-     * wrappers that hand back real native SharedObjects (so the game's saves
-     * keep persisting normally) and additionally per-instance shim each one's
-     * flush() method to relay the saved data to RAEngine.
-     *
-     * AS2 prototypes and class objects are write-protected for built-ins;
-     * ASSetPropFlags clears the protection so the assignment takes effect.
-     * The same trick is used above for Sound.prototype.attachSound.
-     *
-     * Used only in PARENT mode. Child mode uses the bytecode shim plus
-     * installSharedObjectRelay() — see the init() child-mode branch.
-     */
-    private static function patchSharedObject():Void {
-        if (_global.SharedObject == undefined) return;
-        _global.ASSetPropFlags(_global.SharedObject, "getLocal", 0, 7);
-        _global.ASSetPropFlags(_global.SharedObject, "getRemote", 0, 7);
-        var _origGetLocal:Function = _global.SharedObject.getLocal;
-        var _origGetRemote:Function = _global.SharedObject.getRemote;
-        _global.SharedObject.getLocal = function(name:String, localPath:String, secure:Boolean):Object {
-            var slottedName:String = Main.slottedSoName(name);
-            var so:Object = _origGetLocal.call(_global.SharedObject, slottedName, localPath, secure);
-            // Pass the ORIGINAL name (pre-slot) into the wrapper so the
-            // saveEvent message preserves the game's intent — the slot is
-            // already encoded in the JSON mirror's directory layout on the
-            // RAEngine side.
-            Main.wrapSharedObjectFlush(so, name, localPath);
-            return so;
-        };
-        _global.SharedObject.getRemote = function():Object {
-            // getRemote arity varies across Flash versions; forward arguments verbatim.
-            var so:Object = _origGetRemote.apply(_global.SharedObject, arguments);
-            Main.wrapSharedObjectFlush(so, arguments[0], null);
-            return so;
-        };
-    }
-
-    /**
-     * Suffix the SharedObject name (NOT the localPath) with the active slot.
-     * Flash Player validates that localPath is a prefix of the SWF's URL
-     * path — anything else triggers Error #2134. The name has no such
-     * constraint, so each slot becomes a distinct .sol file:
-     * `<name>__rafslot__<slot>.sol`. The "default" slot keeps the unsuffixed
-     * name so a single-slot game stays compatible with its existing .sol.
-     */
-    private static function slottedSoName(name:String):String {
-        if (currentSlot == undefined || currentSlot == null || currentSlot == "" || currentSlot == "default") {
-            return name;
-        }
-        return name + "__rafslot__" + currentSlot;
-    }
-
-    /**
-     * Per-instance flush wrapper. Flash returns the same SharedObject for
-     * repeated getLocal calls with the same name+path, so we guard against
-     * double-wrapping with an instance flag.
-     */
-    private static function wrapSharedObjectFlush(so:Object, name:String, localPath:String):Void {
-        if (so == null || so == undefined) return;
-        if (so.__raflash_so_wrapped) return;
-        so.__raflash_so_wrapped = true;
-        so.__raflash_so_name = name;
-        so.__raflash_so_localPath = localPath;
-        var _origFlush:Function = so.flush;
-        so.flush = function(minDiskSpace:Number) {
-            var status = _origFlush.apply(this, arguments);
-            try {
-                Main.sendMessage("saveEvent", {
-                    name: this.__raflash_so_name,
-                    localPath: this.__raflash_so_localPath,
-                    data: this.data
-                });
-            } catch (e:Error) {
-                // Never let the relay break the game's own save path.
-            }
-            return status;
         };
     }
 
