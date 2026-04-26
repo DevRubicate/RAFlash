@@ -34,6 +34,7 @@ import { compileAchievementsSWF, type NativeAchResult } from "./swf/NativeEvalCo
 import { compileAchievementsSWF as compileAchievementsSWF_AVM2, type NativeAchResult as NativeAchResultAVM2 } from "./swf/NativeEvalCompilerAVM2.ts";
 import { buildInjectorTags, findMaxCharacterId } from "./swf/AVM2Injector.ts";
 import { extractAbcTags, rewriteGameForSharedObjectShim } from "./swf/SharedObjectRewriter.ts";
+import { buildSharedObjectShimAction, wrapInDoActionTag as wrapAvm1ShimInDoAction } from "./swf/AVM1SharedObjectShim.ts";
 
 const VERSION = "0.1.3";
 
@@ -1123,11 +1124,19 @@ function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8A
         return swfBytes;
     }
 
-    // Find the offset of the first ShowFrame tag (tag type 1).
+    // Walk the tag stream to find two insertion points:
+    //   - shimOffset: position of the first DoAction (12), DoInitAction (59),
+    //     or ShowFrame (1) — wherever the earliest action-bearing tag sits.
+    //     We splice the SharedObject monkey-patch DoAction here so it runs
+    //     BEFORE any of the game's frame-1 actions or class-init actions.
+    //   - insertOffset: position of the first ShowFrame, where the firmware
+    //     loader DoAction goes (existing behavior — runs after the game's
+    //     own frame-1 setup so the firmware sees a populated _root).
     // Bounds-check every read so a truncated or malformed SWF can't cause an
     // out-of-bounds read or an infinite loop on a bogus tagLength.
     let offset = tagsOffset;
     let insertOffset = -1;
+    let shimOffset = -1;
     while (offset + 2 <= data.length) {
         const tcl = data[offset] | (data[offset + 1] << 8);
         const tagType = tcl >> 6;
@@ -1142,6 +1151,9 @@ function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8A
                        (data[offset + 4] << 16) | (data[offset + 5] << 24);
             headerSize = 6;
         }
+        if (shimOffset === -1 && (tagType === 1 || tagType === 12 || tagType === 59)) {
+            shimOffset = offset;
+        }
         if (tagType === 1) { insertOffset = offset; break; }
         if (tagType === 0) break;
         const nextOffset = offset + headerSize + tagLength;
@@ -1155,6 +1167,7 @@ function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8A
         console.warn("injectFirmwareLoader: no ShowFrame tag found, returning unmodified");
         return swfBytes;
     }
+    if (shimOffset === -1) shimOffset = insertOffset;
 
     // ----- Build the action stream -----
     //
@@ -1312,11 +1325,28 @@ function injectFirmwareLoader(swfBytes: Uint8Array, firmwareUrl: string): Uint8A
         inserted.set(tagContent, 6);
     }
 
-    // Splice into the SWF
-    const result = new Uint8Array(data.length + inserted.length);
-    result.set(data.subarray(0, insertOffset), 0);
-    result.set(inserted, insertOffset);
-    result.set(data.subarray(insertOffset), insertOffset + inserted.length);
+    // Build the SharedObject shim DoAction tag, to be spliced at shimOffset
+    // (before any game DoAction/DoInitAction). This patches
+    // _global.SharedObject.getLocal/getRemote with slot-suffixing wrappers
+    // before the game's frame-1 actions get a chance to call them.
+    const shimTag = wrapAvm1ShimInDoAction(buildSharedObjectShimAction());
+
+    // Splice both tags in. shimOffset <= insertOffset by construction (the
+    // walk visits tags in order and stops at the first ShowFrame). When
+    // they're equal — i.e. the SWF has no DoAction/DoInitAction in frame 1
+    // before its first ShowFrame — we still want the shim FIRST in stream
+    // order so it executes first.
+    const totalInsert = shimTag.length + inserted.length;
+    const result = new Uint8Array(data.length + totalInsert);
+    result.set(data.subarray(0, shimOffset), 0);
+    let writePos = shimOffset;
+    result.set(shimTag, writePos);
+    writePos += shimTag.length;
+    result.set(data.subarray(shimOffset, insertOffset), writePos);
+    writePos += insertOffset - shimOffset;
+    result.set(inserted, writePos);
+    writePos += inserted.length;
+    result.set(data.subarray(insertOffset), writePos);
 
     // Update FileLength header (bytes 4..7, UI32 LE)
     const newLen = result.length;

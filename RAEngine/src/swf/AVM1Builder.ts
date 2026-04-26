@@ -85,6 +85,7 @@ export class AVM1Builder {
     getMember(): this { this.buf.push(0x4E); return this; }
     setMember(): this { this.buf.push(0x4F); return this; }
     callMethod(): this { this.buf.push(0x52); return this; }
+    callFunction(): this { this.buf.push(0x3D); return this; }
     returnOp(): this { this.buf.push(0x3E); return this; }
     initArray(): this { this.buf.push(0x42); return this; }
     add2(): this { this.buf.push(0x47); return this; }

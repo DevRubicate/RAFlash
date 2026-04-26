@@ -366,11 +366,15 @@ class Main {
             Toast.setHostClip(_self);
             Measure.setHostClip(_self);
             PrimedBadges.setHostClip(_self);
-            // Hook SharedObject so save activity is mirrored into RAEngine.
-            // In child mode the game has already booted, so any save calls
-            // made during the game's own init have already happened — we
-            // catch every call from now on (incl. periodic auto-saves).
-            patchSharedObject();
+            // SharedObject interception in child mode is handled by the
+            // bytecode shim that RAEngine spliced into the game SWF (see
+            // RAEngine/src/swf/AVM1SharedObjectShim.ts). The shim already
+            // installed slot-suffixing wrappers around _global.SharedObject
+            // BEFORE the game's frame-1 actions ran, closing the race where
+            // the firmware loads asynchronously into a child clip and can't
+            // patch in time. Our job here is just to register the relay
+            // callback the shim's flush wrapper invokes on every save.
+            installSharedObjectRelay();
             connectToServer();
             return;
         }
@@ -622,6 +626,31 @@ class Main {
     }
 
     /**
+     * Install the relay callback used by the SharedObject bytecode shim
+     * (see RAEngine/src/swf/AVM1SharedObjectShim.ts). In child mode the
+     * shim wraps every flush() on every SharedObject instance to call into
+     * `_global.__RAShim_relay` if set; this method registers our relay so
+     * each save also fires a saveEvent message to RAEngine.
+     *
+     * The shim handles slot suffixing on its own — lazy-resolved from
+     * _root._url ?rafslot=<slot> baked in at game-launch time — so we
+     * don't need to participate in slot tracking from this side.
+     */
+    private static function installSharedObjectRelay():Void {
+        _global.__RAShim_relay = function(name:String, localPath:String, data:Object):Void {
+            try {
+                Main.sendMessage("saveEvent", {
+                    name: name,
+                    localPath: localPath,
+                    data: data
+                });
+            } catch (e:Error) {
+                // Never let the relay break the game's save path.
+            }
+        };
+    }
+
+    /**
      * Replace the static getLocal/getRemote on _global.SharedObject with
      * wrappers that hand back real native SharedObjects (so the game's saves
      * keep persisting normally) and additionally per-instance shim each one's
@@ -630,6 +659,9 @@ class Main {
      * AS2 prototypes and class objects are write-protected for built-ins;
      * ASSetPropFlags clears the protection so the assignment takes effect.
      * The same trick is used above for Sound.prototype.attachSound.
+     *
+     * Used only in PARENT mode. Child mode uses the bytecode shim plus
+     * installSharedObjectRelay() — see the init() child-mode branch.
      */
     private static function patchSharedObject():Void {
         if (_global.SharedObject == undefined) return;
