@@ -82,6 +82,18 @@ class Main {
     // MovieClip/Button/TextField counts).
     private static var hitTestElementMode:Boolean = false;
     private static var hitProbe:MovieClip = null;
+    // Button event capture: AS2 Button symbols expose no bbox/hit API, and
+    // instance onPress is silently swallowed when the button has a
+    // BUTTONCONDACTION on(press) action. We instrument every instance
+    // event on every Button in the tree to see which ones survive. At
+    // mouseUp we prefer hitTestClickedButton (set by onRelease — the
+    // definitive click-completion signal) over hitTestHoveredButton
+    // (set by onRollOver — vulnerable to hover-then-click-elsewhere).
+    private static var hitTestClickedButton:Object = null;
+    private static var hitTestHoveredButton:Object = null;
+    private static var hitTestButtonCaptures:Array = null;
+    private static var hitTestClickX:Number = 0;
+    private static var hitTestClickY:Number = 0;
 
 
     // Delta values storage - keyed by requirement ID
@@ -1368,15 +1380,31 @@ class Main {
     private static function setupHitTestListener(elementMode:Boolean):Void {
         if (hitTestMouseListener != null) return;
         hitTestElementMode = elementMode;
+        installButtonCaptures();
         hitTestMouseListener = {};
         hitTestMouseListener.onMouseDown = function():Void {
             try {
                 if (Main.gameRoot == null) return;
-                var x:Number = _level0._xmouse;
-                var y:Number = _level0._ymouse;
-                var target:Object = Main.hitTestElementMode
-                    ? Main.findElementTargetRec(Main.gameRoot, x, y)
-                    : Main.findClickedTargetRec(Main.gameRoot, x, y);
+                Main.hitTestClickX = _level0._xmouse;
+                Main.hitTestClickY = _level0._ymouse;
+            } catch (e:Error) { Main.logError("hitTest onMouseDown", e); }
+        };
+        // Teardown on mouseUp (not mouseDown) so onPress/onRelease/etc. have
+        // a chance to fire through our instance-handler capture. At mouseUp,
+        // prefer the definitive click-completion signal (onRelease captured
+        // a button) over hover state (vulnerable to hover-then-click-away).
+        hitTestMouseListener.onMouseUp = function():Void {
+            try {
+                if (Main.gameRoot == null) { Main.teardownHitTestListener(); return; }
+                var x:Number = Main.hitTestClickX;
+                var y:Number = Main.hitTestClickY;
+                var target:Object = Main.hitTestClickedButton;
+                if (target == null) target = Main.hitTestHoveredButton;
+                if (target == null) {
+                    target = Main.hitTestElementMode
+                        ? Main.findElementTargetRec(Main.gameRoot, x, y)
+                        : Main.findClickedTargetRec(Main.gameRoot, x, y);
+                }
                 var path:String = (target == null) ? null : Main.buildStagePath(target);
                 var msg:Object = { kind: "hitTest", path: path, x: x, y: y };
                 if (target != null) {
@@ -1390,7 +1418,7 @@ class Main {
                 }
                 Main.sendMessage("userInput", msg);
                 Main.teardownHitTestListener();
-            } catch (e:Error) { Main.logError("hitTest onMouseDown", e); }
+            } catch (e:Error) { Main.logError("hitTest onMouseUp", e); }
         };
         Mouse.addListener(hitTestMouseListener);
     }
@@ -1399,6 +1427,155 @@ class Main {
         if (hitTestMouseListener == null) return;
         Mouse.removeListener(hitTestMouseListener);
         hitTestMouseListener = null;
+        uninstallButtonCaptures();
+    }
+
+    /**
+     * Install hover-tracking handlers on every Button reachable from
+     * gameRoot. While armed, onRollOver records which button the cursor
+     * is currently over; onRollOut clears it on leave. At mouseDown, the
+     * currently-hovered button is the clicked button. Prior instance
+     * handlers (if any) are saved and chained so authored behavior still
+     * runs. We deliberately do NOT hook onPress because BUTTONCONDACTION
+     * swallows instance onPress on buttons that have a timeline on(press).
+     */
+    private static function installButtonCaptures():Void {
+        hitTestClickedButton = null;
+        hitTestHoveredButton = null;
+        hitTestButtonCaptures = [];
+        if (gameRoot == null) return;
+        var buttons:Array = [];
+        collectAllButtons(gameRoot, buttons, {}, 0);
+        for (var i:Number = 0; i < buttons.length; i++) {
+            installCaptureOnButton(buttons[i]);
+        }
+    }
+
+    /**
+     * Separate function to give each button's capture closures their own
+     * `prior*` bindings — AS2 shares `var` across a single function scope,
+     * so inlining inside a loop would make every capture reference the
+     * last iteration's priors.
+     *
+     * We hook every mouse event AS2 exposes on Buttons because
+     * BUTTONCONDACTION suppresses the instance handler ONLY for events it
+     * has a timeline action for. A button with `on(release)` in
+     * BUTTONCONDACTION leaves onPress/onRollOver/etc. firing normally, so
+     * broad coverage maximizes the odds at least one event fires for any
+     * given button regardless of how BUTTONCONDACTION was authored.
+     *
+     * Signal hierarchy:
+     *   Layer 1 (definitive click): onPress/onRelease/onDragOver set
+     *     hitTestClickedButton; onReleaseOutside clears it (cancelled).
+     *   Layer 2 (hover state): onRollOver/onDragOver set hitTestHoveredButton;
+     *     onRollOut/onDragOut clear it.
+     */
+    private static function installCaptureOnButton(btn:Object):Void {
+        var priorPress:Object = btn.onPress;
+        var priorRelease:Object = btn.onRelease;
+        var priorReleaseOutside:Object = btn.onReleaseOutside;
+        var priorRollOver:Object = btn.onRollOver;
+        var priorRollOut:Object = btn.onRollOut;
+        var priorDragOver:Object = btn.onDragOver;
+        var priorDragOut:Object = btn.onDragOut;
+        hitTestButtonCaptures.push({
+            button: btn,
+            priorPress: priorPress, priorRelease: priorRelease, priorReleaseOutside: priorReleaseOutside,
+            priorRollOver: priorRollOver, priorRollOut: priorRollOut,
+            priorDragOver: priorDragOver, priorDragOut: priorDragOut
+        });
+        btn.onPress = function():Void {
+            Main.hitTestClickedButton = this;
+            Main.hitTestHoveredButton = this;
+            if (typeof priorPress == "function") priorPress.call(this);
+        };
+        btn.onRelease = function():Void {
+            Main.hitTestClickedButton = this;
+            if (typeof priorRelease == "function") priorRelease.call(this);
+        };
+        btn.onReleaseOutside = function():Void {
+            if (Main.hitTestClickedButton == this) Main.hitTestClickedButton = null;
+            if (typeof priorReleaseOutside == "function") priorReleaseOutside.call(this);
+        };
+        btn.onRollOver = function():Void {
+            Main.hitTestHoveredButton = this;
+            if (typeof priorRollOver == "function") priorRollOver.call(this);
+        };
+        btn.onRollOut = function():Void {
+            if (Main.hitTestHoveredButton == this) Main.hitTestHoveredButton = null;
+            if (typeof priorRollOut == "function") priorRollOut.call(this);
+        };
+        btn.onDragOver = function():Void {
+            Main.hitTestClickedButton = this;
+            Main.hitTestHoveredButton = this;
+            if (typeof priorDragOver == "function") priorDragOver.call(this);
+        };
+        btn.onDragOut = function():Void {
+            if (Main.hitTestHoveredButton == this) Main.hitTestHoveredButton = null;
+            if (typeof priorDragOut == "function") priorDragOut.call(this);
+        };
+    }
+
+    private static function uninstallButtonCaptures():Void {
+        if (hitTestButtonCaptures == null) return;
+        for (var i:Number = 0; i < hitTestButtonCaptures.length; i++) {
+            var rec:Object = hitTestButtonCaptures[i];
+            restoreHandler(rec.button, "onPress", rec.priorPress);
+            restoreHandler(rec.button, "onRelease", rec.priorRelease);
+            restoreHandler(rec.button, "onReleaseOutside", rec.priorReleaseOutside);
+            restoreHandler(rec.button, "onRollOver", rec.priorRollOver);
+            restoreHandler(rec.button, "onRollOut", rec.priorRollOut);
+            restoreHandler(rec.button, "onDragOver", rec.priorDragOver);
+            restoreHandler(rec.button, "onDragOut", rec.priorDragOut);
+        }
+        hitTestButtonCaptures = null;
+        hitTestClickedButton = null;
+        hitTestHoveredButton = null;
+    }
+
+    private static function restoreHandler(obj:Object, name:String, prior:Object):Void {
+        if (prior == undefined) delete obj[name];
+        else obj[name] = prior;
+    }
+
+    /**
+     * Walk the display tree from `parent` collecting every Button reachable.
+     * Uses the same enumeration approach as `collectHitChildren` (for...in
+     * + depth sweep) but unfiltered by position — we need every Button,
+     * since bbox is unreliable and the capture mechanism is what tells us
+     * which one was actually clicked.
+     */
+    private static function collectAllButtons(parent:Object, out:Array, visited:Object, depth:Number):Void {
+        if (parent == null || depth > 20) return;
+        var key:String = String(parent._target);
+        if (visited[key]) return;
+        visited[key] = true;
+        var seen:Object = {};
+        for (var nm:String in parent) {
+            var child:Object = parent[nm];
+            if (seen[nm]) continue;
+            seen[nm] = true;
+            if (child instanceof Button) {
+                out.push(child);
+            } else if (child instanceof MovieClip) {
+                collectAllButtons(child, out, visited, depth + 1);
+            }
+        }
+        if (parent.getInstanceAtDepth != undefined) {
+            for (var d:Number = -16384; d < 0; d++) {
+                var c:Object = parent.getInstanceAtDepth(d);
+                if (c == null) continue;
+                if (String(c._target) == key) continue;
+                var cname:String = String(c._name);
+                if (seen[cname]) continue;
+                seen[cname] = true;
+                if (c instanceof Button) {
+                    out.push(c);
+                } else if (c instanceof MovieClip) {
+                    collectAllButtons(c, out, visited, depth + 1);
+                }
+            }
+        }
     }
 
     /**
@@ -1429,11 +1606,6 @@ class Main {
         var key:String = String(clip._target);
         if (visited[key]) return null;
         visited[key] = true;
-
-        // AABB gate: the clip's bounds already encompass all descendant
-        // bounds, so if the cursor isn't inside, the whole subtree is a
-        // miss and we skip the 16k getInstanceAtDepth sweep entirely.
-        if (!clip.hitTest(x, y, false)) return null;
 
         var children:Array = collectHitChildren(clip, anyElement);
         for (var i:Number = 0; i < children.length; i++) {
@@ -1556,7 +1728,13 @@ class Main {
         if (hitProbe == null || hitProbe._parent == null) {
             hitProbe = _level0.createEmptyMovieClip("__raHitProbe", 1048575);
             if (hitProbe == null) return null;
-            hitProbe._visible = false;
+            // AS2 quirk: `mc.hitTest(target)` object-form silently returns
+            // false when the source clip has `_visible = false`. The probe
+            // must stay visible to participate in hitTest; we hide it by
+            // zeroing _alpha and parking it off-stage when idle.
+            hitProbe._alpha = 0;
+            hitProbe._x = -30000;
+            hitProbe._y = -30000;
             hitProbe.beginFill(0x000000);
             hitProbe.moveTo(0, 0);
             hitProbe.lineTo(1, 0);

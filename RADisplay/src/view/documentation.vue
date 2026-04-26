@@ -433,13 +433,6 @@
 
                 <h2>Header Toggles</h2>
                 <dl>
-                    <dt>Delay</dt>
-                    <dd>
-                        The global pause (in milliseconds) inserted between every step during
-                        playback. Click to edit. A small delay helps the game catch up
-                        between interactions; set to 0 to run as fast as possible.
-                    </dd>
-
                     <dt>Restart</dt>
                     <dd>
                         When <strong>Yes</strong>, playback resets the game to its initial
@@ -456,6 +449,16 @@
                         When <strong>No</strong>, new recordings skip them and playback
                         ignores any that are already present. This toggle is per-session
                         and resets to Yes on every launch.
+                    </dd>
+
+                    <dt>Realtime</dt>
+                    <dd>
+                        Picks how clicks are spaced on playback. When <strong>Yes</strong>
+                        (action games), recording inserts <code>pause &lt;ms&gt;</code> lines
+                        between clicks to preserve real-world timing. When <strong>No</strong>
+                        (turn-based games), recording inserts <code>wait &lt;path&gt;</code>
+                        so playback waits for the next clicked element to become visible
+                        before proceeding &mdash; resilient to load times and animations.
                     </dd>
                 </dl>
 
@@ -784,6 +787,12 @@
                     <li>
                         Confirm the <strong>Achievements</strong> toggle is set to Yes if you
                         want achievement triggers to be captured and verified on playback.
+                    </li>
+                    <li>
+                        Pick a <strong>Realtime</strong> mode. For action games leave it Yes
+                        so click timing is preserved; for turn-based games flip it to No so
+                        playback waits for each clicked element to appear instead of relying
+                        on fixed delays.
                     </li>
                     <li>Click <strong>New Record</strong>. A new entry appears in the file list.</li>
                     <li>
