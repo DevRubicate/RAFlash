@@ -150,12 +150,13 @@
 
     const isAssetActive = computed({
         get() {
-            return selectedAsset.value?.state === 'ACTIVE';
+            const s = selectedAsset.value?.state;
+            return s === 'ACTIVE' || s === 'WAITING';
         },
         set(value) {
             const asset = App.data.assets.find(a => a.id === selectedAssetId.value);
             if (asset) {
-                asset.state = value ? 'ACTIVE' : 'INACTIVE';
+                asset.state = value ? 'WAITING' : 'INACTIVE';
                 App.save();
             }
         }

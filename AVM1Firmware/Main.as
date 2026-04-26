@@ -4072,8 +4072,10 @@ class Main {
         for (var i:Number = 0; i < AppData.data.assets.length; ++i) {
             var achievement:Object = AppData.data.assets[i];
 
-            // Only process ACTIVE assets
-            if (achievement.state != "ACTIVE") {
+            // Process ACTIVE and WAITING assets. WAITING evaluates
+            // identically to ACTIVE except the trigger fire is suppressed,
+            // and a single non-triggering frame promotes WAITING → ACTIVE.
+            if (achievement.state != "ACTIVE" && achievement.state != "WAITING") {
                 continue;
             }
 
@@ -4194,8 +4196,13 @@ class Main {
                     achievement._measuredTarget = naMTgt;
                 }
 
-                // Handle trigger
-                if (achResult == 1) {
+                // Handle trigger. WAITING suppresses the fire and promotes
+                // to ACTIVE on the first non-triggering frame.
+                if (achievement.state == "WAITING") {
+                    if (achResult != 1) {
+                        diffSet(achievement, "state", "ACTIVE", "assets/" + i + "/state");
+                    }
+                } else if (achResult == 1) {
                     var naImageUrl:String = imageBaseUrl + "/asset-image/" + achievement.id;
                     Toast.show("Achievement Unlocked", achievement.name,
                                achievement.description || "", "left", naImageUrl);
@@ -4279,8 +4286,15 @@ class Main {
                 }
 
                 if (simpleEligible) {
-                    // All requirements passed — trigger the achievement
-                    if (simpleAllPass && simpleReqs.length > 0) {
+                    // All requirements passed — trigger the achievement.
+                    // WAITING suppresses the fire and promotes to ACTIVE on
+                    // the first non-triggering frame.
+                    var simpleWouldTrigger:Boolean = simpleAllPass && simpleReqs.length > 0;
+                    if (achievement.state == "WAITING") {
+                        if (!simpleWouldTrigger) {
+                            diffSet(achievement, "state", "ACTIVE", "assets/" + i + "/state");
+                        }
+                    } else if (simpleWouldTrigger) {
                         var imageUrl:String = imageBaseUrl + "/asset-image/" + achievement.id;
                         Toast.show("Achievement Unlocked", achievement.name, achievement.description || "", "left", imageUrl);
                         clearAssetDeltaValues(achievement);
@@ -5339,8 +5353,15 @@ class Main {
                 }
             }
 
-            // Achievement triggered - show toast and handle state
-            if (assetTriggered && hasRequirements) {
+            // Achievement triggered - show toast and handle state.
+            // WAITING suppresses the fire and promotes to ACTIVE on the
+            // first non-triggering frame.
+            var fullWouldTrigger:Boolean = assetTriggered && hasRequirements;
+            if (achievement.state == "WAITING") {
+                if (!fullWouldTrigger) {
+                    diffSet(achievement, "state", "ACTIVE", "assets/" + i + "/state");
+                }
+            } else if (fullWouldTrigger) {
                 var imageUrl:String = imageBaseUrl + "/asset-image/" + achievement.id;
                 Toast.show("Achievement Unlocked", achievement.name, achievement.description || "", "left", imageUrl);
 

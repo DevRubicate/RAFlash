@@ -74,7 +74,10 @@ export class AppData {
             for (const asset of loadedData.assets) {
                 asset._saved = true;
                 asset._modified = false;
-                asset.state = "ACTIVE"; // state is ephemeral, always starts as ACTIVE
+                // state is ephemeral, always starts as WAITING so an asset
+                // whose game state already satisfies the trigger doesn't fire
+                // on the very first eval frame after load.
+                asset.state = "WAITING";
                 asset._originalSnapshot = JSON.parse(JSON.stringify(this.stripAssetData(asset, this.assetSchema)));
             }
         }
@@ -305,7 +308,7 @@ export class AppData {
             name: { type: 'string' },
             description: { type: 'string' },
             formula: { type: 'string' },  // Rich Presence formula
-            // state is ephemeral (not persisted), always starts as ACTIVE
+            // state is ephemeral (not persisted), always starts as WAITING
             category: { type: 'string' },
             modified: { type: 'boolean' },
             published: { type: 'boolean' },

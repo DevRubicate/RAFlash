@@ -33,7 +33,7 @@ export interface Group {
     [key: string]: unknown;
 }
 
-export type AssetState = 'ACTIVE' | 'INACTIVE' | 'TRIGGERED';
+export type AssetState = 'WAITING' | 'ACTIVE' | 'INACTIVE' | 'TRIGGERED';
 
 export interface Asset {
     id: number;

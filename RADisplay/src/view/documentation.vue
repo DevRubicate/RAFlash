@@ -972,7 +972,8 @@ stage.menu.gotoMySite.triggered // 1 on frames the function fired, else 0</pre>
                 <table>
                     <thead><tr><th>State</th><th>Description</th></tr></thead>
                     <tbody>
-                        <tr><td><code>ACTIVE</code></td><td>Not yet unlocked. Conditions are being evaluated every frame.</td></tr>
+                        <tr><td><code>WAITING</code></td><td>Armed but not yet eligible. Conditions are evaluated every frame, but a triggering frame is suppressed. Promotes to ACTIVE on the first frame that does <em>not</em> trigger. Every freshly-activated achievement enters WAITING first &mdash; this prevents an instant unlock when the game is already in a state that would satisfy the trigger.</td></tr>
+                        <tr><td><code>ACTIVE</code></td><td>Not yet unlocked. Conditions are being evaluated every frame and a triggering frame fires the unlock.</td></tr>
                         <tr><td><code>INACTIVE</code></td><td>Disabled. Conditions are not evaluated. Toggle via the Active checkbox in the Asset Editor or the Activate/Deactivate button in the Asset List.</td></tr>
                         <tr><td><code>TRIGGERED</code></td><td>Unlocked. Persisted in the user profile. Conditions stop being evaluated.</td></tr>
                     </tbody>
@@ -980,7 +981,8 @@ stage.menu.gotoMySite.triggered // 1 on frames the function fired, else 0</pre>
                 <p>
                     When a game is loaded with a user profile, any achievements that were previously
                     unlocked for that user are set to TRIGGERED immediately. The state field is ephemeral &mdash;
-                    it resets to ACTIVE on each load unless the profile says it was unlocked.
+                    on each load it resets to WAITING (so the one-frame guard runs) unless the profile says
+                    it was unlocked.
                 </p>
             </section>
 

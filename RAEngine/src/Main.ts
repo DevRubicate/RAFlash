@@ -2878,12 +2878,15 @@ async function handleApiRequest(
             // Normal resetGame leaves asset.state alone (TRIGGERED persists
             // as the user's unlock record). Tests need a clean slate, so
             // reactivate every asset and broadcast so the UI matches.
+            // Goes through WAITING (not ACTIVE) so the firmware observes
+            // one non-triggering frame before the achievement is eligible
+            // — same guard as a fresh load.
             const stateEdits: Array<[string, unknown]> = [];
             for (let i = 0; i < AppData.data.assets.length; i++) {
                 const asset = AppData.data.assets[i];
-                if (asset.state !== "ACTIVE") {
-                    asset.state = "ACTIVE";
-                    stateEdits.push([`assets/${i}/state`, "ACTIVE"]);
+                if (asset.state !== "WAITING" && asset.state !== "ACTIVE") {
+                    asset.state = "WAITING";
+                    stateEdits.push([`assets/${i}/state`, "WAITING"]);
                 }
             }
             if (stateEdits.length > 0) {
@@ -3279,14 +3282,14 @@ async function handleApiRequest(
             recordingRealtimeEnabled = realtimeEnabledParam !== false;
 
             if (!continueMode) {
-                // Match playRatest: reset every asset to ACTIVE so triggers
+                // Match playRatest: reset every asset (via WAITING) so triggers
                 // during the recording produce state-transition diffs we can tap.
                 const stateEdits: Array<[string, unknown]> = [];
                 for (let i = 0; i < AppData.data.assets.length; i++) {
                     const asset = AppData.data.assets[i];
-                    if (asset.state !== "ACTIVE") {
-                        asset.state = "ACTIVE";
-                        stateEdits.push([`assets/${i}/state`, "ACTIVE"]);
+                    if (asset.state !== "WAITING" && asset.state !== "ACTIVE") {
+                        asset.state = "WAITING";
+                        stateEdits.push([`assets/${i}/state`, "WAITING"]);
                     }
                 }
                 if (stateEdits.length > 0) {

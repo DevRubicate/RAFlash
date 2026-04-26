@@ -297,7 +297,11 @@ class Achievement {
         while (ai < assetCount) {
             var achievement:Dynamic = assets[ai];
 
-            if (untyped achievement.state != "ACTIVE") { ai++; continue; }
+            // Process ACTIVE and WAITING assets. WAITING evaluates
+            // identically to ACTIVE except the trigger fire is suppressed,
+            // and a single non-triggering frame promotes WAITING → ACTIVE.
+            var assetState:Dynamic = untyped achievement.state;
+            if (assetState != "ACTIVE" && assetState != "WAITING") { ai++; continue; }
 
             // Rich Presence
             if (untyped achievement.type == "RICH_PRESENCE") {
@@ -390,8 +394,14 @@ class Achievement {
                             untyped achievement._measuredTarget = mTgtF;
                         }
 
-                        // Achievement triggered
-                        if (achResult == 1) {
+                        // Achievement triggered. WAITING suppresses the fire
+                        // and promotes to ACTIVE on the first non-triggering
+                        // frame.
+                        if (assetState == "WAITING") {
+                            if (achResult != 1) {
+                                diffSet(achievement, "state", "ACTIVE", "assets/" + ai + "/state");
+                            }
+                        } else if (achResult == 1) {
                             var trigImg:String = imageBaseUrl + "/asset-image/" + Std.string(untyped achievement.id);
                             Toast.show("Achievement Unlocked", Std.string(untyped achievement.name), Std.string(untyped achievement.description), "left", trigImg);
                             clearAssetDeltaValues(achievement);
@@ -1221,8 +1231,14 @@ class Achievement {
                 }
             }
 
-            // Achievement triggered
-            if (assetTriggered && hasRequirements) {
+            // Achievement triggered. WAITING suppresses the fire and
+            // promotes to ACTIVE on the first non-triggering frame.
+            var fullWouldTrigger:Bool = assetTriggered && hasRequirements;
+            if (assetState == "WAITING") {
+                if (!fullWouldTrigger) {
+                    diffSet(achievement, "state", "ACTIVE", "assets/" + ai + "/state");
+                }
+            } else if (fullWouldTrigger) {
                 var imageUrl:String = imageBaseUrl + "/asset-image/" + Std.string(untyped achievement.id);
                 Toast.show("Achievement Unlocked", Std.string(untyped achievement.name), Std.string(untyped achievement.description), "left", imageUrl);
 

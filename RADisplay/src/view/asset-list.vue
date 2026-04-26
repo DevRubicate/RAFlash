@@ -217,7 +217,10 @@
 
         switch (filterState.value) {
             case 'Active':
-                filtered = filtered.filter(asset => asset.state === 'ACTIVE');
+                // WAITING is a transient sub-state of Active (armed, but
+                // suppressed for one non-triggering frame), so include it
+                // under the Active filter.
+                filtered = filtered.filter(asset => asset.state === 'ACTIVE' || asset.state === 'WAITING');
                 break;
             case 'Inactive':
                 filtered = filtered.filter(asset => asset.state === 'INACTIVE');
@@ -279,38 +282,41 @@
         App.selectedAssetId = asset.id;
     };
 
-    // Activation toggle button label
+    // Activation toggle button label. WAITING counts as Active for the
+    // user-facing "is this armed?" check — it's the one-frame guard before
+    // ACTIVE, not a separately-toggleable state.
+    const isActiveLike = (state) => state === 'ACTIVE' || state === 'WAITING';
     const activationButtonLabel = computed(() => {
         if (selectedAssetIds.value.size === 0) {
             return 'Activate All';
         }
         const selectedAssets = App.data.assets.filter(a => selectedAssetIds.value.has(a.id));
-        const hasInactive = selectedAssets.some(a => a.state !== 'ACTIVE');
+        const hasInactive = selectedAssets.some(a => !isActiveLike(a.state));
         return hasInactive ? 'Activate' : 'Deactivate';
     });
 
-    // Activation toggle handler
+    // Activation toggle handler. Activation always lands in WAITING so the
+    // achievement can't fire on the same frame as the user clicking
+    // Activate; the firmware promotes WAITING → ACTIVE after one
+    // non-triggering frame.
     const toggleActivation = async () => {
         if (selectedAssetIds.value.size === 0) {
-            // Activate All: make all non-ACTIVE assets ACTIVE
             for (const asset of App.data.assets) {
-                if (asset.state !== 'ACTIVE') {
-                    asset.state = 'ACTIVE';
+                if (!isActiveLike(asset.state)) {
+                    asset.state = 'WAITING';
                 }
             }
         } else {
             const selectedAssets = App.data.assets.filter(a => selectedAssetIds.value.has(a.id));
-            const hasInactive = selectedAssets.some(a => a.state !== 'ACTIVE');
+            const hasInactive = selectedAssets.some(a => !isActiveLike(a.state));
 
             if (hasInactive) {
-                // Activate: make non-ACTIVE selected assets ACTIVE
                 for (const asset of selectedAssets) {
-                    if (asset.state !== 'ACTIVE') {
-                        asset.state = 'ACTIVE';
+                    if (!isActiveLike(asset.state)) {
+                        asset.state = 'WAITING';
                     }
                 }
             } else {
-                // Deactivate: make all selected assets INACTIVE
                 for (const asset of selectedAssets) {
                     asset.state = 'INACTIVE';
                 }
@@ -409,7 +415,7 @@
             type: isRichPresence ? 'RICH_PRESENCE' : 'ACHIEVEMENT',
             name: isRichPresence ? 'Rich Presence' : 'New Achievement',
             description: '',
-            state: 'ACTIVE',
+            state: 'WAITING',
             category: 'LOCAL',
             published: false,
             _saved: false,
@@ -441,7 +447,7 @@
         // Assign new IDs and mark as unsaved
         cloned.id = App.getFakeId();
         cloned.name = sourceAsset.name + ' (Copy)';
-        cloned.state = 'ACTIVE';
+        cloned.state = 'WAITING';
         cloned._primed = false;
         cloned.category = 'LOCAL';
         cloned.published = false;

@@ -512,12 +512,17 @@
 
     const isAssetActive = computed({
         get() {
-            return selectedAsset.value?.state === 'ACTIVE';
+            // WAITING is the one-frame guard before ACTIVE — both read as
+            // "active" to the user.
+            const s = selectedAsset.value?.state;
+            return s === 'ACTIVE' || s === 'WAITING';
         },
         set(value) {
             const asset = App.data.assets.find(a => a.id === selectedAssetId.value);
             if (asset) {
-                asset.state = value ? 'ACTIVE' : 'INACTIVE';
+                // Activate via WAITING so the firmware can't fire the
+                // achievement on the same frame the checkbox is toggled.
+                asset.state = value ? 'WAITING' : 'INACTIVE';
                 App.save();
             }
         }
