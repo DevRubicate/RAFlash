@@ -350,6 +350,11 @@ class Main {
             Toast.setHostClip(_self);
             Measure.setHostClip(_self);
             PrimedBadges.setHostClip(_self);
+            // Hook SharedObject so save activity is mirrored into RAEngine.
+            // In child mode the game has already booted, so any save calls
+            // made during the game's own init have already happened — we
+            // catch every call from now on (incl. periodic auto-saves).
+            patchSharedObject();
             connectToServer();
             return;
         }
@@ -582,6 +587,12 @@ class Main {
             };
         }
 
+        // Hook SharedObject so the game's saves get mirrored into RAEngine.
+        // Must run before loadMovie — once the game's frame actions execute,
+        // its references to SharedObject.getLocal are already bound to whatever
+        // was on _global at the time of the call.
+        patchSharedObject();
+
         // Load game from server (or spoofed domain URL for sitelock bypass)
         var gameUrl:String = (url != undefined && url != null) ? url : "http://raflash.local/game.swf";
         gameLoader.loadMovie(gameUrl);
@@ -591,6 +602,62 @@ class Main {
             try {
                 Main.onFrame();
             } catch (e:Error) { Main.logError("onEnterFrame", e); }
+        };
+    }
+
+    /**
+     * Replace the static getLocal/getRemote on _global.SharedObject with
+     * wrappers that hand back real native SharedObjects (so the game's saves
+     * keep persisting normally) and additionally per-instance shim each one's
+     * flush() method to relay the saved data to RAEngine.
+     *
+     * AS2 prototypes and class objects are write-protected for built-ins;
+     * ASSetPropFlags clears the protection so the assignment takes effect.
+     * The same trick is used above for Sound.prototype.attachSound.
+     */
+    private static function patchSharedObject():Void {
+        if (_global.SharedObject == undefined) return;
+        _global.ASSetPropFlags(_global.SharedObject, "getLocal", 0, 7);
+        _global.ASSetPropFlags(_global.SharedObject, "getRemote", 0, 7);
+        var _origGetLocal:Function = _global.SharedObject.getLocal;
+        var _origGetRemote:Function = _global.SharedObject.getRemote;
+        _global.SharedObject.getLocal = function(name:String, localPath:String, secure:Boolean):Object {
+            var so:Object = _origGetLocal.call(_global.SharedObject, name, localPath, secure);
+            Main.wrapSharedObjectFlush(so, name, localPath);
+            return so;
+        };
+        _global.SharedObject.getRemote = function():Object {
+            // getRemote arity varies across Flash versions; forward arguments verbatim.
+            var so:Object = _origGetRemote.apply(_global.SharedObject, arguments);
+            Main.wrapSharedObjectFlush(so, arguments[0], null);
+            return so;
+        };
+    }
+
+    /**
+     * Per-instance flush wrapper. Flash returns the same SharedObject for
+     * repeated getLocal calls with the same name+path, so we guard against
+     * double-wrapping with an instance flag.
+     */
+    private static function wrapSharedObjectFlush(so:Object, name:String, localPath:String):Void {
+        if (so == null || so == undefined) return;
+        if (so.__raflash_so_wrapped) return;
+        so.__raflash_so_wrapped = true;
+        so.__raflash_so_name = name;
+        so.__raflash_so_localPath = localPath;
+        var _origFlush:Function = so.flush;
+        so.flush = function(minDiskSpace:Number) {
+            var status = _origFlush.apply(this, arguments);
+            try {
+                Main.sendMessage("saveEvent", {
+                    name: this.__raflash_so_name,
+                    localPath: this.__raflash_so_localPath,
+                    data: this.data
+                });
+            } catch (e:Error) {
+                // Never let the relay break the game's own save path.
+            }
+            return status;
         };
     }
 

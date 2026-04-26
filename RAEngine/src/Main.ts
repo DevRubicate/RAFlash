@@ -4183,6 +4183,25 @@ function handleFirmwareData(data: string): void {
                     // Persist changes to disk
                     AppData.saveData().catch(e => emitLog("engine", "warn", `Save failed: ${e}`));
                 }
+            } else if (parsed.type === "saveEvent") {
+                // Game called SharedObject.flush(). Mirror the data into
+                // RACache/SaveFiles/<gameHash>/<name>.json so RAFlash owns a
+                // copy alongside the original .sol that Flash Player wrote.
+                if (AppData.gameHash) {
+                    const rawName = String(parsed.data?.name ?? "unnamed");
+                    const safeName = rawName.replace(/[^\w\-.]/g, "_");
+                    const dir = join("RACache", "SaveFiles", AppData.gameHash);
+                    const filePath = join(dir, `${safeName}.json`);
+                    const payload = {
+                        name: rawName,
+                        localPath: parsed.data?.localPath ?? null,
+                        savedAt: new Date().toISOString(),
+                        data: parsed.data?.data ?? null,
+                    };
+                    Deno.mkdir(dir, { recursive: true })
+                        .then(() => Deno.writeTextFile(filePath, JSON.stringify(payload, null, 2)))
+                        .catch((e) => emitLog("engine", "warn", `Save mirror failed for "${rawName}": ${e}`));
+                }
             } else if (parsed.type === "syncState") {
                 // Firmware reconnected - its state is authoritative
                 const firmwareData = parsed.data?.appData;
