@@ -33,6 +33,7 @@ import { startSitelockProxy, stopSitelockProxy, networkRuleZipPath, reconcileNet
 import { compileAchievementsSWF, type NativeAchResult } from "./swf/NativeEvalCompiler.ts";
 import { compileAchievementsSWF as compileAchievementsSWF_AVM2, type NativeAchResult as NativeAchResultAVM2 } from "./swf/NativeEvalCompilerAVM2.ts";
 import { buildInjectorTags, findMaxCharacterId } from "./swf/AVM2Injector.ts";
+import { extractAbcTags, rewriteGameForSharedObjectShim } from "./swf/SharedObjectRewriter.ts";
 
 const VERSION = "0.1.3";
 
@@ -1642,6 +1643,33 @@ async function readGameSwf(): Promise<Uint8Array> {
     return Deno.readFile(selectedGamePath);
 }
 
+// Shim DoABC tags lazy-loaded from firmware/AVM2Shim.swf. Used by the AVM2
+// SharedObject rewriter to splice the shim class into game SWFs.
+let cachedShimAbcTags: Uint8Array[] | null = null;
+async function getShimAbcTags(): Promise<Uint8Array[]> {
+    if (cachedShimAbcTags) return cachedShimAbcTags;
+    const shimSwf = await Deno.readFile("firmware/AVM2Shim.swf");
+    cachedShimAbcTags = extractAbcTags(shimSwf);
+    return cachedShimAbcTags;
+}
+
+/**
+ * For AVM2 games, rewrite the SWF on the fly to retarget SharedObject
+ * references to our shim class. Idempotent (the rewriter detects and
+ * skips already-rewritten SWFs). For AVM1 / unknown / failed reads,
+ * returns the input unchanged.
+ */
+async function maybeRewriteAvm2GameSwf(bytes: Uint8Array): Promise<Uint8Array> {
+    if (avmConfig?.mode !== "AVM2") return bytes;
+    try {
+        const shimTags = await getShimAbcTags();
+        return rewriteGameForSharedObjectShim(bytes, shimTags);
+    } catch (e) {
+        console.warn("AVM2 SharedObject rewrite failed, serving raw SWF:", e);
+        return bytes;
+    }
+}
+
 /**
  * Send a command to the firmware and wait for response.
  * If firmware is temporarily disconnected (e.g. during a child-mode reset),
@@ -2166,6 +2194,11 @@ function startHttpServerInner() {
                         const fwUrl = `http://${fwDomain}/avm1-firmware.swf?port=${FLASH_PORT}`;
                         file = injectFirmwareLoader(file, fwUrl) as Uint8Array<ArrayBuffer>;
                     }
+                }
+                if (isGameSwf) {
+                    // Splice in the SharedObject shim (AVM2 only — AVM1 uses
+                    // _global.SharedObject monkey-patching from the firmware).
+                    file = await maybeRewriteAvm2GameSwf(file) as Uint8Array<ArrayBuffer>;
                 }
                 const extension = isGameSwf ? "swf" : (filePath.split(".").pop() || "");
                 const mimeTypes: Record<string, string> = {
@@ -3719,6 +3752,8 @@ async function handleFlashConnection(conn: Deno.Conn, policyFile: string): Promi
                     swfData = injectFirmwareLoader(swfData, rsFirmwareUrl);
                 }
             }
+            // Splice in the SharedObject shim (AVM2 only).
+            swfData = await maybeRewriteAvm2GameSwf(swfData);
             const response = [
                 "HTTP/1.1 200 OK",
                 "Content-Type: application/x-shockwave-flash",

@@ -384,6 +384,7 @@ class Main extends MovieClip {
                         sendMessage("gameLoaded", {bytes: 0});
                         setupKeyListener();
                         addEventListener(Event.ENTER_FRAME, onEnterFrame);
+                        installSharedObjectShimRelay();
                     } else {
                         loadGame(params.gameUrl);
                     }
@@ -745,6 +746,41 @@ class Main extends MovieClip {
         // Setup F12 key listener and frame loop after game loads
         setupKeyListener();
         addEventListener(Event.ENTER_FRAME, onEnterFrame);
+
+        installSharedObjectShimRelay();
+    }
+
+    /**
+     * Locate the SharedObject shim class spliced into the game's SWF by
+     * RAEngine's rewriter, and install a relay callback so each flush()
+     * surfaces back to RAEngine as a `saveEvent` for mirroring into
+     * RACache/SaveFiles.
+     *
+     * Same logic for parent and child mode — the difference is only how
+     * we reach the game's ApplicationDomain. In parent mode it's the
+     * loader's contentLoaderInfo; in child mode it's gameRoot.loaderInfo
+     * (since the firmware is the child and gameRoot is what we walked up
+     * to via resolveChildModeGameRoot).
+     */
+    private function installSharedObjectShimRelay():Void {
+        try {
+            var d:flash.system.ApplicationDomain = null;
+            if (gameRoot != null) {
+                // Both modes can take this branch — gameRoot.loaderInfo gives us
+                // the game's ApplicationDomain regardless of who loaded whom.
+                d = gameRoot.loaderInfo.applicationDomain;
+            } else if (activeGameLoader != null) {
+                d = activeGameLoader.contentLoaderInfo.applicationDomain;
+            }
+            if (d == null || !d.hasDefinition("flash.net.__RAShim_S0_")) return;
+            var shimCls:Dynamic = d.getDefinition("flash.net.__RAShim_S0_");
+            var relaySelf = this;
+            shimCls.setRelay(function(name:String, localPath:String, data:Dynamic):Void {
+                relaySelf.sendMessage("saveEvent", { name: name, localPath: localPath, data: data });
+            });
+        } catch (e:Dynamic) {
+            // Non-fatal — game still saves natively, just without RAFlash mirroring.
+        }
     }
 
     private function onGameLoadError(e:IOErrorEvent):Void {

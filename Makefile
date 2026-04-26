@@ -7,16 +7,16 @@ DENO=deno
 MTASC_HEADER=800:575:60
 
 # Dummy target to force rebuild
-.PHONY: all check clean run assets test test-avm1 test-engine test-display test-avm2 test-integration test-recorded-test avm1-build avm1-bootstrap-build avm1-wrapper-build avm2-build compile dist release stage FORCE
+.PHONY: all check clean run assets test test-avm1 test-engine test-display test-avm2 test-integration test-recorded-test avm1-build avm1-bootstrap-build avm1-wrapper-build avm2-build avm2-shim-build compile dist release stage FORCE
 
 # Default target - full build including standalone executable
 all: compile
 
 # Quick compile check (no executable)
-check: avm1-build avm1-wrapper-build avm2-build assets
+check: avm1-build avm1-wrapper-build avm2-build avm2-shim-build assets
 
 # Run from .build (simulates distribution environment)
-run: avm1-build avm1-wrapper-build avm2-build assets stage
+run: avm1-build avm1-wrapper-build avm2-build avm2-shim-build assets stage
 	@cd .build && bash -c 'trap "exit 0" INT; $(DENO) run --allow-ffi --allow-net --allow-run --allow-read --allow-write --allow-env ../RAEngine/src/Main.ts 2>&1'
 
 # Build UI assets using npm
@@ -81,12 +81,25 @@ $(AVM2_SWF): FORCE
 	@mkdir -p $(dir $@)
 	@$(HAXE) -cp AVM2Firmware -swf $@ -swf-version 16 -D swf-header=800:575:60:0 -main Main && test -f $@
 
+# === AVM2 SharedObject Shim ===
+# Standalone SWF whose only purpose is carrying the flash.net::__RAShim_S0_
+# class definition. RAEngine's rewriter strips its DoABC tag(s) and injects
+# them into game SWFs alongside the SharedObject→__RAShim_S0_ string rename.
+
+AVM2_SHIM_SWF=.build/firmware/AVM2Shim.swf
+
+avm2-shim-build: $(AVM2_SHIM_SWF)
+
+$(AVM2_SHIM_SWF): FORCE
+	@mkdir -p $(dir $@)
+	@$(HAXE) -cp AVM2Firmware/shim -swf $@ -swf-version 16 -main AVM2ShimEntry && test -f $@
+
 # === Compile to standalone executable ===
 
 DENO_PERMISSIONS=--allow-ffi --allow-net --allow-run --allow-read --allow-write --allow-env
-DENO_INCLUDES=--include=$(AVM1_SWF) --include=$(AVM1_BOOTSTRAP_SWF) --include=$(AVM1_WRAPPER_SWF) --include=$(AVM2_SWF) --include=.build/internals/assets --include=assets/icon.png --include=assets/icon.ico
+DENO_INCLUDES=--include=$(AVM1_SWF) --include=$(AVM1_BOOTSTRAP_SWF) --include=$(AVM1_WRAPPER_SWF) --include=$(AVM2_SWF) --include=$(AVM2_SHIM_SWF) --include=.build/internals/assets --include=assets/icon.png --include=assets/icon.ico
 
-compile: avm1-build avm1-wrapper-build avm2-build assets stage
+compile: avm1-build avm1-wrapper-build avm2-build avm2-shim-build assets stage
 	@rm -f .build/RAFlash .build/RAFlash.exe
 	@$(DENO) compile -q $(DENO_PERMISSIONS) --no-terminal --icon=assets/icon.ico $(DENO_INCLUDES) --output=.build/RAFlash RAEngine/src/Main.ts 2>&1 | cat
 	@test -f .build/RAFlash.exe || test -f .build/RAFlash
