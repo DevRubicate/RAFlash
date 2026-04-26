@@ -15,7 +15,7 @@
  * Usage: deno run --allow-net --allow-run --allow-read --allow-write --allow-env Main.ts
  */
 
-import { HTMLWindow } from "./HTMLWindow.ts";
+import { HTMLWindow, type WindowGeometry } from "./HTMLWindow.ts";
 import { JSONDiff, type Diff } from "./JSONDiff.ts";
 import { Formula } from "./formula/Formula.ts";
 import { AppData } from "./AppData.ts";
@@ -437,6 +437,10 @@ interface Settings {
     // e.g. recording the tail of a sequence and wanting to replay it
     // against the current game state instead of the title screen.
     playbackRestart: boolean;
+    // Last known geometry of each chrome UI window, keyed by HTML filename
+    // (e.g. "asset-editor.html"). Updated when a window closes so the next
+    // open of the same window appears where the user last left it.
+    windowPositions: Record<string, WindowGeometry>;
 }
 const defaultSettings: Settings = {
     firmwareMode: "child",
@@ -449,6 +453,7 @@ const defaultSettings: Settings = {
     interpreterFastPath: true,
     lastUser: "Guest",
     playbackRestart: true,
+    windowPositions: {},
 };
 let settings: Settings = { ...defaultSettings };
 
@@ -466,6 +471,51 @@ async function saveSettings(newSettings: Settings): Promise<void> {
     settings = { ...defaultSettings, ...newSettings };
     await Deno.mkdir("RACache", { recursive: true });
     await Deno.writeTextFile("RACache/settings.json", JSON.stringify(settings, null, 2));
+}
+
+// Look up a saved geometry for a window URL, validating that it still lands
+// on a usable area of the primary screen. If the user unplugged a monitor
+// or shrank their resolution, fall back to the caller's default placement.
+function getSavedWindowPosition(url: string): WindowGeometry | null {
+    const saved = settings.windowPositions[url];
+    if (!saved) return null;
+    const screen = WindowManager.getScreenSize();
+    if (saved.x + saved.width < 100 || saved.x > screen.width - 100) return null;
+    if (saved.y < 0 || saved.y > screen.height - 50) return null;
+    return saved;
+}
+
+async function saveWindowPosition(url: string, geom: WindowGeometry): Promise<void> {
+    settings.windowPositions = { ...settings.windowPositions, [url]: geom };
+    await Deno.mkdir("RACache", { recursive: true });
+    await Deno.writeTextFile("RACache/settings.json", JSON.stringify(settings, null, 2));
+}
+
+// Wrapper around HTMLWindow.create that wires in saved-position lookup and
+// the on-close callback that writes the final position back to settings.
+async function createHTMLWindow(
+    url: string,
+    width: number,
+    height: number,
+    windowId: number,
+    parentWindowId?: number,
+    defaultX?: number,
+    defaultY?: number,
+): Promise<void> {
+    const saved = getSavedWindowPosition(url);
+    const useWidth = saved?.width ?? width;
+    const useHeight = saved?.height ?? height;
+    const startX = saved?.x ?? defaultX;
+    const startY = saved?.y ?? defaultY;
+    await HTMLWindow.create(
+        url, useWidth, useHeight, windowId, HTTP_PORT,
+        parentWindowId, startX, startY,
+        (pos) => {
+            if (pos) {
+                saveWindowPosition(url, pos).catch((e) => console.warn("Failed to save window position:", e));
+            }
+        },
+    );
 }
 
 // AVM mode configuration - set after game SWF is selected and version detected
@@ -1888,7 +1938,7 @@ async function openDevtoolsMenu(): Promise<void> {
 
     devtoolsOpened = true;
     const windowId = Math.floor(Math.random() * 0xFFFFFF);
-    await HTMLWindow.create("menu.html", 300, 600, windowId, HTTP_PORT, undefined, 0, 0);
+    await createHTMLWindow("menu.html", 300, 600, windowId, undefined, 0, 0);
 }
 
 /**
@@ -2596,7 +2646,7 @@ async function handleApiRequest(
             const height = Number(input.params.height) || 600;
             const windowId = Math.floor(Math.random() * 0xFFFFFF);
             const parentWindowId = input.params.parentWindowId as number | undefined;
-            await HTMLWindow.create(`${windowName}.html`, width, height, windowId, HTTP_PORT, parentWindowId);
+            await createHTMLWindow(`${windowName}.html`, width, height, windowId, parentWindowId);
             return { success: true };
         }
         case "showPopup": {
@@ -2614,7 +2664,7 @@ async function handleApiRequest(
 
             // Extract just the HTML filename from the URL path
             const htmlFile = url.split("/").pop() || url;
-            await HTMLWindow.create(htmlFile, width, height, windowId, HTTP_PORT, parentWindowId);
+            await createHTMLWindow(htmlFile, width, height, windowId, parentWindowId);
 
             // Event Log survives between games
             if (htmlFile === "event-log.html") {
@@ -3455,7 +3505,7 @@ async function showFilePicker(invalidDropMessage?: string | null): Promise<{ gam
     if (invalidDropMessage) {
         windowParams.set(windowId, { invalidDropMessage });
     }
-    await HTMLWindow.create("file-picker.html", 800, 500, windowId, HTTP_PORT);
+    await createHTMLWindow("file-picker.html", 800, 500, windowId);
 
     // Race the file selection against the *picker window's* process exiting,
     // NOT against any HTMLWindow closing. After Flash crashes we may have

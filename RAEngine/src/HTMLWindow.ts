@@ -3,6 +3,8 @@ import { join }      from "https://deno.land/std/path/mod.ts";
 import { exists }    from "https://deno.land/std/fs/exists.ts";
 import { WindowManager } from "./WindowManager.ts";
 
+export type WindowGeometry = { x: number; y: number; width: number; height: number };
+
 export class HTMLWindow {
     static instances: Array<HTMLWindow> = [];
 
@@ -13,9 +15,17 @@ export class HTMLWindow {
     isClosed: boolean;
     persistent: boolean;
     url: string;
+    lastKnownPosition: WindowGeometry | null;
 
     // The constructor is private and is only called by the async `create` method.
-    private constructor(process: Deno.ChildProcess, tempDir: string, chromeUserDataDir: string, windowId: number, url: string) {
+    private constructor(
+        process: Deno.ChildProcess,
+        tempDir: string,
+        chromeUserDataDir: string,
+        windowId: number,
+        url: string,
+        onClose?: (pos: WindowGeometry | null) => void,
+    ) {
         this.process = process;
         this.tempDir = tempDir;
         this.chromeUserDataDir = chromeUserDataDir;
@@ -23,11 +33,25 @@ export class HTMLWindow {
         this.isClosed = false;
         this.persistent = false;
         this.url = url;
-        
+        this.lastKnownPosition = null;
+
+        // Poll the live HWND so we have a recent position when the window
+        // closes. By the time process.status resolves the HWND is already
+        // invalid, so a snapshot taken at close time is too late.
+        const positionPoll = setInterval(() => {
+            if (this.isClosed) return;
+            const pos = WindowManager.getWindowPosition(windowId);
+            if (pos) this.lastKnownPosition = pos;
+        }, 1000);
+
         // Asynchronously update the state when the user closes the window
         // and clean up the temp directory on both success and failure paths.
         this.process.status.finally(() => {
             this.isClosed = true;
+            clearInterval(positionPoll);
+            if (onClose) {
+                try { onClose(this.lastKnownPosition); } catch (e) { console.warn("HTMLWindow onClose threw:", e); }
+            }
             Deno.remove(this.tempDir, { recursive: true }).catch(() => { /* already gone */ });
         });
 
@@ -40,8 +64,20 @@ export class HTMLWindow {
      * @param parentWindowId Optional - if provided, positions the new window to the right of the parent.
      * @param startX Optional - explicit X position (overrides parent/center calculation).
      * @param startY Optional - explicit Y position (overrides parent/center calculation).
+     * @param onClose Optional - fires when the window's process exits, with
+     *        the last polled position (or null if we never managed to read one).
      */
-    static async create(url: string, width: number, height: number, windowId: number, port: number, parentWindowId?: number, startX?: number, startY?: number) {
+    static async create(
+        url: string,
+        width: number,
+        height: number,
+        windowId: number,
+        port: number,
+        parentWindowId?: number,
+        startX?: number,
+        startY?: number,
+        onClose?: (pos: WindowGeometry | null) => void,
+    ) {
         const platform = Deno.build.os;
 
         // Calculate window position
@@ -135,7 +171,7 @@ export class HTMLWindow {
         }
 
         // Create the class instance now that the process is spawned.
-        new HTMLWindow(process, tempDir, chromeUserDataDir, windowId, url);
+        new HTMLWindow(process, tempDir, chromeUserDataDir, windowId, url, onClose);
     }
 
     /**
