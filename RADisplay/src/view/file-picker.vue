@@ -42,6 +42,11 @@
                     <span class="icon" v-if="item.type === 'directory'">📁</span>
                     <img class="icon file-icon" v-else :src="item.name.toLowerCase().endsWith('.raflash') ? '/raflash-icon.png' : '/flash-icon.png'" alt="">
                     <span class="name">{{ item.name }}</span>
+                    <span class="row-spacer" v-if="item.type === 'file'"></span>
+                    <button class="save-icon"
+                            v-if="item.type === 'file'"
+                            title="Manage save slots"
+                            @click.stop="toggleSlotPopover(item, $event)">💾</button>
                 </div>
                 <div class="empty-message" v-if="items.length === 0">
                     No .swf or .raflash files found in this directory
@@ -77,6 +82,38 @@
                         <button class="btn btn-primary" @click="applyUpdate" :disabled="updateState === 'downloading'">
                             {{ updateState === 'downloading' ? 'Downloading...' : 'Update and Restart' }}
                         </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slot popover -->
+            <div class="slot-popover-overlay" v-if="slotPopover" @click.self="closeSlotPopover()" @contextmenu.prevent>
+                <div class="slot-popover" :style="slotPopover.style">
+                    <div class="slot-popover-header">Save slots</div>
+                    <div class="slot-popover-body" v-if="slotPopover.info">
+                        <div class="slot-row"
+                             v-for="slot in slotPopover.info.slots"
+                             :key="slot"
+                             :class="{ active: slot === slotPopover.info.currentSlot }"
+                             @click="switchSlot(slot)">
+                            <span class="slot-check">{{ slot === slotPopover.info.currentSlot ? '✓' : '' }}</span>
+                            <span class="slot-name">{{ slot }}</span>
+                            <button class="slot-action"
+                                    v-if="slot !== 'default'"
+                                    title="Rename"
+                                    @click.stop="renameSlotPrompt(slot)">✏</button>
+                            <button class="slot-action"
+                                    v-if="slot !== 'default'"
+                                    title="Delete"
+                                    @click.stop="deleteSlotPrompt(slot)">🗑</button>
+                        </div>
+                        <div class="slot-row slot-add" @click="newSlotPrompt()">
+                            <span class="slot-check">+</span>
+                            <span class="slot-name">New slot</span>
+                        </div>
+                    </div>
+                    <div class="slot-popover-body" v-else>
+                        <div class="slot-row slot-loading">Loading…</div>
                     </div>
                 </div>
             </div>
@@ -321,6 +358,108 @@
         margin-top: 0.25rem;
     }
 
+    /* === Slot picker === */
+    .row-spacer { flex: 1; }
+
+    .save-icon {
+        background: transparent;
+        border: none;
+        color: var(--c-text-muted);
+        cursor: pointer;
+        font-size: 0.875rem;
+        padding: 0.125rem 0.375rem;
+        border-radius: var(--radius-sm, 4px);
+        opacity: 0.55;
+        flex-shrink: 0;
+        transition: opacity var(--duration) var(--ease), background-color var(--duration) var(--ease);
+    }
+
+    .file-item:hover .save-icon { opacity: 1; }
+    .save-icon:hover { background: var(--c-surface-alt); }
+
+    .slot-popover-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        background: transparent;
+    }
+
+    .slot-popover {
+        position: fixed;
+        min-width: 220px;
+        max-width: 320px;
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-md);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+        font-size: 0.8125rem;
+        overflow: hidden;
+    }
+
+    .slot-popover-header {
+        padding: 0.4375rem 0.625rem;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--c-text-muted);
+        background: var(--c-surface-alt);
+        border-bottom: 1px solid var(--c-border);
+    }
+
+    .slot-popover-body {
+        padding: 0.25rem;
+        max-height: 300px;
+        overflow-y: auto;
+    }
+
+    .slot-row {
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+        padding: 0.375rem 0.5rem;
+        border-radius: var(--radius-sm, 4px);
+        cursor: pointer;
+        transition: background-color 80ms var(--ease);
+    }
+
+    .slot-row:hover { background: var(--c-surface-alt); }
+    .slot-row.active .slot-name { font-weight: 600; color: var(--c-text); }
+
+    .slot-check {
+        flex-shrink: 0;
+        width: 0.875rem;
+        text-align: center;
+        color: var(--c-primary);
+    }
+
+    .slot-name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .slot-action {
+        background: transparent;
+        border: none;
+        color: var(--c-text-muted);
+        cursor: pointer;
+        padding: 0.125rem 0.3125rem;
+        border-radius: var(--radius-sm, 4px);
+        font-size: 0.75rem;
+        opacity: 0;
+        transition: opacity var(--duration) var(--ease), background-color var(--duration) var(--ease);
+    }
+
+    .slot-row:hover .slot-action { opacity: 0.7; }
+    .slot-action:hover { opacity: 1; background: var(--c-surface); }
+
+    .slot-add { color: var(--c-text-muted); font-style: italic; }
+    .slot-add:hover { color: var(--c-text); }
+    .slot-loading { color: var(--c-text-muted); cursor: default; padding: 0.5rem 0.625rem; }
+    .slot-loading:hover { background: transparent; }
+
 </style>
 
 <script setup>
@@ -354,6 +493,107 @@ const updateLabel = computed(() => {
     if (updateState.value === 'uptodate') return 'Up to date!';
     return 'Check for Updates';
 });
+
+// === Save slots ===
+// slotInfoCache[item.name] = { hash, currentSlot, slots[] } | null (loading) | undefined (not yet fetched)
+const slotInfoCache = ref({});
+const slotPopover = ref(null); // { itemName, style, info }
+
+function fullPathFor(itemName) {
+    return [...pathSegments.value, itemName].join('/');
+}
+
+async function loadSlotInfo(itemName, force = false) {
+    if (!force && slotInfoCache.value[itemName]) return slotInfoCache.value[itemName];
+    const path = fullPathFor(itemName);
+    const r = await Network.send({ command: 'listSlots', params: { path } });
+    if (r.success) {
+        slotInfoCache.value[itemName] = r.params;
+        return r.params;
+    }
+    return null;
+}
+
+async function toggleSlotPopover(item, evt) {
+    if (slotPopover.value && slotPopover.value.itemName === item.name) {
+        slotPopover.value = null;
+        return;
+    }
+    const rect = evt.currentTarget.getBoundingClientRect();
+    const style = {
+        top: `${rect.bottom + 4}px`,
+        right: `${window.innerWidth - rect.right}px`,
+    };
+    slotPopover.value = { itemName: item.name, style, info: null };
+    const info = await loadSlotInfo(item.name, true);
+    if (slotPopover.value && slotPopover.value.itemName === item.name) {
+        slotPopover.value = { ...slotPopover.value, info };
+    }
+}
+
+function closeSlotPopover() {
+    slotPopover.value = null;
+}
+
+async function switchSlot(slot) {
+    if (!slotPopover.value) return;
+    const itemName = slotPopover.value.itemName;
+    const path = fullPathFor(itemName);
+    const r = await Network.send({ command: 'setSlot', params: { path, slot } });
+    if (r.success) {
+        await loadSlotInfo(itemName, true);
+        const info = slotInfoCache.value[itemName];
+        if (slotPopover.value && slotPopover.value.itemName === itemName) {
+            slotPopover.value = { ...slotPopover.value, info };
+        }
+    } else {
+        alert(r.error || 'Failed to switch slot');
+    }
+}
+
+async function newSlotPrompt() {
+    if (!slotPopover.value) return;
+    const name = prompt('New slot name:');
+    if (!name || !name.trim()) return;
+    const itemName = slotPopover.value.itemName;
+    const path = fullPathFor(itemName);
+    const create = await Network.send({ command: 'createSlot', params: { path, slot: name.trim() } });
+    if (!create.success) { alert(create.error || 'Failed to create slot'); return; }
+    // Auto-switch to the new slot — that's the usual intent.
+    const setR = await Network.send({ command: 'setSlot', params: { path, slot: name.trim() } });
+    if (!setR.success) { alert(setR.error || 'Failed to switch slot'); return; }
+    const info = await loadSlotInfo(itemName, true);
+    if (slotPopover.value && slotPopover.value.itemName === itemName) {
+        slotPopover.value = { ...slotPopover.value, info };
+    }
+}
+
+async function renameSlotPrompt(oldSlot) {
+    if (!slotPopover.value) return;
+    const next = prompt(`Rename "${oldSlot}" to:`, oldSlot);
+    if (!next || !next.trim() || next.trim() === oldSlot) return;
+    const itemName = slotPopover.value.itemName;
+    const path = fullPathFor(itemName);
+    const r = await Network.send({ command: 'renameSlot', params: { path, oldSlot, newSlot: next.trim() } });
+    if (!r.success) { alert(r.error || 'Failed to rename slot'); return; }
+    const info = await loadSlotInfo(itemName, true);
+    if (slotPopover.value && slotPopover.value.itemName === itemName) {
+        slotPopover.value = { ...slotPopover.value, info };
+    }
+}
+
+async function deleteSlotPrompt(slot) {
+    if (!slotPopover.value) return;
+    if (!confirm(`Delete slot "${slot}"? This permanently removes its save files.`)) return;
+    const itemName = slotPopover.value.itemName;
+    const path = fullPathFor(itemName);
+    const r = await Network.send({ command: 'deleteSlot', params: { path, slot } });
+    if (!r.success) { alert(r.error || 'Failed to delete slot'); return; }
+    const info = await loadSlotInfo(itemName, true);
+    if (slotPopover.value && slotPopover.value.itemName === itemName) {
+        slotPopover.value = { ...slotPopover.value, info };
+    }
+}
 
 // Sort items: directories first, then files, alphabetically
 const sortedItems = computed(() => {

@@ -1660,6 +1660,88 @@ function appendQuery(url: string, kv: string): string {
     return url + (url.indexOf("?") >= 0 ? "&" : "?") + kv;
 }
 
+/**
+ * Compute the gameHash for a file path the same way setGamePath() does,
+ * so slot operations from the file picker (where AppData isn't loaded)
+ * key into the same RACache/<hash>.json and saves/<hash>/ entries the
+ * runtime will use after launch.
+ *
+ * For .raflash, honor `data.json:hashOverride` so a .raflash and the
+ * .swf it was converted from share their slot inventory. Returns null
+ * when the file can't be read or hashed.
+ */
+async function resolveGameHashFromPath(path: string): Promise<string | null> {
+    if (!path) return null;
+    try {
+        if (path.toLowerCase().endsWith(".raflash")) {
+            try {
+                const zipData = await Deno.readFile(path);
+                const files = unzipSync(zipData);
+                if (files["data.json"]) {
+                    const raflashData = JSON.parse(new TextDecoder().decode(files["data.json"]));
+                    if (raflashData?.hashOverride) return String(raflashData.hashOverride);
+                }
+            } catch { /* fall through to file-content hash */ }
+        }
+        return await AppData.hashFile(path);
+    } catch (e) {
+        console.warn(`resolveGameHashFromPath(${path}) failed:`, e);
+        return null;
+    }
+}
+
+/** Sanitize a slot name to filesystem- and URL-safe characters. */
+function sanitizeSlotName(raw: string): string {
+    const cleaned = raw.replace(/[^\w\-.]/g, "_").trim();
+    return cleaned.length > 0 ? cleaned : "";
+}
+
+type GameConfigFile = { gameConfig?: { currentSlot?: string } & Record<string, unknown> } & Record<string, unknown>;
+
+/** Read RACache/games/<hash>.json (returns null if missing/corrupt). */
+async function readGameConfig(hash: string): Promise<GameConfigFile | null> {
+    try {
+        const text = await Deno.readTextFile(join("RACache", "games", `${hash}.json`));
+        return JSON.parse(text);
+    } catch {
+        return null;
+    }
+}
+
+/** Write `gameConfig.currentSlot` into RACache/games/<hash>.json, preserving everything else. */
+async function writeGameConfigSlot(hash: string, slot: string): Promise<void> {
+    const dir = join("RACache", "games");
+    await Deno.mkdir(dir, { recursive: true });
+    const file = join(dir, `${hash}.json`);
+    const existing = (await readGameConfig(hash)) ?? { assets: [], codeNotes: [], gameConfig: {} };
+    if (!existing.gameConfig) existing.gameConfig = {};
+    existing.gameConfig.currentSlot = slot;
+    await Deno.writeTextFile(file, JSON.stringify(existing, null, 2));
+}
+
+/** List slots present on disk under saves/<hash>/slots/, plus the active slot from RACache. */
+async function getSlotInventory(path: string): Promise<{ hash: string; currentSlot: string; slots: string[] } | null> {
+    const hash = await resolveGameHashFromPath(path);
+    if (!hash) return null;
+    const slotsDir = join("saves", hash, "slots");
+    const slots = new Set<string>(["default"]);
+    try {
+        for (const entry of Deno.readDirSync(slotsDir)) {
+            if (entry.isDirectory) slots.add(entry.name);
+        }
+    } catch {
+        // No saves/<hash>/slots dir yet — game has never saved. That's fine.
+    }
+    const cfg = await readGameConfig(hash);
+    const currentSlot = sanitizeSlotName(String(cfg?.gameConfig?.currentSlot ?? "default")) || "default";
+    slots.add(currentSlot); // ensure active slot is listed even if it has no save dir yet
+    return {
+        hash,
+        currentSlot,
+        slots: [...slots].sort((a, b) => a === "default" ? -1 : b === "default" ? 1 : a.localeCompare(b)),
+    };
+}
+
 // Shim DoABC tags lazy-loaded from firmware/AVM2Shim.swf. Used by the AVM2
 // SharedObject rewriter to splice the shim class into game SWFs.
 let cachedShimAbcTags: Uint8Array[] | null = null;
@@ -2308,6 +2390,75 @@ async function handleApiRequest(
             if (name && name !== settings.lastUser) {
                 settings.lastUser = name;
                 await saveSettings(settings);
+            }
+            return { success: true };
+        }
+        // === Save slot management (file-picker-driven) =====================
+        case "listSlots": {
+            const path = String(input.params.path || "");
+            const result = await getSlotInventory(path);
+            if (!result) return { success: false, error: "Failed to resolve game hash" };
+            return { success: true, params: result };
+        }
+        case "setSlot": {
+            const path = String(input.params.path || "");
+            const slot = sanitizeSlotName(String(input.params.slot || ""));
+            if (!slot) return { success: false, error: "Invalid slot name" };
+            const hash = await resolveGameHashFromPath(path);
+            if (!hash) return { success: false, error: "Failed to resolve game hash" };
+            await writeGameConfigSlot(hash, slot);
+            return { success: true };
+        }
+        case "createSlot": {
+            const path = String(input.params.path || "");
+            const slot = sanitizeSlotName(String(input.params.slot || ""));
+            if (!slot) return { success: false, error: "Invalid slot name" };
+            const hash = await resolveGameHashFromPath(path);
+            if (!hash) return { success: false, error: "Failed to resolve game hash" };
+            await Deno.mkdir(join("saves", hash, "slots", slot), { recursive: true });
+            return { success: true };
+        }
+        case "renameSlot": {
+            const path = String(input.params.path || "");
+            const oldSlot = sanitizeSlotName(String(input.params.oldSlot || ""));
+            const newSlot = sanitizeSlotName(String(input.params.newSlot || ""));
+            if (!oldSlot || !newSlot) return { success: false, error: "Invalid slot name" };
+            if (oldSlot === "default") return { success: false, error: "Cannot rename the default slot" };
+            const hash = await resolveGameHashFromPath(path);
+            if (!hash) return { success: false, error: "Failed to resolve game hash" };
+            const oldDir = join("saves", hash, "slots", oldSlot);
+            const newDir = join("saves", hash, "slots", newSlot);
+            try {
+                await Deno.rename(oldDir, newDir);
+            } catch (e) {
+                return { success: false, error: `Rename failed: ${e instanceof Error ? e.message : String(e)}` };
+            }
+            // If the renamed slot was the active one, follow it.
+            const cfg = await readGameConfig(hash);
+            if (cfg?.gameConfig?.currentSlot === oldSlot) {
+                await writeGameConfigSlot(hash, newSlot);
+            }
+            return { success: true };
+        }
+        case "deleteSlot": {
+            const path = String(input.params.path || "");
+            const slot = sanitizeSlotName(String(input.params.slot || ""));
+            if (!slot) return { success: false, error: "Invalid slot name" };
+            if (slot === "default") return { success: false, error: "Cannot delete the default slot" };
+            const hash = await resolveGameHashFromPath(path);
+            if (!hash) return { success: false, error: "Failed to resolve game hash" };
+            const dir = join("saves", hash, "slots", slot);
+            try {
+                await Deno.remove(dir, { recursive: true });
+            } catch (e) {
+                if (!(e instanceof Deno.errors.NotFound)) {
+                    return { success: false, error: `Delete failed: ${e instanceof Error ? e.message : String(e)}` };
+                }
+            }
+            // If the deleted slot was the active one, fall back to default.
+            const cfg = await readGameConfig(hash);
+            if (cfg?.gameConfig?.currentSlot === slot) {
+                await writeGameConfigSlot(hash, "default");
             }
             return { success: true };
         }
