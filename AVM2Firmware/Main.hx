@@ -116,10 +116,15 @@ class Main extends MovieClip {
                 }
                 // Extract slot from ?slot=XXX (or &slot=XXX). Used to namespace
                 // the SharedObject shim's native localPath so each save slot
-                // gets its own .sol storage.
-                var slotIdx:Int = url.indexOf("slot=");
+                // gets its own .sol storage. Match the literal `?slot=` and
+                // `&slot=` boundaries explicitly — a bare indexOf("slot=")
+                // would also match `rafslot=`, picking up the tail of that
+                // value if both keys ever appear in the same URL.
+                var slotKeyLen:Int = 6; // length of "?slot=" / "&slot="
+                var slotIdx:Int = url.indexOf("?slot=");
+                if (slotIdx < 0) slotIdx = url.indexOf("&slot=");
                 if (slotIdx >= 0) {
-                    var slotStr:String = url.substr(slotIdx + 5);
+                    var slotStr:String = url.substr(slotIdx + slotKeyLen);
                     var slotAmp:Int = slotStr.indexOf("&");
                     if (slotAmp >= 0) slotStr = slotStr.substr(0, slotAmp);
                     if (slotStr.length > 0) currentSlot = slotStr;

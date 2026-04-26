@@ -491,7 +491,16 @@ function enqueueSettingsWrite(mutate: () => void): Promise<void> {
 
 async function saveSettings(newSettings: Settings): Promise<void> {
     await enqueueSettingsWrite(() => {
+        // Preserve windowPositions across saves whose payload omits the field.
+        // settings.vue only round-trips a hardcoded list of "known keys" and
+        // skips windowPositions; without this carry-over the merge would
+        // collapse it back to defaultSettings.windowPositions ({}) and wipe
+        // every remembered chrome window position.
+        const preservedPositions = settings.windowPositions;
         settings = { ...defaultSettings, ...newSettings };
+        if (newSettings.windowPositions === undefined) {
+            settings.windowPositions = preservedPositions;
+        }
     });
 }
 
@@ -1780,6 +1789,37 @@ function getSafeCurrentSlot(): string {
 /** Append `key=val` to a URL's query string, choosing `?` or `&` as needed. */
 function appendQuery(url: string, kv: string): string {
     return url + (url.indexOf("?") >= 0 ? "&" : "?") + kv;
+}
+
+/**
+ * Tokens accepted by Flash Player's Stage.scaleMode (case-insensitive in the
+ * runtime, but we lowercase before compare so the URL is deterministic).
+ */
+const SCALE_MODES = ["noScale", "showAll", "exactFit", "noBorder", "neutral"];
+
+/**
+ * Tokens accepted by Flash Player's Stage.align. Includes the engine's own
+ * "neutral" sentinel for "leave the player default" alongside the standard
+ * Flash values (TL, T, TR, L, R, BL, B, BR — empty string is "center" but
+ * we map that to "neutral" upstream).
+ */
+const ALIGN_TOKENS = ["neutral", "TL", "T", "TR", "L", "R", "BL", "B", "BR"];
+
+/**
+ * Reduce a gameConfig token to a known-safe value before splicing into the
+ * Flash Player launch URL. The URL is interpolated into a PowerShell command
+ * in the headless-Windows path, and gameConfig fields originate in user-
+ * controlled .raflash data.json — without an allowlist a malicious archive
+ * could escape PowerShell's single-quoted argument list and execute arbitrary
+ * code. Empty/unknown values fall back to `fallback`. Comparison is case-
+ * insensitive so authoring quirks (e.g. "showall") still resolve.
+ */
+function sanitizeStageToken(raw: unknown, allowed: readonly string[], fallback: string): string {
+    if (typeof raw !== "string" || raw === "") return fallback;
+    for (const candidate of allowed) {
+        if (candidate.toLowerCase() === raw.toLowerCase()) return candidate;
+    }
+    return fallback;
 }
 
 /**
@@ -4682,8 +4722,15 @@ function launchFlashPlayer(): Deno.ChildProcess {
             : `http://${resolved.domain}${avmConfig.firmwareUrl}?port=${FLASH_PORT}${slotParam}`;
         // Build query string manually — Flash Player's FlashVar parser
         // doesn't URL-decode values, so we must not encode them.
-        const qScaleMode = gc.scaleMode || "neutral";
-        const qAlign = gc.align ?? "neutral";
+        //
+        // Validate scaleMode/align against known Flash Player tokens before
+        // baking into the URL: gameConfig comes from .raflash data.json,
+        // which is user-controlled, and the URL is interpolated into a
+        // PowerShell command in the headless-Windows launch path below.
+        // An attacker-supplied scaleMode like "'; <ps cmd>; '" would otherwise
+        // break out of the single-quoted argument and execute arbitrary code.
+        const qScaleMode = sanitizeStageToken(gc.scaleMode, SCALE_MODES, "noScale");
+        const qAlign = sanitizeStageToken(gc.align, ALIGN_TOKENS, "neutral");
         launchUrl = `http://${resolved.domain}/avm1-bootstrap.swf?gameUrl=${nextUrl}&scaleMode=${qScaleMode}&align=${qAlign}`;
     } else if (mode === "child" || mode === "none") {
         launchUrl = appendQuery(resolved.url, `rafslot=${getSafeCurrentSlot()}`);
@@ -4697,7 +4744,14 @@ function launchFlashPlayer(): Deno.ChildProcess {
     // exits immediately after Start-Process returns — we capture the
     // real Flash Player PID from stdout after spawn.
     if (headlessMode && Deno.build.os === "windows") {
-        const psCmd = `$p = Start-Process -FilePath '${fpPath}' -ArgumentList '${launchUrl}' -WindowStyle Hidden -PassThru; Write-Output $p.Id`;
+        // PowerShell single-quoted strings escape a literal single quote
+        // by doubling it. Both the file path (cwd-derived) and the URL
+        // (which mixes engine-built segments with sanitized-but-still-string
+        // gameConfig fields) get escaped before splicing into the command.
+        // Without this, any single quote in either value closes the string
+        // and lets subsequent characters parse as PowerShell code.
+        const psQuote = (s: string) => s.replace(/'/g, "''");
+        const psCmd = `$p = Start-Process -FilePath '${psQuote(fpPath)}' -ArgumentList '${psQuote(launchUrl)}' -WindowStyle Hidden -PassThru; Write-Output $p.Id`;
         const command = new Deno.Command("powershell", {
             args: ["-NoProfile", "-Command", psCmd],
             cwd: Deno.cwd(),
