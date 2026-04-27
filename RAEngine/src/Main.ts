@@ -2602,8 +2602,29 @@ async function handleApiRequest(
                 params: { currentDirectory: Deno.cwd().split(SEPARATOR) },
             };
         }
+        case "listDrives": {
+            // Only Windows has a notion of drive letters. On Unix the picker stays inside `/`.
+            if (Deno.build.os !== "windows") {
+                return { success: true, params: { drives: [] } };
+            }
+            const drives: string[] = [];
+            for (let i = 0; i < 26; i++) {
+                const letter = String.fromCharCode(65 + i);
+                try {
+                    Deno.statSync(`${letter}:\\`);
+                    drives.push(`${letter}:`);
+                } catch {
+                    // Drive letter not mounted — skip.
+                }
+            }
+            return { success: true, params: { drives } };
+        }
         case "readDirectory": {
-            const rawPath = String(input.params.path || ".");
+            let rawPath = String(input.params.path || ".");
+            // On Windows, a bare drive letter like "C:" is drive-relative — `resolve("C:")`
+            // returns the cwd on drive C, not the drive root. The picker hits this when the
+            // user navigates up to the drive: segments become ["C:"], which join to "C:".
+            if (/^[A-Za-z]:$/.test(rawPath)) rawPath += SEPARATOR;
             const resolvedPath = resolve(rawPath);
             // Defense-in-depth: ensure resolved path doesn't escape expected scope
             if (!isAbsolute(resolvedPath) || resolvedPath.includes("..")) {

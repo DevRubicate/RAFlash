@@ -19,6 +19,14 @@
 
         <div class="file-panel">
             <header class="path-bar">
+                <button class="home-button"
+                        title="Return to RAFlash folder"
+                        @click="navigateHome()">🏠</button>
+                <span class="path-segment"
+                      v-if="pathSegments.length === 0"
+                      @click="navigateToSegment(-1)">
+                    Computer
+                </span>
                 <span class="path-segment"
                       v-for="(segment, index) in pathSegments"
                       :key="index"
@@ -29,7 +37,7 @@
 
             <div class="file-list">
                 <div class="file-item parent-dir"
-                     v-if="pathSegments.length > 1"
+                     v-if="canNavigateUp"
                      @click="navigateUp()">
                     <span class="icon">📁</span>
                     <span class="name">..</span>
@@ -39,7 +47,7 @@
                      :key="item.name"
                      :class="{ directory: item.type === 'directory' }"
                      @dblclick="handleDoubleClick(item)">
-                    <span class="icon" v-if="item.type === 'directory'">📁</span>
+                    <span class="icon" v-if="item.type === 'directory'">{{ item.isDrive ? '💽' : '📁' }}</span>
                     <img class="icon file-icon" v-else :src="item.name.toLowerCase().endsWith('.raflash') ? '/raflash-icon.png' : '/flash-icon.png'" alt="">
                     <span class="name">{{ item.name }}</span>
                     <span class="row-spacer" v-if="item.type === 'file'"></span>
@@ -49,7 +57,7 @@
                             @click.stop="toggleSlotPopover(item, $event)">💾</button>
                 </div>
                 <div class="empty-message" v-if="items.length === 0">
-                    No .swf or .raflash files found in this directory
+                    {{ pathSegments.length === 0 ? 'No drives available' : 'No .swf or .raflash files found in this directory' }}
                 </div>
             </div>
 
@@ -232,6 +240,22 @@
     }
 
     .path-segment:hover {
+        color: var(--c-primary);
+    }
+
+    .home-button {
+        background: transparent;
+        border: none;
+        color: var(--c-text-secondary);
+        cursor: pointer;
+        font-size: 0.875rem;
+        padding: 0 0.375rem 0 0;
+        margin-right: 0.25rem;
+        flex-shrink: 0;
+        transition: color var(--duration) var(--ease);
+    }
+
+    .home-button:hover {
         color: var(--c-primary);
     }
 
@@ -469,6 +493,7 @@ import { App } from '../js/app.ts';
 
 const ready = ref(false);
 const pathSegments = ref([]);
+const homeSegments = ref([]);
 const items = ref([]);
 const users = ref([]);
 const selectedUser = ref(null);
@@ -607,9 +632,25 @@ const currentPath = computed(() => {
     return pathSegments.value.join('/') || '/';
 });
 
-// Load directory contents
+// True when `..` can climb further — including from a drive root up to the drives view.
+const canNavigateUp = computed(() => {
+    if (pathSegments.value.length > 1) return true;
+    if (pathSegments.value.length === 1 && /^[A-Za-z]:$/.test(pathSegments.value[0])) return true;
+    return false;
+});
+
+// Load directory contents (or the list of drives when at the virtual "Computer" view)
 async function loadDirectory(path) {
     try {
+        if (pathSegments.value.length === 0) {
+            const response = await Network.send({ command: 'listDrives', params: {} });
+            if (response.success) {
+                items.value = response.params.drives.map(name => ({ name, type: 'directory', isDrive: true }));
+            } else {
+                items.value = [];
+            }
+            return;
+        }
         const response = await Network.send({
             command: 'readDirectory',
             params: { path: path || '.' }
@@ -621,9 +662,13 @@ async function loadDirectory(path) {
                 item.type === 'directory' ||
                 item.name.toLowerCase().endsWith('.swf') || item.name.toLowerCase().endsWith('.raflash')
             );
+        } else {
+            // Clear items so the user isn't stuck looking at stale contents from a previous directory.
+            items.value = [];
         }
     } catch (err) {
         console.error('Failed to load directory:', err);
+        items.value = [];
     }
 }
 
@@ -673,18 +718,28 @@ async function createUser() {
     }
 }
 
-// Navigate to a specific path segment
+// Navigate to a specific path segment. index === -1 means the virtual "Computer" view.
 function navigateToSegment(index) {
-    pathSegments.value = pathSegments.value.slice(0, index + 1);
+    pathSegments.value = index < 0 ? [] : pathSegments.value.slice(0, index + 1);
     loadDirectory(currentPath.value);
 }
 
-// Navigate up to parent directory
+// Navigate up to parent directory. From a drive root (e.g. ['C:']) we step up to
+// the virtual "Computer" view where the user can pick another drive.
 function navigateUp() {
     if (pathSegments.value.length > 1) {
         pathSegments.value.pop();
         loadDirectory(currentPath.value);
+    } else if (pathSegments.value.length === 1 && /^[A-Za-z]:$/.test(pathSegments.value[0])) {
+        pathSegments.value = [];
+        loadDirectory(currentPath.value);
     }
+}
+
+// Return to the RAFlash directory captured at startup
+function navigateHome() {
+    pathSegments.value = [...homeSegments.value];
+    loadDirectory(currentPath.value);
 }
 
 // Handle double click on item
@@ -824,6 +879,7 @@ onMounted(async () => {
     } else {
         pathSegments.value = ['.'];
     }
+    homeSegments.value = [...pathSegments.value];
 
     await loadDirectory(currentPath.value);
     ready.value = true;
