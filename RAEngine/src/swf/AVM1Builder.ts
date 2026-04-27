@@ -162,6 +162,12 @@ export class AVM1Builder {
     /** Patch a forward jump (from jumpForward/jumpIfForward) to target the current position. */
     patchJumpHere(patchPos: number): void {
         const offset = this.buf.length - (patchPos + 2); // +2 for the SI16 field itself
+        // SWF jumps are SI16-encoded — overflowing silently produces
+        // garbage opcodes. Surface as a hard failure so a runaway shim
+        // body fails at build time instead of corrupting the game.
+        if (offset < -32768 || offset > 32767) {
+            throw new Error(`AVM1Builder.patchJumpHere: forward jump offset ${offset} out of SI16 range (-32768..32767)`);
+        }
         this.buf[patchPos] = offset & 0xFF;
         this.buf[patchPos + 1] = (offset >> 8) & 0xFF;
     }
@@ -262,7 +268,11 @@ function pushUI16(n: number, out: number[]): void {
 }
 
 function pushSI16(n: number, out: number[]): void {
-    // Signed 16-bit: negative values use two's complement
+    // Signed 16-bit: negative values use two's complement. Bounds-check
+    // so an oversize jump fails loudly instead of being silently truncated.
+    if (n < -32768 || n > 32767) {
+        throw new Error(`pushSI16: value ${n} out of range (-32768..32767)`);
+    }
     out.push(n & 0xFF, (n >> 8) & 0xFF);
 }
 

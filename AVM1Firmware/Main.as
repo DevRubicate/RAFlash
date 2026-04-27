@@ -641,6 +641,21 @@ class Main {
                 } catch (e2:Error) { /* logger itself broke; nothing to do */ }
             }
         };
+        // Drain any flushes that landed before we registered. The shim's
+        // bytecode (see RAEngine/src/swf/AVM1SharedObjectShim.ts) pushes
+        // (name, path, data) flat-triples onto _global.__RAShim_pending_relay
+        // when called pre-relay so frame-1 saves don't lose the JSON mirror.
+        var pending:Array = _global.__RAShim_pending_relay;
+        if (pending != undefined && pending.length > 0) {
+            _global.__RAShim_pending_relay = [];
+            var i:Number = 0;
+            while (i + 2 < pending.length) {
+                try {
+                    _global.__RAShim_relay(String(pending[i]), String(pending[i + 1]), pending[i + 2]);
+                } catch (e:Error) { /* never break the save path */ }
+                i += 3;
+            }
+        }
     }
 
     /**
@@ -1650,8 +1665,25 @@ class Main {
         return findTopmostHit(clip, x, y, {}, 0, true);
     }
 
+    /**
+     * One-shot guard so the depth-cap warning fires only once per game
+     * session — without this the firmware would spam every click on a
+     * deeply-nested target (which is exactly when the user wants to
+     * understand why their clicks aren't registering).
+     */
+    private static var _hitDepthWarned:Boolean = false;
+
     private static function findTopmostHit(clip:Object, x:Number, y:Number, visited:Object, depth:Number, anyElement:Boolean):Object {
-        if (clip == null || depth > 20) return null;
+        if (clip == null) return null;
+        if (depth > 64) {
+            if (!_hitDepthWarned) {
+                _hitDepthWarned = true;
+                try {
+                    Main.sendMessage("log", { message: "[firmware] hit-test recursion exceeded 64 levels — clicks on deeply nested elements may not be recorded. Report this if you can reproduce on a public game." });
+                } catch (e:Error) { /* logger broken; nothing to do */ }
+            }
+            return null;
+        }
         var key:String = String(clip._target);
         if (visited[key]) return null;
         visited[key] = true;

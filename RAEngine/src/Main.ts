@@ -460,12 +460,29 @@ const defaultSettings: Settings = {
 let settings: Settings = { ...defaultSettings };
 
 async function loadSettings(): Promise<void> {
+    let text: string;
     try {
-        const text = await Deno.readTextFile("RACache/settings.json");
+        text = await Deno.readTextFile("RACache/settings.json");
+    } catch (e) {
+        if (e instanceof Deno.errors.NotFound) return;
+        console.warn(`loadSettings: failed to read settings.json (${e instanceof Error ? e.message : e}); using defaults`);
+        return;
+    }
+    try {
         const saved = JSON.parse(text);
         settings = { ...defaultSettings, ...saved };
-    } catch {
-        // File doesn't exist or invalid — use defaults
+    } catch (e) {
+        // Corrupt — likely a previous truncated write. Back up so the user
+        // (or we, post-mortem) can inspect what happened, then fall through
+        // to defaults rather than silently masquerading as a fresh install.
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const bakPath = `RACache/settings.json.bad-${stamp}`;
+        try {
+            await Deno.rename("RACache/settings.json", bakPath);
+            console.warn(`loadSettings: settings.json was corrupt (${e instanceof Error ? e.message : e}); backed up to ${bakPath}`);
+        } catch (renameErr) {
+            console.warn(`loadSettings: settings.json was corrupt (${e instanceof Error ? e.message : e}); failed to back up: ${renameErr instanceof Error ? renameErr.message : renameErr}`);
+        }
     }
 }
 
@@ -508,14 +525,19 @@ async function saveSettings(newSettings: Settings): Promise<void> {
 // lands on a usable area of the user's virtual screen — the union of all
 // connected monitors. Falls back to the caller's default placement when
 // the saved position is mostly off-screen (e.g. user unplugged the
-// monitor it was on, or downsized resolution). The 100px horizontal /
-// 50px vertical margins ensure at least the title bar stays grabbable.
+// monitor it was on, or downsized resolution). Require at least 25% of
+// the window's width and 50% of its height to overlap the virtual
+// screen — purely-corner-visible windows leave just a 100×50px sliver
+// the user can grab, which is technically rescuable but feels broken.
 function getSavedWindowPosition(url: string): WindowGeometry | null {
     const saved = settings.windowPositions[url];
     if (!saved) return null;
+    if (saved.width <= 0 || saved.height <= 0) return null;
     const v = WindowManager.getVirtualScreenRect();
-    if (saved.x + saved.width < v.x + 100 || saved.x > v.x + v.width - 100) return null;
-    if (saved.y + saved.height < v.y + 50 || saved.y > v.y + v.height - 50) return null;
+    const overlapX = Math.max(0, Math.min(saved.x + saved.width, v.x + v.width) - Math.max(saved.x, v.x));
+    const overlapY = Math.max(0, Math.min(saved.y + saved.height, v.y + v.height) - Math.max(saved.y, v.y));
+    if (overlapX < saved.width * 0.25) return null;
+    if (overlapY < saved.height * 0.5) return null;
     return saved;
 }
 
@@ -1739,7 +1761,16 @@ function resetGameState(): void {
     requestIdCounter = 0;
     watcherSockets.clear();
     windowParams.clear();
-    WindowManager.windowHandles.clear();
+    // Persistent HTMLWindows (event-log) survive game reset and keep
+    // polling their HWND for position; clearing their entry here would
+    // freeze lastKnownPosition and corrupt the saved-position write at
+    // close time. Drop only entries owned by non-persistent windows.
+    const persistentIds = new Set(
+        HTMLWindow.instances.filter(w => w.persistent && !w.isClosed).map(w => w.windowId)
+    );
+    for (const id of [...WindowManager.windowHandles.keys()]) {
+        if (!persistentIds.has(id)) WindowManager.windowHandles.delete(id);
+    }
     flashPlayerPid = null;
     flashProcess = null;
     lastRichPresenceTime = 0;
@@ -1871,6 +1902,16 @@ function validateGamePath(raw: string): string | null {
     return resolved;
 }
 
+// Win32 reserved device names. Even with an extension, opening
+// `slots/CON/foo.json` routes IO to the console device, so these can't
+// be allowed as slot directory names — Deno.mkdir either fails opaquely
+// or attaches to the device. Set membership uses uppercase basenames.
+const WIN_RESERVED_NAMES: ReadonlySet<string> = new Set([
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+]);
+
 /**
  * Sanitize a slot name to filesystem- and URL-safe characters. Rejects
  * pure-dot names (".", "..", "..." etc.) — those would normalize to a
@@ -1880,13 +1921,28 @@ function validateGamePath(raw: string): string | null {
  * collapses to a forbidden name; callers MUST treat that as a hard error.
  */
 function sanitizeSlotName(raw: string): string {
-    const cleaned = raw.replace(/[^\w\-.]/g, "_").trim();
+    let cleaned = raw.replace(/[^\w\-.]/g, "_").trim();
+    // Strip trailing `.` and ` ` characters. Windows silently strips them
+    // from path components, so `slots/foo.` would create `slots/foo` on
+    // disk — picker shows "foo." but reads from "foo", and currentSlot
+    // saves to a phantom directory.
+    cleaned = cleaned.replace(/[. ]+$/, "");
     if (cleaned.length === 0) return "";
     // Reject names consisting only of dots — these act as path traversal
     // when joined onto a directory: join("a/b", "..") === "a", and
     // join("a/b", ".") === "a/b" (i.e. the slot collapses to its parent).
     if (/^\.+$/.test(cleaned)) return "";
+    // Reject Win32 reserved device names. Comparison is on the basename
+    // (part before first dot) and case-insensitive — `con.txt`, `CON`,
+    // and `Con` all hit the same device.
+    const base = cleaned.split(".")[0].toUpperCase();
+    if (WIN_RESERVED_NAMES.has(base)) return "";
     return cleaned;
+}
+
+/** Case-insensitive check for the special "default" slot. */
+function isDefaultSlot(s: string): boolean {
+    return s.toLowerCase() === "default";
 }
 
 type GameConfigFile = { gameConfig?: { currentSlot?: string } & Record<string, unknown> } & Record<string, unknown>;
@@ -2112,12 +2168,16 @@ function appendToRecordingBuffer(line: string): void {
  * currently-loaded game.
  */
 async function allocateNewRecordingName(): Promise<string> {
-    const taken = new Set<string>(ratestBuffers.keys());
+    // Lower-case the comparison set: NTFS and APFS-default treat
+    // `New Recording 1.ratest` and `new recording 1.ratest` as the same
+    // file. Case-sensitive collision detection would skip a real
+    // collision and let writeTextFile overwrite the existing file.
+    const taken = new Set<string>([...ratestBuffers.keys()].map((s) => s.toLowerCase()));
     if (AppData.gameHash) {
         const dir = `RACache/ratests/${AppData.gameHash}`;
         try {
             for await (const entry of Deno.readDir(dir)) {
-                if (entry.isFile && entry.name.endsWith(".ratest")) taken.add(entry.name);
+                if (entry.isFile && entry.name.endsWith(".ratest")) taken.add(entry.name.toLowerCase());
             }
         } catch (e) {
             if (!(e instanceof Deno.errors.NotFound)) throw e;
@@ -2125,7 +2185,7 @@ async function allocateNewRecordingName(): Promise<string> {
     }
     for (let n = 1; ; n++) {
         const candidate = `New Recording ${n}.ratest`;
-        if (!taken.has(candidate)) return candidate;
+        if (!taken.has(candidate.toLowerCase())) return candidate;
     }
 }
 // Rerecord mode: a playback-with-overlay-capture run. Distinct from
@@ -2609,6 +2669,13 @@ async function handleApiRequest(
             const hash = await resolveGameHashFromPath(path);
             if (!hash) return { success: false, error: "Failed to resolve game hash" };
             await writeGameConfigSlot(hash, slot);
+            // If the user changed slots for the currently-running game,
+            // mirror the change into the live AppData. Otherwise the
+            // saveEvent handler keeps writing to the old slot until next
+            // launch (getSafeCurrentSlot reads from this in-memory copy).
+            if (hash === AppData.gameHash && AppData.data?.gameConfig) {
+                AppData.data.gameConfig.currentSlot = slot;
+            }
             return { success: true };
         }
         case "createSlot": {
@@ -2627,7 +2694,7 @@ async function handleApiRequest(
             const oldSlot = sanitizeSlotName(String(input.params.oldSlot || ""));
             const newSlot = sanitizeSlotName(String(input.params.newSlot || ""));
             if (!oldSlot || !newSlot) return { success: false, error: "Invalid slot name" };
-            if (oldSlot === "default") return { success: false, error: "Cannot rename the default slot" };
+            if (isDefaultSlot(oldSlot)) return { success: false, error: "Cannot rename the default slot" };
             const hash = await resolveGameHashFromPath(path);
             if (!hash) return { success: false, error: "Failed to resolve game hash" };
             const oldDir = join("saves", hash, "slots", oldSlot);
@@ -2639,17 +2706,30 @@ async function handleApiRequest(
             }
             // If the renamed slot was the active one, follow it.
             const cfg = await readGameConfig(hash);
-            if (cfg?.gameConfig?.currentSlot === oldSlot) {
+            if (typeof cfg?.gameConfig?.currentSlot === "string"
+                && cfg.gameConfig.currentSlot.toLowerCase() === oldSlot.toLowerCase()) {
                 await writeGameConfigSlot(hash, newSlot);
             }
-            return { success: true };
+            // The native .sol that Flash Player wrote (keyed by
+            // `<name>__rafslot__<oldSlot>.sol` in Flash's per-install
+            // storage directory) does NOT follow the rename — Flash owns
+            // that file and we don't track its location. The renamed slot
+            // will start fresh in-game; the orphan .sol persists at the
+            // old name. Surface as a warning so the UI can let the user
+            // know rather than silently dropping data.
+            return {
+                success: true,
+                params: {
+                    warning: "Slot rename only renames the JSON mirror. The game's underlying save (.sol) does not follow — the renamed slot will start empty in the game until it saves again.",
+                },
+            };
         }
         case "deleteSlot": {
             const path = validateGamePath(String(input.params.path || ""));
             if (!path) return { success: false, error: "Invalid path" };
             const slot = sanitizeSlotName(String(input.params.slot || ""));
             if (!slot) return { success: false, error: "Invalid slot name" };
-            if (slot === "default") return { success: false, error: "Cannot delete the default slot" };
+            if (isDefaultSlot(slot)) return { success: false, error: "Cannot delete the default slot" };
             const hash = await resolveGameHashFromPath(path);
             if (!hash) return { success: false, error: "Failed to resolve game hash" };
             const dir = join("saves", hash, "slots", slot);
@@ -2662,7 +2742,8 @@ async function handleApiRequest(
             }
             // If the deleted slot was the active one, fall back to default.
             const cfg = await readGameConfig(hash);
-            if (cfg?.gameConfig?.currentSlot === slot) {
+            if (typeof cfg?.gameConfig?.currentSlot === "string"
+                && cfg.gameConfig.currentSlot.toLowerCase() === slot.toLowerCase()) {
                 await writeGameConfigSlot(hash, "default");
             }
             return { success: true };
@@ -3611,9 +3692,15 @@ async function handleApiRequest(
         case "discardRatestBuffer": {
             // Drop the ephemeral buffer entry, reverting the UI view back
             // to whatever's on disk on the next previewRatest call. Safe
-            // to call even when no entry exists.
+            // to call even when no entry exists. Mirror the path-shape
+            // rejection used by the other ratest handlers (defense in
+            // depth — Map.delete is exact-match today, but a future
+            // change that resolves the name to a path would inherit a
+            // hole if the name slipped through unsanitized).
             const name = String(input.params.file || "");
-            if (!name) return { success: false, error: "file required" };
+            if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
+                return { success: false, error: `Invalid .ratest filename: ${name}` };
+            }
             ratestBuffers.delete(name);
             return { success: true };
         }
@@ -3694,6 +3781,13 @@ async function handleApiRequest(
             if (!AppData.gameHash) return { success: false, error: "No game loaded" };
             if (!flashConnected) return { success: false, error: "Flash Player is not running — reload the game to record" };
             if (recordingActive) return { success: false, error: "A recording is already in progress" };
+
+            // Re-anchor before any setup runs. We anchor again post-setup
+            // (line ~3883) so the first real click skips reset/intro time;
+            // resetting here too prevents a click captured during the
+            // setup window from emitting a `pause` against the previous
+            // recording's stale timestamp.
+            lastRecordingClickMs = Date.now();
 
             // Continue mode preserves the file's existing steps; the
             // frontend passes the target filename. For new recordings,
@@ -4921,8 +5015,12 @@ async function main(): Promise<void> {
         if (idx !== -1) {
             const val = Deno.args[idx + 1];
             const port = parseInt(val ?? "");
-            if (isNaN(port) || port < 1 || port > 65535) {
-                console.error(`--port requires a valid port number (got "${val}")`);
+            // We allocate three sequential ports starting from this base
+            // (HTTP, firmware socket, sitelock proxy), so the upper bound
+            // is 65533 — passing 65534 would overflow on the listen call
+            // for port+2.
+            if (isNaN(port) || port < 1 || port > 65533) {
+                console.error(`--port requires a valid port number 1..65533 (got "${val}")`);
                 Deno.exit(2);
             }
             portOverride = port;
@@ -5069,8 +5167,8 @@ async function main(): Promise<void> {
     // 2. Start Flash socket server in background (persists across game sessions)
     startFlashServer().catch(err => { emitLog("engine", "error", `Flash socket server failed: ${err.message}`); });
 
-    // 3. Handle Ctrl+C (registered once, references module-level state)
-    Deno.addSignalListener("SIGINT", async () => {
+    // 3. Handle Ctrl+C and SIGTERM (registered once, references module-level state)
+    const onShutdownSignal = async () => {
         if (richPresenceCheckInterval) {
             clearInterval(richPresenceCheckInterval);
         }
@@ -5081,8 +5179,27 @@ async function main(): Promise<void> {
             // Already exited
         }
         await HTMLWindow.shutdown(true);
+        // Wait for any in-flight settings.json writes to finish before exit,
+        // capped so a wedged write can't keep us from terminating. Without
+        // this drain, an interrupted writeTextFile leaves settings.json
+        // truncated and unparseable on next launch.
+        try {
+            await Promise.race([
+                settingsWriteChain,
+                new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+            ]);
+        } catch {
+            // Errors already logged by individual writers; nothing to do here.
+        }
         Deno.exit(0);
-    });
+    };
+    Deno.addSignalListener("SIGINT", onShutdownSignal);
+    // Deno on Windows doesn't support SIGTERM; signal-listener registration
+    // throws there. CI's taskkill bypasses cleanup, but we register where we
+    // can so Linux/macOS CI gets the same teardown as Ctrl-C.
+    if (Deno.build.os !== "windows") {
+        try { Deno.addSignalListener("SIGTERM", onShutdownSignal); } catch { /* unsupported */ }
+    }
 
     // Drag-drop / CLI arg: take Deno.args[0] as the initial game path.
     // Validated once at startup. If the path is bad we still fall through to
@@ -5399,9 +5516,19 @@ async function main(): Promise<void> {
                 stopSitelockProxy();
                 Deno.exit(2);
             }
-            const code = await runHeadlessTest(headlessMode.testPath);
-            killFlash();
-            stopSitelockProxy();
+            // Always clean up Flash Player and the sitelock proxy, even if
+            // runHeadlessTest throws (e.g. parseRatest crash, runStep loop
+            // bug). Without the finally, CI accumulates orphan
+            // flashplayer.exe processes between failing test runs.
+            let code = 2;
+            try {
+                code = await runHeadlessTest(headlessMode.testPath);
+            } catch (e) {
+                console.error(`ERROR: headless test threw: ${e instanceof Error ? (e.stack ?? e.message) : e}`);
+            } finally {
+                killFlash();
+                stopSitelockProxy();
+            }
             Deno.exit(code);
         }
 

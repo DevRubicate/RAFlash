@@ -14,9 +14,28 @@ package flash.net;
  * installs the relay (and sets the active slot) after the game's SWF
  * loads.
  */
-class __RAShim_S0_ {
+class __RAShim_S0_ extends flash.events.EventDispatcher {
     public static var _relay:Dynamic = null;
-    public static function setRelay(f:Dynamic):Void { _relay = f; }
+    /**
+     * Flush calls that landed before the firmware registered a relay.
+     * We buffer them (capped at _pendingMax) and drain on the next setRelay.
+     * Without this, frame-1 saves silently lose their JSON mirror — the
+     * native .sol still persists, but RAEngine's slot picker shows the
+     * mirror as empty until the next save.
+     */
+    public static var _pendingCalls:Array<{name:String, path:String, data:Dynamic}> = [];
+    public static inline var _pendingMax:Int = 8;
+    public static function setRelay(f:Dynamic):Void {
+        _relay = f;
+        if (f == null || _pendingCalls.length == 0) return;
+        var pending = _pendingCalls;
+        _pendingCalls = [];
+        for (call in pending) {
+            try {
+                f(call.name, call.path, call.data);
+            } catch (e:Dynamic) { /* swallow — never break the save path */ }
+        }
+    }
 
     /**
      * Active save slot. Lazy-resolved from the GAME's loader URL on first
@@ -43,14 +62,21 @@ class __RAShim_S0_ {
             // firmware and its loaderInfo.url has `?slot=` instead.
             // Accept either to cover the early-frame-1 race where the
             // game saves before the firmware's setSlot() runs.
-            var idx:Int = url.indexOf("rafslot=");
-            var keyLen:Int = 8;
+            //
+            // Anchor every lookup on the leading `?` or `&` separator so
+            // a user-controlled string further down the URL (e.g. a
+            // filename, originUrl spoof) can't masquerade as a slot
+            // override.
+            var idx:Int = url.indexOf("?rafslot=");
+            var keyLen:Int = 9;
             if (idx < 0) {
-                idx = url.indexOf("?slot=");
-                if (idx >= 0) { idx += 1; keyLen = 5; }
-                else {
-                    idx = url.indexOf("&slot=");
-                    if (idx >= 0) { idx += 1; keyLen = 5; }
+                idx = url.indexOf("&rafslot=");
+                if (idx < 0) {
+                    idx = url.indexOf("?slot=");
+                    keyLen = 6;
+                    if (idx < 0) {
+                        idx = url.indexOf("&slot=");
+                    }
                 }
             }
             if (idx < 0) return;
@@ -98,6 +124,13 @@ class __RAShim_S0_ {
     // Initialized once in the constructor so writes via `myShim.data.foo`
     // accumulate on a stable object instead of being lost.
     private var _orphanData:Dynamic;
+    // Set of event types we've already wired up a forwarder for on the
+    // native object. Each game-side addEventListener for a new type
+    // triggers a single native subscription that re-dispatches through
+    // the shim (so event.target/currentTarget point at the shim, not
+    // the native). Subsequent listeners on the same type just register
+    // on the shim's own EventDispatcher.
+    private var _bridgedTypes:haxe.ds.StringMap<Bool>;
 
     // AS3 bytecode reads `instance.data` and `instance.size` as property
     // accesses; Haxe `(get, never)` properties compile to verifier-visible
@@ -148,23 +181,37 @@ class __RAShim_S0_ {
     }
 
     public function new(native:flash.net.SharedObject, name:String, ?localPath:String) {
+        super();
         _native = native;
         _name = name;
         _localPath = localPath;
         _orphanData = ({} : Dynamic);
+        _bridgedTypes = new haxe.ds.StringMap();
     }
 
     public function flush(?minDiskSpace:Int):String {
-        var status:String = "pending";
+        // Orphan shims (from getRemote, no native backing) have nothing to
+        // flush asynchronously — the data lives in _orphanData and is
+        // already "persisted" as far as we're concerned. Returning "pending"
+        // would imply a follow-up NetStatusEvent that never arrives, hanging
+        // any game code that awaits the disk-quota dialog flow.
+        var status:String = "flushed";
         if (_native != null) {
             status = _native.flush(minDiskSpace == null ? 0 : minDiskSpace);
         }
+        var data:Dynamic = _native == null ? _orphanData : _native.data;
         if (_relay != null) {
             try {
-                _relay(_name, _localPath, _native == null ? _orphanData : _native.data);
+                _relay(_name, _localPath, data);
             } catch (e:Dynamic) {
                 // Never let the relay break the game's save path.
             }
+        } else if (_pendingCalls.length < _pendingMax) {
+            // Frame-1 race: firmware hasn't registered a relay yet. Hold
+            // the call for setRelay() to drain. The data ref is live —
+            // by drain time it reflects the latest state, which is what
+            // the JSON mirror should record anyway.
+            _pendingCalls.push({name: _name, path: _localPath, data: data});
         }
         return status;
     }
@@ -186,10 +233,16 @@ class __RAShim_S0_ {
      * AS3 SharedObject's setProperty is a convenience wrapper around
      * `data[name] = value` (with a value-of-undefined => delete shortcut).
      * Mirror that contract so games that prefer the explicit API work.
+     *
+     * Important: AS3 distinguishes `null` (a stored sentinel) from
+     * `undefined` (which deletes). Haxe's `value == null` matches BOTH on
+     * the AS3 target, so we drop into untyped `typeof` to discriminate —
+     * a game calling `setProperty("highScore", null)` to record "no run
+     * yet" must keep the field, not erase it.
      */
     public function setProperty(propertyName:String, ?value:Dynamic):Void {
         var target:Dynamic = _native != null ? _native.data : _orphanData;
-        if (value == null) {
+        if (untyped __typeof__(value) == "undefined") {
             Reflect.deleteField(target, propertyName);
         } else {
             Reflect.setField(target, propertyName, value);
@@ -221,23 +274,29 @@ class __RAShim_S0_ {
     /**
      * EventDispatcher pass-through. AS3 games attach NetStatusEvent /
      * AsyncErrorEvent / SyncEvent listeners to SharedObject for the
-     * disk-quota dialog flow. Forwarding to the native object is the
-     * simplest faithful behavior; without it, `mySO.addEventListener(...)`
-     * throws AVM2 type errors.
+     * disk-quota dialog flow. We register the listener on the shim's own
+     * EventDispatcher (inherited via `extends`), and lazily install a
+     * single forwarder on the native object per event type that
+     * re-dispatches a clone through the shim — that way `event.target`
+     * and `event.currentTarget` are the shim object the game expects,
+     * not the underlying native SharedObject.
      */
-    public function addEventListener(type:String, listener:Dynamic, useCapture:Bool = false, priority:Int = 0, useWeakReference:Bool = false):Void {
-        if (_native != null) _native.addEventListener(type, listener, useCapture, priority, useWeakReference);
-    }
-    public function removeEventListener(type:String, listener:Dynamic, useCapture:Bool = false):Void {
-        if (_native != null) _native.removeEventListener(type, listener, useCapture);
-    }
-    public function dispatchEvent(event:flash.events.Event):Bool {
-        return _native != null ? _native.dispatchEvent(event) : false;
-    }
-    public function hasEventListener(type:String):Bool {
-        return _native != null ? _native.hasEventListener(type) : false;
-    }
-    public function willTrigger(type:String):Bool {
-        return _native != null ? _native.willTrigger(type) : false;
+    override public function addEventListener(type:String, listener:Dynamic, useCapture:Bool = false, priority:Int = 0, useWeakReference:Bool = false):Void {
+        super.addEventListener(type, listener, useCapture, priority, useWeakReference);
+        if (_native == null) return;
+        if (_bridgedTypes.exists(type)) return;
+        _bridgedTypes.set(type, true);
+        var self = this;
+        var forwarder:flash.events.Event->Void = function(e:flash.events.Event):Void {
+            // dispatchEvent on the shim sets event.target/currentTarget to
+            // the shim — but only if the event hasn't already been
+            // dispatched. clone() gives us a fresh, undispatched copy.
+            // Some Event subclasses don't override clone() and return the
+            // base class with stripped fields; tolerate by falling back.
+            var copy:flash.events.Event;
+            try { copy = e.clone(); } catch (err:Dynamic) { copy = e; }
+            try { self.dispatchEvent(copy); } catch (err:Dynamic) { /* swallow */ }
+        };
+        _native.addEventListener(type, forwarder, useCapture, priority, useWeakReference);
     }
 }

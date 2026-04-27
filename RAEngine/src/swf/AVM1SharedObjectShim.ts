@@ -40,8 +40,22 @@ import {
  *
  *   var status = this.__raflash_orig_flush.apply(this, arguments);
  *   var relay = _global.__RAShim_relay;
- *   if (relay != undefined) relay(this.__raflash_orig_name,
- *                                 this.__raflash_orig_path, this.data);
+ *   if (relay != undefined) {
+ *       relay(this.__raflash_orig_name,
+ *             this.__raflash_orig_path, this.data);
+ *   } else {
+ *       // Frame-1 race: firmware hasn't registered yet. Buffer the
+ *       // call as a flat triple in _global.__RAShim_pending_relay; the
+ *       // firmware drains the buffer when it installs the relay.
+ *       var buf = _global.__RAShim_pending_relay;
+ *       if (buf == undefined) {
+ *           buf = [];
+ *           _global.__RAShim_pending_relay = buf;
+ *       }
+ *       if (buf.length < 24) {  // 8 entries × 3 fields
+ *           buf.push(name); buf.push(path); buf.push(data);
+ *       }
+ *   }
  *   return status;
  */
 function buildFlushBody(): Uint8Array {
@@ -69,14 +83,13 @@ function buildFlushBody(): Uint8Array {
     b.push(aString("__RAShim_relay")); b.getMember();
     b.setVariable();
 
-    // if (relay != undefined) relay(name, path, data);
+    // if (relay == undefined) goto bufferPath; else call relay; goto end
     b.push(aString("relay")); b.getVariable();
     b.push(aUndefined());
-    b.equals2();                        // (relay == undefined) → bool
-    const skipRelay = b.jumpIfForward(); // skip body if equal (i.e. undefined)
+    b.equals2();                        // (relay == undefined)
+    const goBuffer = b.jumpIfForward(); // if undefined, take buffer path
 
-    // relay(this.__raflash_orig_name, this.__raflash_orig_path, this.data);
-    // CallFunction looks up the name in scope; "relay" is a local var here.
+    // relay path: relay(name, path, data)
     b.push(aString("this")); b.getVariable();
     b.push(aString("data")); b.getMember();
     b.push(aString("this")); b.getVariable();
@@ -87,8 +100,73 @@ function buildFlushBody(): Uint8Array {
     b.push(aString("relay"));
     b.callFunction();
     b.pop();                            // discard return value
+    const skipBuffer = b.jumpForward(); // jump past buffer path
 
-    b.patchJumpHere(skipRelay);
+    // bufferPath: lazy-create buf, append triple if not full.
+    b.patchJumpHere(goBuffer);
+
+    // var buf = _global.__RAShim_pending_relay
+    b.push(aString("buf"));
+    b.push(aString("_global")); b.getVariable();
+    b.push(aString("__RAShim_pending_relay")); b.getMember();
+    b.setVariable();
+
+    // if (buf == undefined) { buf = []; _global.__RAShim_pending_relay = buf; }
+    b.push(aString("buf")); b.getVariable();
+    b.push(aUndefined());
+    b.equals2();
+    b.not();                            // buf != undefined
+    const skipCreate = b.jumpIfForward();
+
+    // buf = []
+    b.push(aString("buf"));
+    b.push(aInt(0));
+    b.initArray();
+    b.setVariable();
+
+    // _global.__RAShim_pending_relay = buf
+    b.push(aString("_global")); b.getVariable();
+    b.push(aString("__RAShim_pending_relay"));
+    b.push(aString("buf")); b.getVariable();
+    b.setMember();
+
+    b.patchJumpHere(skipCreate);
+
+    // if (buf.length >= 24) goto end
+    b.push(aString("buf")); b.getVariable();
+    b.push(aString("length")); b.getMember();
+    b.push(aInt(24));
+    b.less2();                          // (buf.length < 24)
+    b.not();                            // (buf.length >= 24) → skip push
+    const skipPush = b.jumpIfForward();
+
+    // buf.push(name); buf.push(path); buf.push(data);
+    b.push(aString("this")); b.getVariable();
+    b.push(aString("__raflash_orig_name")); b.getMember();
+    b.push(aInt(1));
+    b.push(aString("buf")); b.getVariable();
+    b.push(aString("push"));
+    b.callMethod();
+    b.pop();
+
+    b.push(aString("this")); b.getVariable();
+    b.push(aString("__raflash_orig_path")); b.getMember();
+    b.push(aInt(1));
+    b.push(aString("buf")); b.getVariable();
+    b.push(aString("push"));
+    b.callMethod();
+    b.pop();
+
+    b.push(aString("this")); b.getVariable();
+    b.push(aString("data")); b.getMember();
+    b.push(aInt(1));
+    b.push(aString("buf")); b.getVariable();
+    b.push(aString("push"));
+    b.callMethod();
+    b.pop();
+
+    b.patchJumpHere(skipPush);
+    b.patchJumpHere(skipBuffer);
 
     // return status;
     b.push(aString("status")); b.getVariable();
@@ -104,21 +182,12 @@ function buildFlushBody(): Uint8Array {
 function buildGetLocalBody(flushBody: Uint8Array): Uint8Array {
     const b = new AVM1Builder();
 
-    // var slot = _global.__RAShim_slot;
-    b.push(aString("slot"));
-    b.push(aString("_global")); b.getVariable();
-    b.push(aString("__RAShim_slot")); b.getMember();
-    b.setVariable();
-
-    // if (slot == undefined) { ...resolve from _root._url... }
-    // ActionIf branches when stack-top is true. We want to skip the resolve
-    // block when slot is ALREADY resolved (defined), so push (slot==undef),
-    // negate, and branch.
-    b.push(aString("slot")); b.getVariable();
-    b.push(aUndefined());
-    b.equals2();
-    b.not();                            // true if slot is defined
-    const skipResolve = b.jumpIfForward();
+    // Re-resolve the slot from `_root._url` on every call. We previously
+    // cached it in `_global.__RAShim_slot`, but `_global` survives any
+    // self-restart path that doesn't go through `_level0.loadMovie()`
+    // (mid-session slot changes followed by a game self-restart, etc.),
+    // so the cache could pin saves to a stale slot. The parse is cheap
+    // and saves are infrequent — re-resolve every call instead.
 
     // slot = "default";
     b.push(aString("slot"));
@@ -134,29 +203,49 @@ function buildGetLocalBody(flushBody: Uint8Array): Uint8Array {
     b.callFunction();
     b.setVariable();
 
-    // var idx = url.indexOf("rafslot=");
+    // var idx = url.indexOf("?rafslot=");
+    // Anchored on the leading separator so a user-controlled string further
+    // down the URL (e.g. a filename, originUrl spoof) can't masquerade as
+    // a slot override.
     b.push(aString("idx"));
-    b.push(aString("rafslot="));
+    b.push(aString("?rafslot="));
     b.push(aInt(1));
     b.push(aString("url")); b.getVariable();
     b.push(aString("indexOf"));
     b.callMethod();
     b.setVariable();
 
-    // if (idx >= 0) { ... }
-    // less2 pushes (idx < 0). We want to ENTER the block when idx >= 0,
-    // i.e. SKIP when idx < 0. ActionIf branches when stack-top is true,
-    // so the (idx < 0) result is exactly what we want.
+    // if (idx < 0) idx = url.indexOf("&rafslot=");
+    b.push(aString("idx")); b.getVariable();
+    b.push(aInt(0));
+    b.less2();                          // (idx < 0)
+    b.not();                            // (idx >= 0) — true means skip
+    const skipAlt = b.jumpIfForward();
+
+    b.push(aString("idx"));
+    b.push(aString("&rafslot="));
+    b.push(aInt(1));
+    b.push(aString("url")); b.getVariable();
+    b.push(aString("indexOf"));
+    b.callMethod();
+    b.setVariable();
+
+    b.patchJumpHere(skipAlt);
+
+    // if (idx >= 0) { ... extract slot from substring ... }
+    // less2 pushes (idx < 0). ActionIf branches when stack-top is true, so
+    // skip the block when idx < 0.
     b.push(aString("idx")); b.getVariable();
     b.push(aInt(0));
     b.less2();
     const skipSubstring = b.jumpIfForward();
 
-    // var s = url.substring(idx + 8);
+    // var s = url.substring(idx + 9);
+    // 9 = 1-byte separator ('?' or '&') + 8 bytes of "rafslot="
     b.push(aString("s"));
-    b.push(aInt(8));
+    b.push(aInt(9));
     b.push(aString("idx")); b.getVariable();
-    b.add2();                           // idx + 8
+    b.add2();                           // idx + 9
     b.push(aInt(1));
     b.push(aString("url")); b.getVariable();
     b.push(aString("substring"));
@@ -207,14 +296,6 @@ function buildGetLocalBody(flushBody: Uint8Array): Uint8Array {
 
     b.patchJumpHere(skipAssign);
     b.patchJumpHere(skipSubstring);
-
-    // _global.__RAShim_slot = slot;
-    b.push(aString("_global")); b.getVariable();
-    b.push(aString("__RAShim_slot"));
-    b.push(aString("slot")); b.getVariable();
-    b.setMember();
-
-    b.patchJumpHere(skipResolve);
 
     // var realName = name;
     b.push(aString("realName"));
@@ -338,9 +419,12 @@ function buildGetRemoteBody(): Uint8Array {
 /**
  * Build the entire SO-patch action stream (without the DoAction tag header).
  *
- * Idempotent: if `_global.__RAShim_SO_patched == true` the whole body is
- * skipped. The firmware can still be reloaded across `_level0.loadMovie()`
- * resets — Flash blanks _global on a clean reload, so the guard re-arms.
+ * Idempotent: if `_global.SharedObject.getLocal.__raflash_is_wrapper == true`
+ * the whole body is skipped. We tag our wrapper with that property after
+ * install, so the guard tracks whether the LIVE getLocal is our wrapper —
+ * not a separate boolean that could go out of sync with the orig-fn cache
+ * if a soft-reset rebuilt `_global.SharedObject` without blanking the rest
+ * of `_global`.
  */
 export function buildSharedObjectShimAction(): Uint8Array {
     const flushBody = buildFlushBody();
@@ -349,18 +433,15 @@ export function buildSharedObjectShimAction(): Uint8Array {
 
     const main = new AVM1Builder();
 
-    // Idempotency: if (_global.__RAShim_SO_patched == true) return;
+    // Idempotency: skip if the active SharedObject.getLocal is already
+    // our tagged wrapper.
     main.push(aString("_global")); main.getVariable();
-    main.push(aString("__RAShim_SO_patched")); main.getMember();
+    main.push(aString("SharedObject")); main.getMember();
+    main.push(aString("getLocal")); main.getMember();
+    main.push(aString("__raflash_is_wrapper")); main.getMember();
     main.push(aBool(true));
     main.equals2();
     const skipPatch = main.jumpIfForward();
-
-    // _global.__RAShim_SO_patched = true;
-    main.push(aString("_global")); main.getVariable();
-    main.push(aString("__RAShim_SO_patched"));
-    main.push(aBool(true));
-    main.setMember();
 
     // _global.__RAShim_origGetLocal = _global.SharedObject.getLocal;
     main.push(aString("_global")); main.getVariable();
@@ -431,6 +512,22 @@ export function buildSharedObjectShimAction(): Uint8Array {
     });
     main.setMember();
 
+    // Tag the wrappers so the idempotency check above can recognize them
+    // by identity instead of relying on a separate boolean.
+    main.push(aString("_global")); main.getVariable();
+    main.push(aString("SharedObject")); main.getMember();
+    main.push(aString("getLocal")); main.getMember();
+    main.push(aString("__raflash_is_wrapper"));
+    main.push(aBool(true));
+    main.setMember();
+
+    main.push(aString("_global")); main.getVariable();
+    main.push(aString("SharedObject")); main.getMember();
+    main.push(aString("getRemote")); main.getMember();
+    main.push(aString("__raflash_is_wrapper"));
+    main.push(aBool(true));
+    main.setMember();
+
     main.patchJumpHere(skipPatch);
     main.end();
 
@@ -452,11 +549,11 @@ export function wrapInDoActionTag(actionStream: Uint8Array): Uint8Array {
     const shortTag = (12 << 6) | 0x3F;
     const out = new Uint8Array(6 + actionStream.length);
     out[0] = shortTag & 0xFF;
-    out[1] = (shortTag >> 8) & 0xFF;
+    out[1] = (shortTag >>> 8) & 0xFF;
     out[2] = actionStream.length & 0xFF;
-    out[3] = (actionStream.length >> 8) & 0xFF;
-    out[4] = (actionStream.length >> 16) & 0xFF;
-    out[5] = (actionStream.length >> 24) & 0xFF;
+    out[3] = (actionStream.length >>> 8) & 0xFF;
+    out[4] = (actionStream.length >>> 16) & 0xFF;
+    out[5] = (actionStream.length >>> 24) & 0xFF;
     out.set(actionStream, 6);
     return out;
 }

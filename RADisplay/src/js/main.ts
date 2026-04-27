@@ -168,7 +168,17 @@ window.addEventListener('keydown', (e: KeyboardEvent) => {
     }
 });
 
+// Suppress the browser context menu globally — RAFlash's chrome windows
+// are an app surface, not a webpage, so the default Chrome menu (View
+// Source, Reload, Inspect) is misleading. But text inputs without a Vue
+// handler still need their native copy/paste menu, so honor any earlier
+// preventDefault from a Vue handler (which signals "I've handled this")
+// rather than blanket-suppressing.
 window.addEventListener('contextmenu', (e: MouseEvent) => {
+    if (e.defaultPrevented) return;
+    const target = e.target as HTMLElement | null;
+    const tag = target?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
     e.preventDefault();
 });
 

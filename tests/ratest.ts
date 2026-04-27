@@ -794,6 +794,16 @@ export async function runStep(page: RecordedTest, step: Step, results: TestResul
 }
 
 function compareValues(a: unknown, op: string, b: unknown): boolean {
+    // The Formula DSL is collection-oriented — every value is an array.
+    // The firmware's extractValue auto-unwraps singletons, so by the time
+    // we get here a scalar test should already be a bare value. A surviving
+    // array means the formula evaluated to an empty result (length 0) or
+    // matched multiple objects (length > 1) — comparing that against a
+    // literal silently returns false via JS coercion rules ("1,2" == 12 is
+    // false), which masks the actual problem (DSL ambiguity).
+    if (Array.isArray(a)) {
+        throw new Error(`expected a scalar, got array of length ${a.length}: ${JSON.stringify(a)}`);
+    }
     switch (op) {
         case "==": return a == b;
         case "!=": return a != b;

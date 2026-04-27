@@ -36,9 +36,25 @@ import * as pako from "npm:pako";
 // "SharedObject" → "__RAShim_S0_" (both 12 bytes; in-place swap)
 const TARGET     = new TextEncoder().encode("SharedObject");
 const REPLACEMENT = new TextEncoder().encode("__RAShim_S0_");
+const FLASH_NET  = new TextEncoder().encode("flash.net");
 if (TARGET.length !== REPLACEMENT.length) {
     throw new Error("rewriter: target/replacement byte length mismatch");
 }
+
+// AVM2 namespace kinds (avmplus/abc spec).
+const NS_PACKAGE = 0x16;
+// AVM2 multiname kinds.
+const MN_QNAME    = 0x07;
+const MN_QNAMEA   = 0x0D;
+const MN_RTQNAME  = 0x0F;
+const MN_RTQNAMEA = 0x10;
+const MN_RTQNAMEL  = 0x11;
+const MN_RTQNAMELA = 0x12;
+const MN_MULTINAME  = 0x09;
+const MN_MULTINAMEA = 0x0E;
+const MN_MULTINAMEL  = 0x1B;
+const MN_MULTINAMELA = 0x1C;
+const MN_TYPENAME    = 0x1D;
 
 const TAG_END     = 0;
 const TAG_DOABC   = 72; // legacy: body = abc bytes
@@ -63,36 +79,196 @@ function readU30(data: Uint8Array, pos: number): [number, number] {
     return [val, pos];
 }
 
+/** Compare a slice of bytes against a fixed Uint8Array. */
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+}
+
 /**
- * Walk an ABC's constants-pool string entries and overwrite any whose
- * bytes exactly match TARGET with REPLACEMENT bytes. Returns count of
- * patches applied.
+ * Parse the constants-pool sections we need to make a QName-aware rename
+ * decision. Returns null if the ABC is malformed (we then bail out the
+ * caller into "no rename" rather than corrupting the SWF).
+ */
+type AbcPools = {
+    /** Byte position + size of each string entry (index 0 unused). */
+    strings: Array<{ pos: number; size: number }>;
+    /** Each namespace's kind + name string-index (index 0 unused). */
+    namespaces: Array<{ kind: number; nameIdx: number }>;
+    /** Each multiname's kind + decoded ns/name indices (index 0 unused). */
+    multinames: Array<{ kind: number; nsIdx: number; nameIdx: number }>;
+};
+
+function parseAbcPools(abc: Uint8Array): AbcPools | null {
+    try {
+        let pos = 4; // skip minor_version + major_version
+        let n: number;
+
+        // ints, uints — variable-length. Skip values, we don't need them.
+        [n, pos] = readU30(abc, pos);
+        for (let i = 1; i < n; i++) { [, pos] = readU30(abc, pos); }
+        [n, pos] = readU30(abc, pos);
+        for (let i = 1; i < n; i++) { [, pos] = readU30(abc, pos); }
+
+        // doubles — 8 bytes each.
+        [n, pos] = readU30(abc, pos);
+        if (n > 0) pos += (n - 1) * 8;
+
+        // strings.
+        [n, pos] = readU30(abc, pos);
+        const strings: Array<{ pos: number; size: number }> = [{ pos: 0, size: 0 }];
+        for (let i = 1; i < n; i++) {
+            const [size, p] = readU30(abc, pos);
+            pos = p;
+            strings.push({ pos, size });
+            pos += size;
+        }
+
+        // namespaces.
+        [n, pos] = readU30(abc, pos);
+        const namespaces: Array<{ kind: number; nameIdx: number }> = [{ kind: 0, nameIdx: 0 }];
+        for (let i = 1; i < n; i++) {
+            const kind = abc[pos++];
+            const [nameIdx, p] = readU30(abc, pos);
+            pos = p;
+            namespaces.push({ kind, nameIdx });
+        }
+
+        // ns_sets — skip; we don't need their internals.
+        [n, pos] = readU30(abc, pos);
+        for (let i = 1; i < n; i++) {
+            const [count, p] = readU30(abc, pos);
+            pos = p;
+            for (let j = 0; j < count; j++) [, pos] = readU30(abc, pos);
+        }
+
+        // multinames.
+        [n, pos] = readU30(abc, pos);
+        const multinames: Array<{ kind: number; nsIdx: number; nameIdx: number }> = [
+            { kind: 0, nsIdx: 0, nameIdx: 0 },
+        ];
+        for (let i = 1; i < n; i++) {
+            const kind = abc[pos++];
+            let nsIdx = 0, nameIdx = 0;
+            switch (kind) {
+                case MN_QNAME:
+                case MN_QNAMEA:
+                    [nsIdx, pos] = readU30(abc, pos);
+                    [nameIdx, pos] = readU30(abc, pos);
+                    break;
+                case MN_RTQNAME:
+                case MN_RTQNAMEA:
+                    [nameIdx, pos] = readU30(abc, pos);
+                    break;
+                case MN_RTQNAMEL:
+                case MN_RTQNAMELA:
+                    break;
+                case MN_MULTINAME:
+                case MN_MULTINAMEA:
+                    [nameIdx, pos] = readU30(abc, pos);
+                    [, pos] = readU30(abc, pos); // ns_set
+                    break;
+                case MN_MULTINAMEL:
+                case MN_MULTINAMELA:
+                    [, pos] = readU30(abc, pos); // ns_set
+                    break;
+                case MN_TYPENAME: {
+                    [nameIdx, pos] = readU30(abc, pos);
+                    const [paramCount, p] = readU30(abc, pos);
+                    pos = p;
+                    for (let j = 0; j < paramCount; j++) [, pos] = readU30(abc, pos);
+                    break;
+                }
+                default:
+                    return null; // unknown kind — bail
+            }
+            multinames.push({ kind, nsIdx, nameIdx });
+        }
+
+        return { strings, namespaces, multinames };
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * QName-aware rename of `flash.net::SharedObject` → `flash.net::__RAShim_S0_`.
+ *
+ * The previous implementation renamed any 12-byte "SharedObject" entry in
+ * the strings pool. ABC pools deduplicate strings, so a game with its own
+ * class/method/property named `SharedObject` would have the SAME pool
+ * entry referenced both by the flash.net QName and by the game's
+ * QName(*::SharedObject) — a blind rename retargets the game's class to
+ * the shim and breaks `is SharedObject` checks, reflection, etc.
+ *
+ * Strategy:
+ *   1. Scan multinames. If ANY non-flash.net multiname references the
+ *      "SharedObject" string, the rename is unsafe — log a warning and
+ *      skip this ABC entirely. The game saves still go through the
+ *      native path, just without our JSON mirror.
+ *   2. Otherwise, every "SharedObject" reference IS a flash.net QName,
+ *      so renaming the underlying string is safe. Rewrite all matching
+ *      string entries in place.
+ *
+ * Returns the number of string entries patched (0 means no rename
+ * happened — either no SharedObject references found, or skipped due to
+ * collateral risk).
  */
 function patchAbcStringsInPlace(abc: Uint8Array): number {
-    let pos = 4; // skip minor_version + major_version (u16 each)
-    let n: number;
-    [n, pos] = readU30(abc, pos);
-    for (let i = 0; i < Math.max(0, n - 1); i++) { [, pos] = readU30(abc, pos); }
-    [n, pos] = readU30(abc, pos);
-    for (let i = 0; i < Math.max(0, n - 1); i++) { [, pos] = readU30(abc, pos); }
-    [n, pos] = readU30(abc, pos);
-    pos += Math.max(0, n - 1) * 8;
-    [n, pos] = readU30(abc, pos);
-    let patches = 0;
-    for (let i = 0; i < Math.max(0, n - 1); i++) {
-        const [size, newPos] = readU30(abc, pos);
-        pos = newPos;
-        if (size === TARGET.length) {
-            let match = true;
-            for (let j = 0; j < size; j++) {
-                if (abc[pos + j] !== TARGET[j]) { match = false; break; }
-            }
-            if (match) {
-                for (let j = 0; j < size; j++) abc[pos + j] = REPLACEMENT[j];
-                patches++;
-            }
+    const pools = parseAbcPools(abc);
+    if (!pools) return 0;
+
+    const isString = (idx: number, target: Uint8Array): boolean => {
+        if (idx <= 0 || idx >= pools.strings.length) return false;
+        const s = pools.strings[idx];
+        if (s.size !== target.length) return false;
+        return bytesEqual(abc.subarray(s.pos, s.pos + s.size), target);
+    };
+
+    // String indices that hold "SharedObject" / "flash.net".
+    const sharedObjectIdx = new Set<number>();
+    const flashNetIdx = new Set<number>();
+    for (let i = 1; i < pools.strings.length; i++) {
+        if (isString(i, TARGET)) sharedObjectIdx.add(i);
+        if (isString(i, FLASH_NET)) flashNetIdx.add(i);
+    }
+    if (sharedObjectIdx.size === 0) return 0;
+
+    // Namespace indices that are PackageNamespace("flash.net").
+    const flashNetNsIdx = new Set<number>();
+    for (let i = 1; i < pools.namespaces.length; i++) {
+        const ns = pools.namespaces[i];
+        if (ns.kind === NS_PACKAGE && flashNetIdx.has(ns.nameIdx)) flashNetNsIdx.add(i);
+    }
+
+    // Walk every multiname referencing the "SharedObject" string. If any
+    // are not QNames in flash.net, abort — the rename would clobber a
+    // game-side identifier that happens to share the pooled string.
+    for (let i = 1; i < pools.multinames.length; i++) {
+        const mn = pools.multinames[i];
+        if (!sharedObjectIdx.has(mn.nameIdx)) continue;
+        const isFlashNetQName =
+            (mn.kind === MN_QNAME || mn.kind === MN_QNAMEA) && flashNetNsIdx.has(mn.nsIdx);
+        if (!isFlashNetQName) {
+            console.warn(
+                `SharedObjectRewriter: skipping rename — game ABC has a non-flash.net reference to "SharedObject" ` +
+                `(multiname kind 0x${mn.kind.toString(16).padStart(2, "0")}), in-place rename would clobber it. ` +
+                `Saves will still persist through the native path, but the JSON mirror won't fire.`,
+            );
+            return 0;
         }
-        pos += size;
+    }
+
+    // Safe: every "SharedObject" reference is the flash.net QName. Rewrite
+    // each pooled string entry in place. Same length → no offsets shift.
+    let patches = 0;
+    for (const idx of sharedObjectIdx) {
+        const s = pools.strings[idx];
+        if (s.size === REPLACEMENT.length) {
+            for (let j = 0; j < s.size; j++) abc[s.pos + j] = REPLACEMENT[j];
+            patches++;
+        }
     }
     return patches;
 }

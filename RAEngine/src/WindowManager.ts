@@ -82,6 +82,10 @@ const user32 = isWindows ? Deno.dlopen("user32.dll", {
         parameters: ["pointer"],
         result: "i32",
     },
+    IsIconic: {
+        parameters: ["pointer"],
+        result: "i32",
+    },
     GetWindowRect: {
         parameters: ["pointer", "buffer"],
         result: "i32",
@@ -232,14 +236,20 @@ export class WindowManager {
 
     /**
      * Gets the position and size of a window by its windowId.
+     * Returns null if the window is minimised: GetWindowRect on a
+     * minimised window reports `(-32000, -32000)`-anchored coordinates,
+     * which would persist as garbage in `windowPositions` and then get
+     * rejected on next launch (window appears un-restored).
      * @param windowId The application windowId.
-     * @returns Position and size, or null if not found.
+     * @returns Position and size, or null if not found / minimised.
      */
     static getWindowPosition(windowId: number): { x: number; y: number; width: number; height: number } | null {
         if (!user32) return null;
 
         const hwnd = this.windowHandles.get(windowId);
         if (!hwnd) return null;
+
+        if (user32.symbols.IsIconic(hwnd)) return null;
 
         // RECT structure: left, top, right, bottom (4 x i32 = 16 bytes)
         const rectBuffer = new Int32Array(4);
