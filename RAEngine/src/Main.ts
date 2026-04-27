@@ -36,7 +36,7 @@ import { buildInjectorTags, findMaxCharacterId } from "./swf/AVM2Injector.ts";
 import { extractAbcTags, rewriteGameForSharedObjectShim } from "./swf/SharedObjectRewriter.ts";
 import { buildSharedObjectShimAction, wrapInDoActionTag as wrapAvm1ShimInDoAction } from "./swf/AVM1SharedObjectShim.ts";
 
-const VERSION = "0.1.3";
+const VERSION = "0.1.4";
 
 // Compile a formula and emit an error log if compilation fails
 function compileFormula(input: string): unknown[] {
